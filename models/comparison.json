@@ -1,0 +1,232 @@
+{
+  "Voice model": {
+    "n_features": 22,
+    "valid_default_rate": 0.0807,
+    "results": {
+      "LightGBM": {
+        "auc": 0.6889,
+        "brier": 0.07124,
+        "log_loss": 0.263,
+        "train_seconds": 13.9,
+        "trees": 298,
+        "predict_one_ms": 7.34,
+        "model_mb": 1.08,
+        "mean_pred": 0.0806,
+        "bands": {
+          "low": {
+            "share": 0.348,
+            "default_rate": 0.034
+          },
+          "medium": {
+            "share": 0.47,
+            "default_rate": 0.08
+          },
+          "high": {
+            "share": 0.183,
+            "default_rate": 0.171
+          }
+        }
+      },
+      "XGBoost": {
+        "auc": 0.6876,
+        "brier": 0.07129,
+        "log_loss": 0.2632,
+        "train_seconds": 33.0,
+        "trees": 359,
+        "predict_one_ms": 18.75,
+        "model_mb": 2.36,
+        "mean_pred": 0.0804,
+        "bands": {
+          "low": {
+            "share": 0.352,
+            "default_rate": 0.035
+          },
+          "medium": {
+            "share": 0.463,
+            "default_rate": 0.08
+          },
+          "high": {
+            "share": 0.185,
+            "default_rate": 0.171
+          }
+        }
+      },
+      "CatBoost": {
+        "auc": 0.6883,
+        "brier": 0.07124,
+        "log_loss": 0.2632,
+        "train_seconds": 435.0,
+        "trees": 1085,
+        "predict_one_ms": 3.11,
+        "model_mb": 1.38,
+        "mean_pred": 0.0846,
+        "bands": {
+          "low": {
+            "share": 0.29,
+            "default_rate": 0.032
+          },
+          "medium": {
+            "share": 0.511,
+            "default_rate": 0.074
+          },
+          "high": {
+            "share": 0.199,
+            "default_rate": 0.168
+          }
+        }
+      },
+      "Blend (average)": {
+        "auc": 0.6897,
+        "brier": 0.07119,
+        "log_loss": 0.2628,
+        "mean_pred": 0.0819,
+        "bands": {
+          "low": {
+            "share": 0.328,
+            "default_rate": 0.034
+          },
+          "medium": {
+            "share": 0.484,
+            "default_rate": 0.077
+          },
+          "high": {
+            "share": 0.188,
+            "default_rate": 0.171
+          }
+        }
+      }
+    },
+    "rank_correlation": {
+      "LightGBM": {
+        "LightGBM": 1.0,
+        "XGBoost": 0.979,
+        "CatBoost": 0.971
+      },
+      "XGBoost": {
+        "LightGBM": 0.979,
+        "XGBoost": 1.0,
+        "CatBoost": 0.966
+      },
+      "CatBoost": {
+        "LightGBM": 0.971,
+        "XGBoost": 0.966,
+        "CatBoost": 1.0
+      }
+    }
+  },
+  "Full model": {
+    "n_features": 170,
+    "valid_default_rate": 0.0807,
+    "results": {
+      "LightGBM": {
+        "auc": 0.7866,
+        "brier": 0.06576,
+        "log_loss": 0.2368,
+        "train_seconds": 54.4,
+        "trees": 469,
+        "predict_one_ms": 15.44,
+        "model_mb": 1.74,
+        "mean_pred": 0.0799,
+        "bands": {
+          "low": {
+            "share": 0.529,
+            "default_rate": 0.025
+          },
+          "medium": {
+            "share": 0.276,
+            "default_rate": 0.081
+          },
+          "high": {
+            "share": 0.195,
+            "default_rate": 0.231
+          }
+        }
+      },
+      "XGBoost": {
+        "auc": 0.7865,
+        "brier": 0.06568,
+        "log_loss": 0.2367,
+        "train_seconds": 87.8,
+        "trees": 470,
+        "predict_one_ms": 48.52,
+        "model_mb": 3.29,
+        "mean_pred": 0.0793,
+        "bands": {
+          "low": {
+            "share": 0.531,
+            "default_rate": 0.025
+          },
+          "medium": {
+            "share": 0.273,
+            "default_rate": 0.081
+          },
+          "high": {
+            "share": 0.195,
+            "default_rate": 0.232
+          }
+        }
+      },
+      "CatBoost": {
+        "auc": 0.7896,
+        "brier": 0.0656,
+        "log_loss": 0.236,
+        "train_seconds": 991.8,
+        "trees": 2052,
+        "predict_one_ms": 17.37,
+        "model_mb": 2.8,
+        "mean_pred": 0.0792,
+        "bands": {
+          "low": {
+            "share": 0.527,
+            "default_rate": 0.025
+          },
+          "medium": {
+            "share": 0.279,
+            "default_rate": 0.079
+          },
+          "high": {
+            "share": 0.194,
+            "default_rate": 0.234
+          }
+        }
+      },
+      "Blend (average)": {
+        "auc": 0.79,
+        "brier": 0.06545,
+        "log_loss": 0.2355,
+        "mean_pred": 0.0795,
+        "bands": {
+          "low": {
+            "share": 0.525,
+            "default_rate": 0.025
+          },
+          "medium": {
+            "share": 0.28,
+            "default_rate": 0.079
+          },
+          "high": {
+            "share": 0.195,
+            "default_rate": 0.234
+          }
+        }
+      }
+    },
+    "rank_correlation": {
+      "LightGBM": {
+        "LightGBM": 1.0,
+        "XGBoost": 0.973,
+        "CatBoost": 0.965
+      },
+      "XGBoost": {
+        "LightGBM": 0.973,
+        "XGBoost": 1.0,
+        "CatBoost": 0.961
+      },
+      "CatBoost": {
+        "LightGBM": 0.965,
+        "XGBoost": 0.961,
+        "CatBoost": 1.0
+      }
+    }
+  }
+}
