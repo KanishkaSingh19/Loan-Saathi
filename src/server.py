@@ -3,6 +3,7 @@
     POST /v1/prescreen   On-Call action: caller's answers in, decision + reply hint out
     POST /v1/post-call   Post-call trigger: stores whatever Gnani sends about the call
     GET  /v1/applications   Recent pre-screens (for the dashboard)
+    GET  /dashboard      Live dashboard page (asks for the webhook key)
     GET  /health
 
 Run:  python -I -X utf8 src/server.py      (port 8000; set WEBHOOK_KEY in .env to require
@@ -20,13 +21,13 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import FileResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "data" / "prescreens.db"
 
 
 def _load_env():
@@ -40,6 +41,7 @@ def _load_env():
 
 _load_env()
 WEBHOOK_KEY = os.environ.get("WEBHOOK_KEY", "")
+DB_PATH = Path(os.environ.get("DB_PATH") or ROOT / "data" / "prescreens.db")
 
 app = FastAPI(title="Loan pre-screening webhook")
 
@@ -206,6 +208,12 @@ def decide(applicant):
         "reply_hint": hint,
     }
     return result, r
+
+
+@app.get("/dashboard")
+def dashboard():
+    # The page holds no data; it asks for the webhook key and then polls /v1/applications.
+    return FileResponse(Path(__file__).resolve().parent / "static" / "dashboard.html")
 
 
 @app.get("/health")

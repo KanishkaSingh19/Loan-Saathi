@@ -17,6 +17,17 @@ LightGBM credit-risk model trained on the
 4. The agent explains the outcome in the caller's language: pre-approved, a safer counter-offer,
    a loan-officer review, or kindly "not right now", with reasons and tips.
 
+## Live dashboard
+Open `https://<tunnel>/dashboard` (or `http://127.0.0.1:8000/dashboard`) and paste your
+`WEBHOOK_KEY`. Every pre-screen appears within 3 seconds, showing:
+- **what the caller said**, exactly as the agent heard it ("30 hazaar", "kiraye ka ghar")
+- the **decision and offer**, plus a repayment-risk bar
+- the **reasons** each way, and what the agent was told to say
+- every model factor, including the ones the agent deliberately doesn't speak
+
+**Send a test caller** buttons replay the three demo scripts without a phone call.
+Post-call data from Gnani shows up as "Call ended" cards.
+
 ## The model, honestly
 | Model | Features | Validation AUC |
 |---|---|---|
@@ -87,7 +98,8 @@ src/train.py           trains voice + full models  (python -I src/train.py [--vo
 src/compare_models.py  LightGBM vs XGBoost vs CatBoost on identical splits
 src/scoring.py         score one applicant: risk, band, reasons, affordable loan
 src/normalize.py       spoken values -> model inputs ("dhai lakh" -> 250000)
-src/server.py          FastAPI webhook for Gnani Agent Builder
+src/server.py          FastAPI webhook for Gnani Agent Builder (+ /dashboard)
+src/static/dashboard.html   live pre-screen dashboard
 src/test_webhook.py    end-to-end tests with Hinglish inputs
 agent/                 system prompt, action body and step-by-step Agent Builder setup
 models/                trained models, metadata, metrics.json, comparison.json/.md
