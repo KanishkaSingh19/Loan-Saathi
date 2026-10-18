@@ -1,0 +1,108 @@
+{
+  "features": [
+    "AMT_INCOME_TOTAL",
+    "AMT_CREDIT",
+    "AMT_GOODS_PRICE",
+    "CNT_CHILDREN",
+    "CNT_FAM_MEMBERS",
+    "OWNS_CAR",
+    "OWNS_REALTY",
+    "AGE_YEARS",
+    "YEARS_EMPLOYED",
+    "NOT_EMPLOYED",
+    "CREDIT_TO_INCOME",
+    "ANNUITY_TO_INCOME",
+    "CREDIT_TO_GOODS",
+    "INCOME_PER_PERSON",
+    "BUREAU_ACTIVE_LOANS",
+    "BUREAU_ACTIVE_DEBT",
+    "DEBT_TO_INCOME",
+    "NAME_CONTRACT_TYPE",
+    "NAME_INCOME_TYPE",
+    "NAME_EDUCATION_TYPE",
+    "NAME_HOUSING_TYPE",
+    "OCCUPATION_TYPE"
+  ],
+  "categorical": {
+    "NAME_CONTRACT_TYPE": [
+      "Cash loans",
+      "Revolving loans"
+    ],
+    "NAME_INCOME_TYPE": [
+      "Businessman",
+      "Commercial associate",
+      "Maternity leave",
+      "Pensioner",
+      "State servant",
+      "Student",
+      "Unemployed",
+      "Working"
+    ],
+    "NAME_EDUCATION_TYPE": [
+      "Academic degree",
+      "Higher education",
+      "Incomplete higher",
+      "Lower secondary",
+      "Secondary / secondary special"
+    ],
+    "NAME_HOUSING_TYPE": [
+      "Co-op apartment",
+      "House / apartment",
+      "Municipal apartment",
+      "Office apartment",
+      "Rented apartment",
+      "With parents"
+    ],
+    "OCCUPATION_TYPE": [
+      "Accountants",
+      "Cleaning staff",
+      "Cooking staff",
+      "Core staff",
+      "Drivers",
+      "HR staff",
+      "High skill tech staff",
+      "IT staff",
+      "Laborers",
+      "Low-skill Laborers",
+      "Managers",
+      "Medicine staff",
+      "Private service staff",
+      "Realty agents",
+      "Sales staff",
+      "Secretaries",
+      "Security staff",
+      "Waiters/barmen staff"
+    ]
+  },
+  "bands": {
+    "low": 0.05,
+    "medium": 0.12
+  },
+  "validation_auc": 0.6895,
+  "medians": {
+    "AMT_INCOME_TOTAL": 147150.0,
+    "AMT_CREDIT": 513531.0,
+    "AMT_GOODS_PRICE": 450000.0,
+    "CNT_CHILDREN": 0.0,
+    "CNT_FAM_MEMBERS": 2.0,
+    "OWNS_CAR": 0.0,
+    "OWNS_REALTY": 1.0,
+    "AGE_YEARS": 43.121149897330596,
+    "YEARS_EMPLOYED": 4.511978097193703,
+    "NOT_EMPLOYED": 0.0,
+    "CREDIT_TO_INCOME": 3.265066623687744,
+    "ANNUITY_TO_INCOME": 0.1628333330154419,
+    "CREDIT_TO_GOODS": 1.1188000440597534,
+    "INCOME_PER_PERSON": 75000.0,
+    "BUREAU_ACTIVE_LOANS": 1.0,
+    "BUREAU_ACTIVE_DEBT": 83128.5,
+    "DEBT_TO_INCOME": 0.5748999714851379
+  },
+  "modes": {
+    "NAME_CONTRACT_TYPE": "Cash loans",
+    "NAME_INCOME_TYPE": "Working",
+    "NAME_EDUCATION_TYPE": "Secondary / secondary special",
+    "NAME_HOUSING_TYPE": "House / apartment",
+    "OCCUPATION_TYPE": "Laborers"
+  }
+}

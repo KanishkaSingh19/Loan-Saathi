@@ -1,0 +1,16 @@
+{
+  "monthly_income": "{{monthly_income}}",
+  "loan_amount": "{{loan_amount}}",
+  "tenure_months": "{{tenure_months}}",
+  "work": "{{work}}",
+  "years_in_work": "{{years_in_work}}",
+  "age": "{{age}}",
+  "other_loans_count": "{{other_loans_count}}",
+  "other_loans_outstanding": "{{other_loans_outstanding}}",
+  "other_loans_emi": "{{other_loans_emi}}",
+  "housing": "{{housing}}",
+  "family_members": "{{family_members}}",
+  "children": "{{children}}",
+  "education": "{{education}}",
+  "owns_vehicle": "{{owns_vehicle}}"
+}

@@ -1,0 +1,76 @@
+{
+  "n_train": 246008,
+  "n_valid": 61503,
+  "default_rate": 0.0807,
+  "voice": {
+    "auc": 0.6895,
+    "trees": 698,
+    "bands": {
+      "low": {
+        "share": 0.35,
+        "default_rate": 0.034
+      },
+      "medium": {
+        "share": 0.467,
+        "default_rate": 0.08
+      },
+      "high": {
+        "share": 0.183,
+        "default_rate": 0.171
+      }
+    },
+    "top_features": {
+      "YEARS_EMPLOYED": 31552.8,
+      "AGE_YEARS": 23051.1,
+      "CREDIT_TO_GOODS": 22352.5,
+      "OCCUPATION_TYPE": 20348.2,
+      "AMT_GOODS_PRICE": 18424.6,
+      "AMT_CREDIT": 15399.3,
+      "BUREAU_ACTIVE_LOANS": 13171.1,
+      "CREDIT_TO_INCOME": 12624.6,
+      "BUREAU_ACTIVE_DEBT": 12055.2,
+      "ANNUITY_TO_INCOME": 11430.7,
+      "NAME_EDUCATION_TYPE": 11219.7,
+      "INCOME_PER_PERSON": 7950.7,
+      "AMT_INCOME_TOTAL": 7438.7,
+      "DEBT_TO_INCOME": 5229.6,
+      "NAME_INCOME_TYPE": 4111.9
+    }
+  },
+  "full": {
+    "auc": 0.789,
+    "trees": 1489,
+    "n_features": 170,
+    "bands": {
+      "low": {
+        "share": 0.541,
+        "default_rate": 0.026
+      },
+      "medium": {
+        "share": 0.266,
+        "default_rate": 0.082
+      },
+      "high": {
+        "share": 0.193,
+        "default_rate": 0.234
+      }
+    },
+    "top_features": {
+      "EXT_MEAN": 117324.7,
+      "ORGANIZATION_TYPE": 40601.3,
+      "EXT_SOURCE_2": 25753.0,
+      "EXT_SOURCE_3": 21978.6,
+      "LOAN_TERM_MONTHS": 20638.0,
+      "YEARS_EMPLOYED": 14357.2,
+      "OCCUPATION_TYPE": 14269.0,
+      "CREDIT_TO_GOODS": 13098.2,
+      "EXT_PROD": 12770.0,
+      "BUREAU_DEBT_TO_CREDIT": 11849.3,
+      "POS_FUTURE_MEAN": 11376.2,
+      "PREV_ANNUITY_MEAN": 10932.2,
+      "INST_RECENT_LATE_RATE": 10737.3,
+      "BUREAU_DAYS_CREDIT_MAX": 10398.1,
+      "EXT_SOURCE_1": 10181.5
+    }
+  }
+}
