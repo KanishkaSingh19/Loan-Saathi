@@ -17,16 +17,26 @@ LightGBM credit-risk model trained on the
 4. The agent explains the outcome in the caller's language: pre-approved, a safer counter-offer,
    a loan-officer review, or kindly "not right now", with reasons and tips.
 
-## Live dashboard
+## Live dashboard (React + Vite)
 Open `https://<tunnel>/dashboard` (or `http://127.0.0.1:8000/dashboard`) and paste your
-`WEBHOOK_KEY`. Every pre-screen appears within 3 seconds, showing:
+`WEBHOOK_KEY`. It has a live feed on the left and the selected caller's full breakdown on the
+right, and every pre-screen appears within 3 seconds. The breakdown shows:
 - **what the caller said**, exactly as the agent heard it ("30 hazaar", "kiraye ka ghar")
-- the **decision and offer**, plus a repayment-risk bar
+- the **decision and offer** (amount, tenure, EMI), plus a repayment-risk meter with the band cut-offs
 - the **reasons** each way, and what the agent was told to say
 - every model factor, including the ones the agent deliberately doesn't speak
 
-**Send a test caller** buttons replay the three demo scripts without a phone call.
-Post-call data from Gnani shows up as "Call ended" cards.
+**Follow live** opens each new caller automatically, which is handy while recording a demo. The filter
+chips narrow the feed by decision, and the **test caller** buttons replay the three demo scripts
+without a phone call. Post-call data from Gnani shows up as "Call ended" entries. Light and dark
+themes follow your system, and the layout works on phones.
+
+```bash
+cd dashboard
+npm install
+npm run build   # the webhook serves dashboard/dist at /dashboard
+npm run dev     # optional: hot-reload UI on :5173, proxying /v1 to the webhook on :8000
+```
 
 ## The model, honestly
 | Model | Features | Validation AUC |
@@ -98,8 +108,8 @@ src/train.py           trains voice + full models  (python -I src/train.py [--vo
 src/compare_models.py  LightGBM vs XGBoost vs CatBoost on identical splits
 src/scoring.py         score one applicant: risk, band, reasons, affordable loan
 src/normalize.py       spoken values -> model inputs ("dhai lakh" -> 250000)
-src/server.py          FastAPI webhook for Gnani Agent Builder (+ /dashboard)
-src/static/dashboard.html   live pre-screen dashboard
+src/server.py          FastAPI webhook for Gnani Agent Builder (+ serves the dashboard)
+dashboard/             React + Vite live dashboard (src/App.jsx, src/components/, src/styles.css)
 src/test_webhook.py    end-to-end tests with Hinglish inputs
 agent/                 system prompt, action body and step-by-step Agent Builder setup
 models/                trained models, metadata, metrics.json, comparison.json/.md

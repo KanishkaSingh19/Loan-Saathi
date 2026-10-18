@@ -3,7 +3,7 @@
     POST /v1/prescreen   On-Call action: caller's answers in, decision + reply hint out
     POST /v1/post-call   Post-call trigger: stores whatever Gnani sends about the call
     GET  /v1/applications   Recent pre-screens (for the dashboard)
-    GET  /dashboard      Live dashboard page (asks for the webhook key)
+    GET  /dashboard/     Live React dashboard (built from dashboard/; asks for the webhook key)
     GET  /health
 
 Run:  python -I -X utf8 src/server.py      (port 8000; set WEBHOOK_KEY in .env to require
@@ -21,7 +21,8 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import normalize as norm  # noqa: E402
@@ -210,10 +211,9 @@ def decide(applicant):
     return result, r
 
 
-@app.get("/dashboard")
-def dashboard():
-    # The page holds no data; it asks for the webhook key and then polls /v1/applications.
-    return FileResponse(Path(__file__).resolve().parent / "static" / "dashboard.html")
+@app.get("/dashboard", include_in_schema=False)
+def dashboard_redirect():
+    return RedirectResponse("/dashboard/")
 
 
 @app.get("/health")
@@ -271,6 +271,17 @@ def applications(limit: int = 50, x_webhook_key: str = Header(default="")):
                         "result": json.loads(res)} for i, t, r, a, res in rows],
         "calls": [{"id": i, "ts": t, "payload": json.loads(p)} for i, t, p in calls],
     }
+
+
+# The built React app holds no data: it asks for the webhook key, then polls /v1/applications.
+DASHBOARD_DIST = ROOT / "dashboard" / "dist"
+if DASHBOARD_DIST.exists():
+    app.mount("/dashboard", StaticFiles(directory=DASHBOARD_DIST, html=True), name="dashboard")
+else:
+    @app.get("/dashboard/", include_in_schema=False)
+    def dashboard_missing():
+        return HTMLResponse("<p>Dashboard not built yet. Run <code>npm install && npm run build</code> "
+                            "in the <code>dashboard/</code> folder, then restart the server.</p>")
 
 
 if __name__ == "__main__":

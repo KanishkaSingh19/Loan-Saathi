@@ -1,10 +1,13 @@
 """Send messy, voice-style requests to the webhook in-process. Run: python -I -X utf8 src/test_webhook.py"""
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.environ["WEBHOOK_KEY"] = ""  # test without auth
+# Never write test callers into the live dashboard's database.
+os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 from fastapi.testclient import TestClient  # noqa: E402
 
 import normalize as norm  # noqa: E402

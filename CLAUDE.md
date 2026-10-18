@@ -34,7 +34,10 @@ for test instances so the live dashboard stays clean.
 - `src/scoring.py`: `score()` (risk, band, what-if reasons) and `affordable_loan()` (FOIR rule).
 - `src/normalize.py`: spoken values to inputs ("dhai lakh", "6 mahine", "kirana ki dukaan").
 - `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/dashboard`, `/health`. Stores data in SQLite under `data/`.
-- `src/static/dashboard.html`: the live dashboard. A React + Vite rewrite was discussed but not started.
+- `dashboard/`: the React 18 + Vite 5 live dashboard. The server mounts `dashboard/dist` at
+  `/dashboard`, so rebuild with `npm run build` after UI changes; `dist/` and `node_modules/`
+  are gitignored. Node is at `C:\Program Files\nodejs` and may not be on PATH in older shells.
+  Render caller-supplied text only as React text (no `dangerouslySetInnerHTML`).
 - `agent/`: the system prompt, the action body JSON and the step-by-step Agent Builder setup.
 
 ## Deliberate modelling decisions (don't undo without discussing)

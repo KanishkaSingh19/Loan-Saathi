@@ -7,6 +7,10 @@
 .env
 data/
 
+# Dashboard build output and packages (rebuild with npm install && npm run build)
+dashboard/node_modules/
+dashboard/dist/
+
 # Logs and Python cruft
 *.log
 __pycache__/
