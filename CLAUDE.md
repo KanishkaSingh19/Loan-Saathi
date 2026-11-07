@@ -10,30 +10,43 @@ Builder configuration.
 ## Environment
 - Windows 11 with PowerShell, Python 3.12. The laptop has 7 GB RAM and often under 1 GB free, so keep
   data loading lean (float32, `usecols`, chunked aggregation) and don't load all the side tables at once.
+- The project lives in `C:\Users\ks608\Desktop\Gnani_project` (earlier names: home-credit-default-risk,
+  Loan-Saathi). Use its virtualenv: `.venv\Scripts\python.exe` (deps in `requirements.txt`;
+  `requirements-compare.txt` adds xgboost/catboost). `python` below means that interpreter.
 - Always run Python as `python -I -X utf8 ...`. `-I` ignores `PYTHON*` env vars, and `-X utf8` is
   required because ₹ crashes the default cp1252 console. Add `-W ignore` to hide pandas noise.
 - In PowerShell, `$env:X=''` *deletes* the variable. Use a non-empty value to override `.env`.
 
 ## Commands
 ```bash
-python -I -X utf8 src/train.py               # both models, ~4 min (needs Kaggle CSVs in repo root)
+python -I -X utf8 src/train.py               # both models, ~4 min (needs the Kaggle CSVs, see below)
 python -I -X utf8 src/train.py --voice-only  # voice model only, ~1 min
 python -I -X utf8 src/test_webhook.py        # end-to-end webhook tests with Hinglish inputs
+python -I -X utf8 src/test_speech_api.py     # speech proxy route tests (mocked, no API calls)
 python -I -X utf8 src/demo_applicants.py     # score three sample applicants
 python -I -X utf8 src/compare_models.py      # LightGBM vs XGBoost vs CatBoost, ~30 min
 python -I -X utf8 src/server.py              # webhook + /dashboard on 127.0.0.1:8000
 "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://127.0.0.1:8000
 ```
 The quick-tunnel URL changes on every restart. It must then be updated in Agent Builder.
-Server env: `WEBHOOK_KEY` (from `.env`), `PORT`, `DB_PATH`. Use a separate `DB_PATH` and `PORT`
-for test instances so the live dashboard stays clean.
+Env (from `.env`, see `.env.example`): `WEBHOOK_KEY` (required, protects every `/v1` route),
+`GNANI_STT_API_KEY` / `GNANI_TTS_API_KEY` (or shared `GNANI_API_KEY`), `PORT`, `DB_PATH`, and
+`HOME_CREDIT_DATA_DIR` (Kaggle CSVs; empty or unset means `data/kaggle/`). Use a separate
+`DB_PATH` and `PORT` for test instances so the live dashboard stays clean. Never expose the server
+on a tunnel without a `WEBHOOK_KEY`.
+
+The Kaggle CSVs are not on this machine at the moment. Running the agent doesn't need them (the
+trained models are in `models/`); only retraining or the model comparison does.
 
 ## Layout
 - `src/features.py`: feature engineering and `VOICE_FEATURES` / `VOICE_MONOTONE_UP` / `EXCLUDED`.
 - `src/train.py`: trains and writes `models/voice_model.txt`, `voice_model_meta.json`, `full_model.txt`, `metrics.json` and `submission.csv`.
 - `src/scoring.py`: `score()` (risk, band, what-if reasons) and `affordable_loan()` (FOIR rule).
 - `src/normalize.py`: spoken values to inputs ("dhai lakh", "6 mahine", "kirana ki dukaan").
-- `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/dashboard`, `/health`. Stores data in SQLite under `data/`.
+- `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/stt` and `/v1/tts`
+  (pass-throughs to Gnani's speech APIs), `/dashboard`, `/health`. Stores data in SQLite under `data/`.
+- Evon (Gnani's LLM) has no public API; Agent Builder offers Gnani's Pampa Go / Pampa Priority.
+  Don't build on an Evon endpoint unless the user confirms they have access.
 - `dashboard/`: the React 18 + Vite 5 live dashboard. The server mounts `dashboard/dist` at
   `/dashboard`, so rebuild with `npm run build` after UI changes; `dist/` and `node_modules/`
   are gitignored. Node is at `C:\Program Files\nodejs` and may not be on PATH in older shells.
@@ -66,5 +79,6 @@ percentages and of any mention of a model.
 
 ## Git
 - Remote: github.com/KanishkaSingh19/Loan-Saathi (branch `main`).
+- Test locally, then commit locally. Never push unless the user asks in that turn.
 - Never commit the Kaggle CSVs, `.env` or `data/`. All are gitignored. The models (~8 MB) and
   `submission.csv` are committed.
