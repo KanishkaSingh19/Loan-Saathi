@@ -15,9 +15,9 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from features import DATA_DIR, VOICE_CATEGORICAL, VOICE_FEATURES, VOICE_MONOTONE_UP, build_dataset  # noqa: E402
+from features import ROOT, VOICE_CATEGORICAL, VOICE_FEATURES, VOICE_MONOTONE_UP, build_dataset  # noqa: E402
 
-MODEL_DIR = DATA_DIR / "models"
+MODEL_DIR = ROOT / "models"
 SEED = 42
 PARAMS = {
     "objective": "binary",
@@ -138,7 +138,7 @@ def main(voice_only=False):
     final = lgb.train(PARAMS, lgb.Dataset(Xf, y, categorical_feature=cat_cols), num_boost_round=n_rounds)
     final.save_model(str(MODEL_DIR / "full_model.txt"))
     sub = pd.DataFrame({"SK_ID_CURR": test["SK_ID_CURR"].astype(int), "TARGET": final.predict(test[full_features])})
-    sub.to_csv(DATA_DIR / "submission.csv", index=False)
+    sub.to_csv(ROOT / "submission.csv", index=False)
 
     metrics_path.write_text(json.dumps(metrics, indent=2))
     log("Done.")

@@ -10,11 +10,15 @@ The big side tables are aggregated in chunks so this runs on a laptop with
 little free RAM.
 """
 from pathlib import Path
+import os
 
 import numpy as np
 import pandas as pd
+from dotenv import load_dotenv
 
-DATA_DIR = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
+DATA_DIR = Path(os.environ.get("HOME_CREDIT_DATA_DIR") or ROOT / "data" / "kaggle").expanduser()
 CHUNK = 1_000_000
 EMPLOYED_SENTINEL = 365243  # dataset's code for "not employed" (mostly pensioners)
 

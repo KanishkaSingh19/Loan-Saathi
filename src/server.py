@@ -20,9 +20,11 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+import httpx
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import normalize as norm  # noqa: E402
@@ -42,9 +44,19 @@ def _load_env():
 
 _load_env()
 WEBHOOK_KEY = os.environ.get("WEBHOOK_KEY", "")
+GNANI_STT_API_KEY = os.environ.get("GNANI_STT_API_KEY") or os.environ.get("GNANI_API_KEY", "")
+GNANI_TTS_API_KEY = os.environ.get("GNANI_TTS_API_KEY") or os.environ.get("GNANI_API_KEY", "")
 DB_PATH = Path(os.environ.get("DB_PATH") or ROOT / "data" / "prescreens.db")
 
 app = FastAPI(title="Loan pre-screening webhook")
+
+
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=5000)
+    language: str = "hi-en"
+    voice: str = "Nalini"
+    model: str = "timbre-v2.5"
+    speed: float = Field(default=1.0, ge=0.85, le=1.15)
 
 
 # ---------- storage ----------
@@ -62,6 +74,14 @@ def _db():
 def _check_key(key):
     if WEBHOOK_KEY and key != WEBHOOK_KEY:
         raise HTTPException(status_code=401, detail="bad webhook key")
+
+
+def _check_speech_access(key, api_key):
+    if not WEBHOOK_KEY:
+        raise HTTPException(status_code=503, detail="WEBHOOK_KEY must be configured for speech APIs")
+    _check_key(key)
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gnani API key is not configured")
 
 
 # ---------- formatting ----------
@@ -271,6 +291,78 @@ def applications(limit: int = 50, x_webhook_key: str = Header(default="")):
                         "result": json.loads(res)} for i, t, r, a, res in rows],
         "calls": [{"id": i, "ts": t, "payload": json.loads(p)} for i, t, p in calls],
     }
+
+
+@app.post("/v1/stt")
+async def speech_to_text(
+    audio_file: UploadFile = File(...),
+    language_code: str = Form(default="hi-IN"),
+    output_format: str = Form(default="transcribe", alias="format"),
+    x_webhook_key: str = Header(default=""),
+):
+    _check_speech_access(x_webhook_key, GNANI_STT_API_KEY)
+    audio = await audio_file.read()
+    if not audio:
+        raise HTTPException(status_code=400, detail="audio_file must not be empty")
+    try:
+        async with httpx.AsyncClient(timeout=65.0) as client:
+            upstream = await client.post(
+                "https://api.vachana.ai/stt/v3",
+                headers={"X-API-Key-ID": GNANI_STT_API_KEY},
+                data={"language_code": language_code, "format": output_format},
+                files={"audio_file": (
+                    audio_file.filename or "speech.wav",
+                    audio,
+                    audio_file.content_type or "application/octet-stream",
+                )},
+            )
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Gnani STT request failed") from exc
+    if not upstream.is_success:
+        raise HTTPException(status_code=502, detail=f"Gnani STT returned HTTP {upstream.status_code}")
+    try:
+        result = upstream.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Gnani STT returned invalid JSON") from exc
+    if (not isinstance(result, dict) or result.get("success") is not True
+            or not isinstance(result.get("transcript"), str)):
+        raise HTTPException(status_code=502, detail="Gnani STT response did not contain a transcript")
+    return result
+
+
+@app.post("/v1/tts")
+async def text_to_speech(body: SpeechRequest, x_webhook_key: str = Header(default="")):
+    _check_speech_access(x_webhook_key, GNANI_TTS_API_KEY)
+    try:
+        async with httpx.AsyncClient(timeout=65.0) as client:
+            upstream = await client.post(
+                "https://api.vachana.ai/api/v1/tts/inference",
+                headers={"X-API-Key-ID": GNANI_TTS_API_KEY},
+                json={
+                    "text": body.text,
+                    "voice": body.voice,
+                    "model": body.model,
+                    "language": body.language,
+                    "speed": body.speed,
+                    "audio_config": {
+                        "sample_rate": 48000,
+                        "num_channels": 1,
+                        "sample_width": 2,
+                        "encoding": "linear_pcm",
+                        "container": "wav",
+                    },
+                },
+            )
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Gnani TTS request failed") from exc
+    if not upstream.is_success:
+        raise HTTPException(status_code=502, detail=f"Gnani TTS returned HTTP {upstream.status_code}")
+    if not upstream.content:
+        raise HTTPException(status_code=502, detail="Gnani TTS returned empty audio")
+    return Response(
+        content=upstream.content,
+        media_type=upstream.headers.get("content-type", "audio/wav"),
+    )
 
 
 # The built React app holds no data: it asks for the webhook key, then polls /v1/applications.

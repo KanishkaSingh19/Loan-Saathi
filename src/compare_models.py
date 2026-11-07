@@ -22,10 +22,10 @@ from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from features import DATA_DIR, VOICE_CATEGORICAL, VOICE_FEATURES, VOICE_MONOTONE_UP, build_dataset  # noqa: E402
+from features import ROOT, VOICE_CATEGORICAL, VOICE_FEATURES, VOICE_MONOTONE_UP, build_dataset  # noqa: E402
 from train import BANDS  # noqa: E402
 
-MODEL_DIR = DATA_DIR / "models"
+MODEL_DIR = ROOT / "models"
 SEED, LR, PATIENCE, THREADS = 42, 0.05, 200, 6
 T0 = time.time()
 

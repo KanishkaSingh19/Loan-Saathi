@@ -33,7 +33,7 @@ themes follow your system, and the layout works on phones.
 
 ```bash
 cd dashboard
-npm install
+npm ci
 npm run build   # the webhook serves dashboard/dist at /dashboard
 npm run dev     # optional: hot-reload UI on :5173, proxying /v1 to the webhook on :8000
 ```
@@ -103,28 +103,81 @@ What we learned:
 
 ## Project layout
 ```
+requirements.txt         Python API + LightGBM training dependencies
 src/features.py        feature engineering (memory-friendly chunked aggregation)
 src/train.py           trains voice + full models  (python -I src/train.py [--voice-only])
 src/compare_models.py  LightGBM vs XGBoost vs CatBoost on identical splits
 src/scoring.py         score one applicant: risk, band, reasons, affordable loan
 src/normalize.py       spoken values -> model inputs ("dhai lakh" -> 250000)
-src/server.py          FastAPI webhook for Gnani Agent Builder (+ serves the dashboard)
+src/server.py          FastAPI webhook, Gnani STT/TTS proxy, and dashboard server
 dashboard/             React + Vite live dashboard (src/App.jsx, src/components/, src/styles.css)
 src/test_webhook.py    end-to-end tests with Hinglish inputs
 agent/                 system prompt, action body and step-by-step Agent Builder setup
 models/                trained models, metadata, metrics.json, comparison.json/.md
-submission.csv         Kaggle submission from the full model
+data/kaggle/           default location for the Kaggle Home Credit CSVs (not in git)
 ```
 
 ## Run it
-```bash
-pip install lightgbm pandas scikit-learn fastapi uvicorn
-pip install xgboost catboost   # only for src/compare_models.py
-python -I -X utf8 src/train.py          # ~4 minutes; needs the Kaggle CSVs in this folder
-python -I -X utf8 src/test_webhook.py   # sanity check
-python -I -X utf8 src/server.py         # webhook on http://127.0.0.1:8000
+
+Python 3.10+ and Node.js 20.19+ are required. The trained LightGBM models are included, so the API
+can run before retraining. The Home Credit CSVs already found on this machine are in
+`C:\Users\ks608\Desktop\Loan-Saathi\data\kaggle`; `.env.example` points to that folder without
+copying the multi-gigabyte dataset into this project.
+
+In PowerShell:
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+Copy-Item .env.example .env
+pip install -r requirements.txt
+python -I -X utf8 src/test_webhook.py
+python -I -X utf8 src/server.py
 ```
-Copy `.env.example` to `.env` and set `WEBHOOK_KEY`.
+
+Edit `.env` and add your Gnani STT and TTS API keys. You can use separate
+`GNANI_STT_API_KEY` / `GNANI_TTS_API_KEY` values or set one shared `GNANI_API_KEY`.
+Set `WEBHOOK_KEY` to a long random value; speech routes require it in the
+`X-Webhook-Key` request header. Keep `.env` private and never commit it. The local API is at
+`http://127.0.0.1:8000`, with interactive documentation at `http://127.0.0.1:8000/docs`.
+
+### Gnani speech endpoints
+
+The server proxies audio requests so Gnani credentials stay on the backend:
+
+| Route | Input | Output |
+|---|---|---|
+| `POST /v1/stt` | Multipart `audio_file`, `language_code` (default `hi-IN`), `format` (default `transcribe`) | Gnani transcript JSON |
+| `POST /v1/tts` | JSON `text`, `language`, `voice`, `model`, optional `speed` | WAV audio |
+
+Example STT request:
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/v1/stt `
+  -H "X-Webhook-Key: <your WEBHOOK_KEY>" `
+  -F "audio_file=@sample.wav" -F "language_code=hi-IN" -F "format=transcribe"
+```
+
+Example TTS request:
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/v1/tts `
+  -H "X-Webhook-Key: <your WEBHOOK_KEY>" `
+  -H "Content-Type: application/json" `
+  -d '{"text":"Namaste, aap kaise hain?","language":"hi-IN","voice":"Nalini","model":"timbre-v2.5"}' `
+  --output speech.wav
+```
+
+### Train or retrain the model
+
+`HOME_CREDIT_DATA_DIR` in `.env` selects the folder containing the Kaggle CSV files. The supplied
+configuration uses the dataset already found on the Desktop; change it if you move the files.
+
+```powershell
+python -I -X utf8 src/train.py
+python -I -X utf8 src/train.py --voice-only
+```
+
+The full run generates both the voice model used by the live scoring path and the full benchmark
+model. For the optional LightGBM/XGBoost/CatBoost comparison, install `requirements-compare.txt`
+and run `python -I -X utf8 src/compare_models.py`.
 
 ### Public URL for Agent Builder
 Gnani's servers must reach the webhook, so expose port 8000 with a tunnel, e.g. Cloudflare's free
