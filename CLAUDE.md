@@ -35,6 +35,13 @@ Env (from `.env`, see `.env.example`): `WEBHOOK_KEY` (required, protects every `
 `DB_PATH` and `PORT` for test instances so the live dashboard stays clean. Never expose the server
 on a tunnel without a `WEBHOOK_KEY`.
 
+Free deployment (`deploy/DEPLOY.md`): the API runs as a Hugging Face Docker Space (`Dockerfile`,
+port 7860), stores data in Neon Postgres via `DATABASE_URL` (the Space's disk is wiped on restart),
+and allows the dashboard's origin through `ALLOWED_ORIGINS`. The dashboard deploys to Vercel from
+`dashboard/` with `VITE_API_BASE` set to the Space URL; `vite.config.js` uses base `/` when
+`VERCEL` is set. SQL in `server.py` goes through `_run()` with `?` placeholders, which are
+adapted for Postgres, so keep queries portable between SQLite and Postgres.
+
 The Kaggle CSVs are not on this machine at the moment. Running the agent doesn't need them (the
 trained models are in `models/`); only retraining or the model comparison does.
 

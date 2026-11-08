@@ -22,6 +22,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -47,8 +48,18 @@ WEBHOOK_KEY = os.environ.get("WEBHOOK_KEY", "")
 GNANI_STT_API_KEY = os.environ.get("GNANI_STT_API_KEY") or os.environ.get("GNANI_API_KEY", "")
 GNANI_TTS_API_KEY = os.environ.get("GNANI_TTS_API_KEY") or os.environ.get("GNANI_API_KEY", "")
 DB_PATH = Path(os.environ.get("DB_PATH") or ROOT / "data" / "prescreens.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+# Comma-separated origins allowed to call the API from a browser, e.g. the Vercel dashboard.
+ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
 app = FastAPI(title="Loan pre-screening webhook")
+if ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-Webhook-Key"],
+    )
 
 
 class SpeechRequest(BaseModel):
@@ -61,14 +72,42 @@ class SpeechRequest(BaseModel):
 
 # ---------- storage ----------
 
+# SQLite file locally; Postgres (e.g. a free Neon database) when DATABASE_URL is set, because
+# free container hosts wipe their disk on restart.
+_SCHEMA = [
+    "CREATE TABLE IF NOT EXISTS prescreens (id TEXT PRIMARY KEY, ts {real}, raw TEXT, applicant TEXT, result TEXT)",
+    "CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
+]
+_schema_ready = False
+
+
 def _db():
-    DB_PATH.parent.mkdir(exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
-    con.execute("""CREATE TABLE IF NOT EXISTS prescreens (
-        id TEXT PRIMARY KEY, ts REAL, raw TEXT, applicant TEXT, result TEXT)""")
-    con.execute("""CREATE TABLE IF NOT EXISTS calls (
-        id TEXT PRIMARY KEY, ts REAL, payload TEXT)""")
-    return con
+    """Returns (connection, placeholder style). Callers go through _run, which commits and closes."""
+    global _schema_ready
+    if DATABASE_URL:
+        import psycopg
+        con, ph, real = psycopg.connect(DATABASE_URL, connect_timeout=5), "%s", "DOUBLE PRECISION"
+    else:
+        DB_PATH.parent.mkdir(exist_ok=True)
+        con, ph, real = sqlite3.connect(DB_PATH), "?", "REAL"
+    if not _schema_ready or not DATABASE_URL:
+        for stmt in _SCHEMA:
+            con.execute(stmt.format(real=real))
+        con.commit()
+        _schema_ready = True
+    return con, ph
+
+
+def _run(sql, params=(), fetch=False):
+    """Runs one statement; write `?` for placeholders and it's adapted per database."""
+    con, ph = _db()
+    try:
+        cur = con.execute(sql.replace("?", ph), params)
+        rows = cur.fetchall() if fetch else None
+        con.commit()
+        return rows
+    finally:
+        con.close()
 
 
 def _check_key(key):
@@ -256,10 +295,9 @@ async def prescreen(request: Request, x_webhook_key: str = Header(default="")):
     result, details = decide(applicant)
     pid = uuid.uuid4().hex[:12]
     result["prescreen_id"] = pid
-    with _db() as con:
-        con.execute("INSERT INTO prescreens VALUES (?,?,?,?,?)", (
-            pid, time.time(), json.dumps(body, ensure_ascii=False), json.dumps(applicant, ensure_ascii=False),
-            json.dumps({**result, "details": details}, ensure_ascii=False)))
+    _run("INSERT INTO prescreens VALUES (?,?,?,?,?)", (
+        pid, time.time(), json.dumps(body, ensure_ascii=False), json.dumps(applicant, ensure_ascii=False),
+        json.dumps({**result, "details": details}, ensure_ascii=False)))
     print(f"[prescreen {pid}] {result['decision']} band={result['risk_band']} in={body}", flush=True)
     return result
 
@@ -273,8 +311,7 @@ async def post_call(request: Request, x_webhook_key: str = Header(default="")):
     except Exception:
         payload = {"raw": raw.decode("utf-8", "replace")}
     cid = uuid.uuid4().hex[:12]
-    with _db() as con:
-        con.execute("INSERT INTO calls VALUES (?,?,?)", (cid, time.time(), json.dumps(payload, ensure_ascii=False)))
+    _run("INSERT INTO calls VALUES (?,?,?)", (cid, time.time(), json.dumps(payload, ensure_ascii=False)))
     print(f"[post-call {cid}] keys={list(payload)[:15]}", flush=True)
     return {"ok": True}
 
@@ -282,10 +319,10 @@ async def post_call(request: Request, x_webhook_key: str = Header(default="")):
 @app.get("/v1/applications")
 def applications(limit: int = 50, x_webhook_key: str = Header(default="")):
     _check_key(x_webhook_key)
-    with _db() as con:
-        rows = con.execute("SELECT id, ts, raw, applicant, result FROM prescreens ORDER BY ts DESC LIMIT ?",
-                           (limit,)).fetchall()
-        calls = con.execute("SELECT id, ts, payload FROM calls ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+    limit = max(1, min(limit, 500))
+    rows = _run("SELECT id, ts, raw, applicant, result FROM prescreens ORDER BY ts DESC LIMIT ?",
+                (limit,), fetch=True)
+    calls = _run("SELECT id, ts, payload FROM calls ORDER BY ts DESC LIMIT ?", (limit,), fetch=True)
     return {
         "prescreens": [{"id": i, "ts": t, "said": json.loads(r), "applicant": json.loads(a),
                         "result": json.loads(res)} for i, t, r, a, res in rows],
@@ -378,4 +415,5 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", 8000)))
+    # HOST=0.0.0.0 inside a container; the default keeps a local run off the network.
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 8000)))
