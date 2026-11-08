@@ -141,6 +141,16 @@ assert converse._amounts_ok("Aapko ₹50,000 mil sakta hai, 12 mahine, EMI ₹4,
                              "tenure_months": 12})
 assert not converse._amounts_ok("₹60,000", {"reply_hint": "₹50,000", "tenure_months": 12})
 
+# Spelled-out amounts can't be checked, so they're refused; the offer itself must be stated.
+hint = {"reply_hint": "request for ₹50,000 over 24 months (EMI about ₹2,496)", "offer_amount": 50000,
+        "tenure_months": 24}
+assert not converse._amounts_ok("Your request for fifty thousand rupees looks possible.", hint)
+assert not converse._amounts_ok("Aapka loan mumkin lagta hai.", hint)          # offer missing
+assert converse._amounts_ok("Aapka ₹50,000 ka loan, parivaar ke saath, 24 mahine, EMI ₹2,496.", hint)
+assert converse._language("मैं 28 साल का हूँ", "en", "hi") == "hi"            # Devanagari stays Hindi
+assert converse._language("I am 28", "en", "hi") == "en"
+assert converse.valid("housing", "pg mein") and not converse.valid("housing", "upgrade")
+
 # English start
 t = start("en")
 assert t["reply"].startswith("Hello") and t["language"] == "en"

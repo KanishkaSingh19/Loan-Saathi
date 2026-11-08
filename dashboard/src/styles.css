@@ -81,7 +81,7 @@ button { font: inherit; color: inherit; }
   background: var(--panel); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; }
 .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .status.live .dot { background: var(--good); animation: pulse 2s infinite; }
-.status.offline .dot { background: var(--bad); }
+.status.offline .dot, .status.error .dot { background: var(--bad); }
 @keyframes pulse { 50% { opacity: 0.3; } }
 
 /* ---------- tiles ---------- */

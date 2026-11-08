@@ -19,6 +19,13 @@ function show(field, value) {
   return String(value);
 }
 
+// Mirrors converse._skip(): questions that don't apply given earlier answers.
+function notNeeded(field, answers) {
+  if (field === "other_loans_emi") return answers.other_loans_count === 0;
+  if (field === "years_in_work") return /retir|student|unemploy|pension/i.test(answers.work || "");
+  return false;
+}
+
 const BUSY_TEXT = {
   starting: "Connecting…",
   listening: "Listening… tap again when you finish",
@@ -234,6 +241,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
                       show(f, answers[f])
                     ) : call?.skipped?.includes(f) ? (
                       <span className="muted">skipped</span>
+                    ) : notNeeded(f, answers) ? (
+                      <span className="muted">not needed</span>
                     ) : asking === f ? (
                       <span className="accent">asking…</span>
                     ) : (

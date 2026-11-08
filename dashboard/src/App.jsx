@@ -100,6 +100,7 @@ export default function App() {
     connecting: "Connecting…",
     live: `Live · updated ${updatedAt?.toLocaleTimeString() ?? ""}`,
     offline: "Server unreachable, retrying…",
+    error: "Server can't load data (check the database), retrying…",
   }[status];
 
   return (

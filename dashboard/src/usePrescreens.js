@@ -20,7 +20,9 @@ export function usePrescreens(key) {
       setStatus("live");
       setUpdatedAt(new Date());
     } catch (err) {
-      setStatus(err instanceof Unauthorized ? "locked" : "offline");
+      // A 5xx means the server answered but couldn't load data (e.g. the database URL is wrong);
+      // a network failure means the server itself is down.
+      setStatus(err instanceof Unauthorized ? "locked" : /^HTTP 5/.test(err.message) ? "error" : "offline");
     }
   }, []);
 

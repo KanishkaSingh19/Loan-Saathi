@@ -50,7 +50,7 @@ BY_KEY = {f["key"]: f for f in FIELDS}
 MAX_TRIES = 3
 HOUSING_WORDS = re.compile(
     r"own|apna|apne|khud|rent|kiray|family|parivaar|parivar|parents|maa|papa|ghar|house|home|flat|"
-    r"quarter|government|sarkari|hostel|pg|घर|किराय|परिवार|अपन", re.I)
+    r"quarter|government|sarkari|hostel|\bpg\b|घर|किराय|परिवार|अपन", re.I)
 
 GREETING = {
     "hi": "Namaste! Main Loan Saathi hoon. Main kuch aasaan sawaal poochkar bataunga ki aapko kitna loan "
@@ -132,11 +132,18 @@ def quoted(quote, said):
 
 
 RESULT_PROMPT = """You are Loan Saathi, speaking to a caller on a voice call about a loan pre-screening.
-Turn the guidance below into what you say to the caller: 2 to 4 short spoken sentences, warm and
-clear, in the caller's language ({lang}: "hi" means Hinglish in Latin script, "en" means English).
-Keep every amount, EMI and tenure EXACTLY as written in the guidance (you may write "rupaye" or
-"rupees" instead of the rupee sign). Do not add amounts, rates, promises or reasons that are not
-in the guidance. Never mention scores, percentages, models or AI. No emojis, no lists."""
+Turn the guidance below into what you say to the caller: 2 to 4 short spoken sentences, warm and clear.
+LANGUAGE: {language_rule}
+NUMBERS: write every amount, EMI and tenure in DIGITS exactly as in the guidance (for example
+"₹50,000" or "50,000 rupaye", "24 mahine"). Never write numbers as words ("fifty thousand",
+"pachas hazaar"). Do not add amounts, rates, promises or reasons that are not in the guidance.
+Never mention scores, percentages, models or AI. No emojis, no lists."""
+
+LANGUAGE_RULES = {
+    "hi": "Hinglish: Hindi written in Latin script (\"Aapka loan ... mumkin lagta hai\"), even though the "
+          "guidance is in English. Do not answer in English.",
+    "en": "Simple Indian English.",
+}
 
 RESULT_SCHEMA = {"type": "object", "properties": {"reply": {"type": "string"}}, "required": ["reply"]}
 
@@ -295,8 +302,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
                 else:
                     print(f"[converse {s['id']}] dropped unquoted answer {a.get('field')}={a.get('value')!r}", flush=True)
             g_reply, g_asking = str(out.get("reply") or "").strip(), str(out.get("asking") or "")
-            if out.get("language") in ("hi", "en"):
-                s["lang"] = out["language"]
+            s["lang"] = _language(text, out.get("language"), s["lang"])
             used = "gemini"
         except Exception as e:  # noqa: BLE001
             print(f"[converse {s['id']}] Gemini failed, using fallback: {type(e).__name__}: {e}", flush=True)
@@ -360,7 +366,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
     reply = ""
     if api_key:
         try:
-            out = await _gemini(api_key, model, RESULT_PROMPT.format(lang=s["lang"]),
+            out = await _gemini(api_key, model, RESULT_PROMPT.format(language_rule=LANGUAGE_RULES[s["lang"]]),
                                 f"Guidance:\n{result['reply_hint']}", RESULT_SCHEMA)
             reply = str(out.get("reply") or "").strip()
             if reply and not _amounts_ok(reply, result):
@@ -379,10 +385,32 @@ def _digits(text):
     return {int(m.replace(",", "")) for m in re.findall(r"\d[\d,]*", text) if m.replace(",", "").isdigit()}
 
 
+# Words that spell out an amount. Small numbers ("ek", "do", "two working days") are everyday
+# words and are allowed; amounts always need a scale word or a tens word.
+NUMBER_WORDS = re.compile(
+    r"\b(hundreds?|thousands?|lakhs?|lacs?|crores?|hazaar|hazar|hajar|sau|"
+    r"twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|bees|pachees|tees|chalis|chaalis|pachas|pachaas|"
+    r"sattar|assi|nabbe)\b",  # not "saath" (60): it also means "with"; "saath hazaar" is caught by hazaar
+    re.I)
+
+
 def _amounts_ok(reply, result):
-    """Every number Gemini says must appear in the guidance it was given."""
+    """Every number Gemini says must appear in the guidance, written in digits, and the offer
+    amount itself must be in the reply. Number words are refused because they can't be checked."""
+    if NUMBER_WORDS.search(reply):
+        return False
     allowed = _digits(result["reply_hint"]) | {result.get("tenure_months", 0)}
-    return _digits(reply) <= allowed
+    said = _digits(reply)
+    if result.get("offer_amount") and int(result["offer_amount"]) not in said:
+        return False
+    return said <= allowed
+
+
+def _language(text, gemini_says, current):
+    """Devanagari speech is always Hindi; otherwise trust Gemini, else keep the current language."""
+    if re.search(r"[ऀ-ॿ]", text or ""):
+        return "hi"
+    return gemini_says if gemini_says in ("hi", "en") else current
 
 
 def _fallback_result(r, lang):
