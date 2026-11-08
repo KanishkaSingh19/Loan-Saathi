@@ -86,6 +86,11 @@ trained models are in `models/`); only retraining or the model comparison does.
   are confounded (safer people got bigger loans), so they stay in `all_factors` for the dashboard
   only. Age is never spoken as a reason.
 - **Loan amounts come from the FOIR rule** (all EMIs ≤ 50% of income), not the model.
+- **Debt rule (`server.DEBT_LIMIT_MONTHS = 24`):** owing more than 24 months of income on other loans
+  means `not_eligible_now` (`policy_rule: debt_over_limit`), whatever the model says. The model is
+  not monotone in `BUREAU_ACTIVE_DEBT` and scores huge debts as *safer* (₹36L owed on ₹40k/month:
+  6.1% vs 8.2% with no debt), a confounding artifact. A proper fix is a monotone constraint on
+  that feature, which needs the Kaggle CSVs to retrain.
 - **Currency:** dataset amounts are *monthly* and not in rupees. `TYPICAL_MONTHLY_INCOME_RS = 25_000`
   sets the scale so the dataset's median income maps to ₹25k/month.
 - Risk bands are <5% low, <12% medium and otherwise high (`train.BANDS`, stored in the model metadata).

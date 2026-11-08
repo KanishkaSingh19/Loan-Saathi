@@ -84,6 +84,13 @@ Decisions made along the way:
 - **Currency:** the dataset isn't in rupees. Amounts are scaled so its median monthly income equals
   ₹25,000. Ratios are unaffected.
 
+### A hard rule where the model is wrong
+Live testing found a caller owing ₹36.5 lakh on a ₹40,000 income scored as *lower* risk (6.1%) than the
+same caller with no debt (8.2%). In the Home Credit data, large bureau debts went with wealthier
+borrowers, so the model learned "more debt, safer". Saathi therefore applies a plain rule on top:
+**owing more than 24 months of income on other loans means "not right now"**, with that reason and
+"pay down existing loans first" spoken to the caller.
+
 ## Why LightGBM? Comparing LightGBM, XGBoost and CatBoost
 All three were trained on the same 80/20 split and features, with matched settings (learning rate
 0.05, early stopping after 200 rounds, similar tree size, L2 = 5, the same monotone constraints on the

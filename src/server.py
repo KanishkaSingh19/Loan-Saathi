@@ -185,6 +185,8 @@ _TIPS = {
 
 # ---------- core ----------
 
+DEBT_LIMIT_MONTHS = 24  # see decide(): more owed than this many months of income -> not eligible now
+
 def build_applicant(body):
     income_type, occupation = norm.work(body.get("work"))
     house_cat, owns = norm.housing(body.get("housing"))
@@ -244,7 +246,19 @@ def decide(applicant):
     tenure = int(afford["tenure_months"]) if afford else 24
     can_afford = afford and afford["loan_amount"] > 0
 
-    if band == "high" or not can_afford:
+    # Hard rule on top of the model: owing more than 24 months of income on other loans means no
+    # new loan now. The model can't be trusted here: in the training data large bureau debts went
+    # with wealthier borrowers, so its risk *falls* as debt grows (₹36L owed on ₹40k/month scored
+    # 6.1%, below the 8.2% with no debt at all).
+    owed = applicant.get("active_loans_outstanding") or 0
+    policy = ""
+    if owed > DEBT_LIMIT_MONTHS * applicant["monthly_income"]:
+        policy = "debt_over_limit"
+        heavy = "existing loans add up to more than 2 years of income"
+        ups = [heavy] + [u for u in ups if "existing loans" not in u]
+        tips = ["paying down existing loans first"] + [t for t in tips if "existing loans" not in t]
+
+    if band == "high" or not can_afford or policy:
         decision = "not_eligible_now"
         offer_amount, offer_emi = 0, 0
         hint = ("Gently explain that based on what they shared, we cannot offer this loan right now. "
@@ -286,6 +300,7 @@ def decide(applicant):
         "reasons_for": "; ".join(downs),
         "tips": "; ".join(tips[:2]),
         "missing_fields": "",
+        "policy_rule": policy,
         "reply_hint": hint,
     }
     return result, r
