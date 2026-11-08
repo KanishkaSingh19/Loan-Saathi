@@ -10,12 +10,17 @@ _UNITS = [
     (r"(crore|cr)\b", 10_000_000),
     (r"(lakh|lac|lakhs|lacs|l)\b", 100_000),
     (r"(hazaar|hazar|hajar|thousand|k)\b", 1_000),
+    (r"(sau|hundred)\b", 100),
 ]
 _WORDS = {
     "ek": 1, "one": 1, "do": 2, "two": 2, "teen": 3, "three": 3, "char": 4, "chaar": 4, "four": 4,
     "paanch": 5, "panch": 5, "five": 5, "chhe": 6, "six": 6, "saat": 7, "seven": 7, "aath": 8,
     "eight": 8, "nau": 9, "nine": 9, "das": 10, "ten": 10, "dedh": 1.5, "dhai": 2.5, "adhai": 2.5,
-    "bees": 20, "twenty": 20, "pachaas": 50, "pachas": 50, "fifty": 50,
+    "gyarah": 11, "barah": 12, "baarah": 12, "pandrah": 15, "pandra": 15, "bees": 20, "twenty": 20,
+    "pachees": 25, "pachchis": 25, "pachis": 25, "tees": 30, "tis": 30, "thirty": 30,
+    "paintees": 35, "pentis": 35, "chalis": 40, "chaalis": 40, "chalees": 40, "forty": 40,
+    "paintalis": 45, "pachaas": 50, "pachas": 50, "fifty": 50, "saath": 60, "sixty": 60,
+    "sattar": 70, "seventy": 70, "assi": 80, "eighty": 80, "nabbe": 90, "ninety": 90,
 }
 
 

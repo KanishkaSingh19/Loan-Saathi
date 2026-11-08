@@ -2,6 +2,7 @@
 
     POST /v1/prescreen   On-Call action: caller's answers in, decision + reply hint out
     POST /v1/post-call   Post-call trigger: stores whatever Gnani sends about the call
+    POST /v1/converse    Browser web call: one transcribed turn in, reply out (Gemini + our model)
     GET  /v1/applications   Recent pre-screens (for the dashboard)
     GET  /dashboard/     Live React dashboard (built from dashboard/; asks for the webhook key)
     GET  /health
@@ -28,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import converse  # noqa: E402
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
 
@@ -49,6 +51,10 @@ GNANI_STT_API_KEY = os.environ.get("GNANI_STT_API_KEY") or os.environ.get("GNANI
 GNANI_TTS_API_KEY = os.environ.get("GNANI_TTS_API_KEY") or os.environ.get("GNANI_API_KEY", "")
 DB_PATH = Path(os.environ.get("DB_PATH") or ROOT / "data" / "prescreens.db")
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+# Gemini powers the browser web call (/v1/converse). Without a key the call still works, with
+# scripted questions and our own parser.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
 # Comma-separated origins allowed to call the API from a browser, e.g. the Vercel dashboard.
 ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
@@ -60,6 +66,12 @@ if ALLOWED_ORIGINS:
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "X-Webhook-Key"],
     )
+
+
+class ConverseRequest(BaseModel):
+    session_id: str = Field(default="", max_length=40)
+    text: str = Field(default="", max_length=2000)
+    language: str = "hi"
 
 
 class SpeechRequest(BaseModel):
@@ -337,6 +349,28 @@ def applications(limit: int = 50, x_webhook_key: str = Header(default="")):
                         "result": json.loads(res)} for i, t, r, a, res in rows],
         "calls": [{"id": i, "ts": t, "payload": json.loads(p)} for i, t, p in calls],
     }
+
+
+@app.post("/v1/converse")
+async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
+    """Browser web call: one caller utterance in (already transcribed), Saathi's reply out.
+    An empty session_id starts a new call and returns the greeting."""
+    _check_key(x_webhook_key)
+    if not body.session_id:
+        s, reply = converse.start(body.language)
+        return {**converse.public(s), "reply": reply}
+    s = converse.SESSIONS.get(body.session_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="call not found or expired; start a new one")
+
+    def save(pid, said, applicant, result, details):
+        tasks.add_task(_save, "INSERT INTO prescreens VALUES (?,?,?,?,?)", (
+            pid, time.time(), json.dumps(said, ensure_ascii=False), json.dumps(applicant, ensure_ascii=False),
+            json.dumps({**result, "details": details}, ensure_ascii=False)))
+        print(f"[web-call {s['id']} -> prescreen {pid}] {result['decision']} band={result['risk_band']}", flush=True)
+
+    reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL)
+    return {**converse.public(s), "reply": reply}
 
 
 @app.post("/v1/stt")

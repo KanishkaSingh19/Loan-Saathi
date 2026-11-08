@@ -34,7 +34,8 @@ Limits to know about:
 3. Under **Settings → Variables and secrets**, add as **secrets**:
    - `WEBHOOK_KEY`: a long random value (it can be the one in your local `.env`)
    - `DATABASE_URL`: the Neon connection string
-   - `GNANI_STT_API_KEY`, `GNANI_TTS_API_KEY` (or `GNANI_API_KEY`): only needed for `/v1/stt` and `/v1/tts`
+   - `GNANI_STT_API_KEY`, `GNANI_TTS_API_KEY` (or `GNANI_API_KEY`): needed for the web call's voice (`/v1/stt`, `/v1/tts`)
+   - `GEMINI_API_KEY`: for the web call's understanding and replies (free from aistudio.google.com)
    - `ALLOWED_ORIGINS`: the Vercel URL from step 3, e.g. `https://loan-saathi.vercel.app`
      (add it once you know it; comma-separate several)
 4. Wait for the build, then open `https://<username>-loan-saathi-api.hf.space/health`. It should

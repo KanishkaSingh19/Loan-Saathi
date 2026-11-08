@@ -17,6 +17,29 @@ LightGBM credit-risk model trained on the
 4. The agent explains the outcome in the caller's language: pre-approved, a safer counter-offer,
    a loan-officer review, or kindly "not right now", with reasons and tips.
 
+## Web call with Gemini (in the browser)
+The dashboard's **Web call** tab lets anyone try Saathi from a browser, with no phone line:
+
+```
+mic → Gnani Prisma (speech-to-text) → Gemini → our model + affordability rule → Gemini → Gnani Timbre (text-to-speech) → speaker
+```
+
+- **Gemini understands and phrases**: it pulls answers out of free speech ("ek lakh chahiye,
+  kamaata hoon 40 hazaar" fills two answers at once), answers side questions, and words each reply
+  in the caller's style.
+- **Our code decides**: the question order, the risk score, the loan amount and the EMI come from
+  our model and the 50% rule, never from the LLM. Every value Gemini extracts is checked by our
+  parser (an age of 7 is rejected). Gemini's question is used only if it asks what we expect next,
+  and its result reply only if every number in it matches our decision. Otherwise Saathi uses a
+  scripted line.
+- **It never dies on the LLM**: without a Gemini key, or if Gemini is slow or down, the call carries
+  on with scripted Hinglish/English questions and our own Hindi number parser.
+- Typing works too, for testing without speech keys. Every finished call appears in the live feed.
+
+Agent Builder (the phone agent) can't use Gemini (it offers Gnani's Pampa, OpenAI and Claude), so
+the web call is a second front door to the same model, not a replacement. Callers' answers are
+sent to Google when `GEMINI_API_KEY` is set.
+
 ## Live dashboard (React + Vite)
 Open `https://<tunnel>/dashboard` (or `http://127.0.0.1:8000/dashboard`) and paste your
 `WEBHOOK_KEY`. It has a live feed on the left and the selected caller's full breakdown on the

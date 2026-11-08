@@ -7,6 +7,7 @@ import StatTiles from "./components/StatTiles";
 import Feed from "./components/Feed";
 import PrescreenDetail from "./components/PrescreenDetail";
 import CallDetail from "./components/CallDetail";
+import CallScreen from "./components/CallScreen";
 
 const FRESH_MS = 4000;
 
@@ -19,6 +20,7 @@ export default function App() {
   const [followLive, setFollowLive] = useState(true);
   const [freshIds, setFreshIds] = useState(new Set());
   const [sending, setSending] = useState(null);
+  const [view, setView] = useState("feed");
   const knownIds = useRef(null);
 
   // One feed of pre-screens and post-call logs, newest first.
@@ -78,6 +80,14 @@ export default function App() {
     }
   };
 
+  const openPrescreen = async (id) => {
+    await refresh();
+    setFilter("all");
+    setFollowLive(false);
+    setSelectedId(`p-${id}`);
+    setView("feed");
+  };
+
   if (status === "locked") {
     return (
       <div className="page">
@@ -104,12 +114,22 @@ export default function App() {
             <p className="muted">Live voice pre-screens</p>
           </div>
         </div>
+        <nav className="views" role="tablist" aria-label="View">
+          <button role="tab" aria-selected={view === "feed"} className={`chip${view === "feed" ? " active" : ""}`}
+            onClick={() => setView("feed")}>Live feed</button>
+          <button role="tab" aria-selected={view === "call"} className={`chip${view === "call" ? " active" : ""}`}
+            onClick={() => setView("call")}>Web call</button>
+        </nav>
         <div className={`status ${status}`} role="status">
           <span className="dot" />
           {statusText}
         </div>
       </header>
 
+      {view === "call" ? (
+        <CallScreen apiKey={key} onUnauthorized={() => setKey("")} onOpenPrescreen={openPrescreen} />
+      ) : (
+      <>
       <StatTiles prescreens={prescreens} calls={calls} />
 
       <div className="toolbar">
@@ -158,6 +178,8 @@ export default function App() {
           )}
         </section>
       </main>
+      </>
+      )}
     </div>
   );
 }

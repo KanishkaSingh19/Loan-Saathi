@@ -23,6 +23,7 @@ python -I -X utf8 src/train.py               # both models, ~4 min (needs the Ka
 python -I -X utf8 src/train.py --voice-only  # voice model only, ~1 min
 python -I -X utf8 src/test_webhook.py        # end-to-end webhook tests with Hinglish inputs
 python -I -X utf8 src/test_speech_api.py     # speech proxy route tests (mocked, no API calls)
+python -I -X utf8 src/test_converse.py       # web-call conversation tests (Gemini mocked)
 python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
 python -I -X utf8 src/demo_applicants.py     # score three sample applicants
 python -I -X utf8 src/compare_models.py      # LightGBM vs XGBoost vs CatBoost, ~30 min
@@ -51,14 +52,24 @@ trained models are in `models/`); only retraining or the model comparison does.
 - `src/train.py`: trains and writes `models/voice_model.txt`, `voice_model_meta.json`, `full_model.txt`, `metrics.json` and `submission.csv`.
 - `src/scoring.py`: `score()` (risk, band, what-if reasons) and `affordable_loan()` (FOIR rule).
 - `src/normalize.py`: spoken values to inputs ("dhai lakh", "6 mahine", "kirana ki dukaan").
-- `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/stt` and `/v1/tts`
+- `src/converse.py`: the browser web call. Gemini (`GEMINI_API_KEY`, default model
+  `gemini-3.5-flash-lite`, REST `generateContent` with `responseJsonSchema`) extracts answers and
+  phrases replies; our code fixes the question order, validates every value with `normalize.py`, and
+  decides with `server.decide()`. Gemini's question is used only if it asks the field we expect; its
+  result reply only if every number in it appears in `reply_hint`. Any Gemini failure falls back to
+  scripted questions. Sessions live in memory (single instance, 30-minute expiry).
+- `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/converse`, `/v1/stt` and `/v1/tts`
   (pass-throughs to Gnani's speech APIs), `/dashboard`, `/health`. Stores data in SQLite under `data/`.
-- Evon (Gnani's LLM) has no public API; Agent Builder offers Gnani's Pampa Go / Pampa Priority.
+- Evon (Gnani's LLM) has no public API; Agent Builder offers Gnani's Pampa Go / Pampa Priority (not
+  Gemini), which is why the Gemini path is our own browser web call alongside the Agent Builder phone agent.
   Don't build on an Evon endpoint unless the user confirms they have access.
 - `dashboard/`: the React 18 + Vite 5 live dashboard. The server mounts `dashboard/dist` at
   `/dashboard`, so rebuild with `npm run build` after UI changes; `dist/` and `node_modules/`
   are gitignored. Node is at `C:\Program Files\nodejs` and may not be on PATH in older shells.
-  Render caller-supplied text only as React text (no `dangerouslySetInnerHTML`).
+  Render caller-supplied text only as React text (no `dangerouslySetInnerHTML`). The "Web call"
+  view (`CallScreen.jsx`, `recorder.js`) records 16 kHz WAV, then calls /v1/stt → /v1/converse → /v1/tts;
+  typing works without speech keys. Never return a value from a `useEffect` arrow (new Chromium's
+  `scrollIntoView` returns a Promise, which crashed the app).
 - `agent/`: the system prompt, the action body JSON and the step-by-step Agent Builder setup.
 
 ## Deliberate modelling decisions (don't undo without discussing)
