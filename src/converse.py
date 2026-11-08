@@ -46,6 +46,16 @@ FIELDS = [
     {"key": "age", "en": "And lastly, what is your age?", "hi": "Aur aakhri sawaal, aapki umar kitni hai?"},
 ]
 KEYS = [f["key"] for f in FIELDS]
+# Captured when the caller mentions them, but never asked for.
+EXTRA = ("tenure_months", "other_loans_outstanding")
+CLARIFY = {
+    "other_loans_emi": {
+        "hi": "Theek hai, maine loan ki rakam note kar li. Ab bataiye, in sab loans ki mahine ki kist, "
+              "yaani EMI, kul milakar kitni jaati hai?",
+        "en": "Got it, I've noted the loan amounts. Now, how much do you pay in total each month as EMI "
+              "on those loans?",
+    },
+}
 BY_KEY = {f["key"]: f for f in FIELDS}
 MAX_TRIES = 3
 HOUSING_WORDS = re.compile(
@@ -80,6 +90,10 @@ next, and the caller's latest words. Do two things:
      "student", "unemployed", "government job", "own kirana shop").
    years_in_work, age: plain number of years.
    other_loans_count: plain number; "nahi" / "koi loan nahi" -> "0".
+   other_loans_emi is ONLY the monthly installment (kist) they pay on other loans each month.
+   other_loans_outstanding is the size of those loans or what is still owed on them ("13 lakh ka
+     loan hai"); if they name several, add them up. Never put a loan's size into other_loans_emi:
+     if they gave loan sizes but no monthly installment, other_loans_emi is not answered yet.
    housing: one of "own house", "rented", "with family", "government quarters".
    tenure_months: months, only if they say how long they want to repay.
 
@@ -105,7 +119,7 @@ EXTRACT_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "field": {"type": "string", "enum": KEYS + ["tenure_months"]},
+                    "field": {"type": "string", "enum": KEYS + list(EXTRA)},
                     "value": {"type": "string"},
                     "quote": {"type": "string"},
                 },
@@ -177,6 +191,9 @@ def valid(key, value):
         return v if income_type else None
     if key == "housing":
         return v if HOUSING_WORDS.search(v) else None  # norm.housing() defaults on any input
+    if key == "other_loans_outstanding":
+        n = norm.number(v)
+        return n if n is not None and n >= 0 else None
     if key == "tenure_months":
         n = norm.months(v)
         return n if n and 3 <= n <= 120 else None
@@ -311,7 +328,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
 
     # Keep only values our parsers understand; never overwrite with an unclear value.
     for k, v in extracted.items():
-        if k in BY_KEY or k == "tenure_months":
+        if k in BY_KEY or k in EXTRA:
             n = valid(k, v)
             if n is not None:
                 s["answers"][k] = v if k in ("work", "housing") else n
@@ -323,6 +340,16 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
         if n is not None:
             s["answers"][asked] = text if asked in ("work", "housing") else n
             s["said"][asked] = text
+
+    # Cross-checks between answers. An EMI above the whole monthly income is almost always a loan's
+    # size heard as its installment ("13 lakh ka loan"): drop it and ask again, clearly.
+    clarify = None
+    emi, income = s["answers"].get("other_loans_emi"), s["answers"].get("monthly_income")
+    if emi is not None and income and emi > income:
+        print(f"[converse {s['id']}] dropped implausible EMI {emi} (income {income})", flush=True)
+        s["answers"].pop("other_loans_emi")
+        s["answers"].setdefault("other_loans_outstanding", emi)
+        clarify = "other_loans_emi"
 
     if asked in BY_KEY and asked not in s["answers"]:
         s["tries"][asked] = s["tries"].get(asked, 0) + 1
@@ -343,7 +370,9 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
 
     if nxt != "done":
         s["asking"] = nxt
-        if used == "gemini" and g_asking == nxt and g_reply:
+        if clarify == nxt:
+            reply = CLARIFY[nxt][s["lang"]]
+        elif used == "gemini" and g_asking == nxt and g_reply:
             reply = g_reply
         else:
             again = nxt == asked

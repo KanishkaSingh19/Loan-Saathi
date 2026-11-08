@@ -8,8 +8,9 @@ import DecisionBadge from "./DecisionBadge";
 // -> Gnani Timbre (/v1/tts) -> speaker. Typing works too, for testing without speech keys.
 
 const ORDER = ["loan_amount", "monthly_income", "work", "years_in_work", "other_loans_count",
-  "other_loans_emi", "housing", "age", "tenure_months"];
-const MONEY = new Set(["loan_amount", "monthly_income", "other_loans_emi"]);
+  "other_loans_outstanding", "other_loans_emi", "housing", "age", "tenure_months"];
+const OPTIONAL = new Set(["tenure_months", "other_loans_outstanding"]); // shown only once mentioned
+const MONEY = new Set(["loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding"]);
 const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
 function show(field, value) {
@@ -233,7 +234,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           <section>
             <h3>Answers so far</h3>
             <dl className="said">
-              {ORDER.filter((f) => f !== "tenure_months" || answers[f] !== undefined).map((f) => (
+              {ORDER.filter((f) => !OPTIONAL.has(f) || answers[f] !== undefined).map((f) => (
                 <div key={f} className={asking === f ? "asking" : ""}>
                   <dt>{SAID_LABELS[f] || f}</dt>
                   <dd>

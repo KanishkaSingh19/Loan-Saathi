@@ -141,6 +141,32 @@ assert converse._amounts_ok("Aapko ₹50,000 mil sakta hai, 12 mahine, EMI ₹4,
                              "tenure_months": 12})
 assert not converse._amounts_ok("₹60,000", {"reply_hint": "₹50,000", "tenure_months": 12})
 
+# Loan sizes heard as an EMI (live-test bug: 4 loans of 13L/12L/11L/51k became "EMI 36,51,000").
+t = start()
+sid = t["session_id"]
+converse._gemini = fake([
+    {"answers": [A("loan_amount", "100000", "1,00,000"), A("monthly_income", "40000", "40,000")],
+     "asking": "work", "reply": "Aap kya kaam karte hain?", "language": "hi"},
+    {"answers": [A("work", "bus driver", "बस ड्राइवर")], "asking": "years_in_work",
+     "reply": "Kitne saal se?", "language": "hi"},
+    {"answers": [A("years_in_work", "2", "2 साल")], "asking": "other_loans_count",
+     "reply": "Koi aur loan?", "language": "hi"},
+    {"answers": [A("other_loans_count", "4", "4 लोन"), A("other_loans_emi", "3651000", "13,00,000")],
+     "asking": "housing", "reply": "Theek hai, 4 loans aur total EMI noted. Ghar?", "language": "hi"},
+    {"answers": [A("other_loans_emi", "9000", "9,000")], "asking": "housing",
+     "reply": "Theek hai. Ghar apna hai ya rent?", "language": "hi"},
+])
+say(sid, "मुझे 1,00,000 का लोन चाहिए और महीने का 40,000 कमाता हूं")
+say(sid, "मैं बस ड्राइवर हूँ")
+say(sid, "मैं 2 साल से बस ड्राइविंग कर रहा हूँ")
+t = say(sid, "मेरे 4 लोन चल रहे हैं 13,00,000 का 12,00,000 का 11,00,000 का 51,000 का")
+assert "other_loans_emi" not in t["answers"], t["answers"]
+assert t["answers"]["other_loans_outstanding"] == 3651000, t["answers"]
+assert t["asking"] == "other_loans_emi" and "EMI" in t["reply"] and "noted" not in t["reply"], t
+t = say(sid, "9,000 ki kist jaati hai")
+assert t["answers"]["other_loans_emi"] == 9000 and t["asking"] == "housing", t
+print("EMI/loan-size mix-up caught OK:", t["answers"]["other_loans_outstanding"], "owed, EMI", t["answers"]["other_loans_emi"])
+
 # Spelled-out amounts can't be checked, so they're refused; the offer itself must be stated.
 hint = {"reply_hint": "request for ₹50,000 over 24 months (EMI about ₹2,496)", "offer_amount": 50000,
         "tenure_months": 24}
