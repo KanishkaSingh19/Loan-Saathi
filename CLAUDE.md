@@ -23,6 +23,7 @@ python -I -X utf8 src/train.py               # both models, ~4 min (needs the Ka
 python -I -X utf8 src/train.py --voice-only  # voice model only, ~1 min
 python -I -X utf8 src/test_webhook.py        # end-to-end webhook tests with Hinglish inputs
 python -I -X utf8 src/test_speech_api.py     # speech proxy route tests (mocked, no API calls)
+python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
 python -I -X utf8 src/demo_applicants.py     # score three sample applicants
 python -I -X utf8 src/compare_models.py      # LightGBM vs XGBoost vs CatBoost, ~30 min
 python -I -X utf8 src/server.py              # webhook + /dashboard on 127.0.0.1:8000

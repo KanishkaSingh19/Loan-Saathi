@@ -21,7 +21,7 @@ import uuid
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -108,6 +108,15 @@ def _run(sql, params=(), fetch=False):
         return rows
     finally:
         con.close()
+
+
+def _save(sql, params):
+    """Runs after the response is sent (FastAPI background task, in a worker thread), so a slow
+    remote database never delays the agent's reply mid-call. Failures are logged, not raised."""
+    try:
+        _run(sql, params)
+    except Exception as e:  # noqa: BLE001
+        print(f"[storage error] {type(e).__name__}: {e}", flush=True)
 
 
 def _check_key(key):
@@ -282,7 +291,7 @@ def health():
 
 
 @app.post("/v1/prescreen")
-async def prescreen(request: Request, x_webhook_key: str = Header(default="")):
+async def prescreen(request: Request, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
     _check_key(x_webhook_key)
     try:
         body = await request.json()
@@ -295,7 +304,7 @@ async def prescreen(request: Request, x_webhook_key: str = Header(default="")):
     result, details = decide(applicant)
     pid = uuid.uuid4().hex[:12]
     result["prescreen_id"] = pid
-    _run("INSERT INTO prescreens VALUES (?,?,?,?,?)", (
+    tasks.add_task(_save, "INSERT INTO prescreens VALUES (?,?,?,?,?)", (
         pid, time.time(), json.dumps(body, ensure_ascii=False), json.dumps(applicant, ensure_ascii=False),
         json.dumps({**result, "details": details}, ensure_ascii=False)))
     print(f"[prescreen {pid}] {result['decision']} band={result['risk_band']} in={body}", flush=True)
@@ -303,7 +312,7 @@ async def prescreen(request: Request, x_webhook_key: str = Header(default="")):
 
 
 @app.post("/v1/post-call")
-async def post_call(request: Request, x_webhook_key: str = Header(default="")):
+async def post_call(request: Request, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
     _check_key(x_webhook_key)
     raw = await request.body()
     try:
@@ -311,7 +320,7 @@ async def post_call(request: Request, x_webhook_key: str = Header(default="")):
     except Exception:
         payload = {"raw": raw.decode("utf-8", "replace")}
     cid = uuid.uuid4().hex[:12]
-    _run("INSERT INTO calls VALUES (?,?,?)", (cid, time.time(), json.dumps(payload, ensure_ascii=False)))
+    tasks.add_task(_save, "INSERT INTO calls VALUES (?,?,?)", (cid, time.time(), json.dumps(payload, ensure_ascii=False)))
     print(f"[post-call {cid}] keys={list(payload)[:15]}", flush=True)
     return {"ok": True}
 
