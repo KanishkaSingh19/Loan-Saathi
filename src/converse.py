@@ -66,17 +66,22 @@ and their words come from speech recognition, so expect errors and Devanagari or
 You get the conversation so far, the answers already collected, the field our system wants
 next, and the caller's latest words. Do two things:
 
-1. EXTRACT any of these fields the caller clearly stated (in this turn or earlier, if missed):
+1. ANSWERS: list every field the caller states in `caller_said` (this turn only). Callers often
+   give several answers in one sentence: "50 hazaar chahiye, sabzi ki dukaan hai, 25 hazaar kamata
+   hoon" gives THREE answers (loan_amount 50000, work, monthly_income 25000). For each answer give
+   `quote`: the exact words from `caller_said` that state it, copied character for character.
+   If you cannot quote the caller's words for a field, they did not say it: leave it out.
+   Never fill a field from guesswork, typical values or the question that was asked.
+   Values:
    loan_amount, monthly_income, other_loans_emi: rupees as plain digits ("pachas hazaar" -> "50000",
-     "dhai lakh" -> "250000", "15k" -> "15000"). Monthly income: if they give a yearly or daily
-     figure, convert to monthly (daily x 26).
-   work: a short English description of their work ("vegetable seller", "salaried driver",
-     "retired", "student", "unemployed", "government job", "own kirana shop").
+     "dhai lakh" -> "250000", "15k" -> "15000"). monthly_income: convert a yearly or daily figure
+     to monthly (daily x 26).
+   work: a short English description ("vegetable seller", "salaried driver", "retired",
+     "student", "unemployed", "government job", "own kirana shop").
    years_in_work, age: plain number of years.
-   other_loans_count: plain number; "nahi"/"no loans" -> "0".
+   other_loans_count: plain number; "nahi" / "koi loan nahi" -> "0".
    housing: one of "own house", "rented", "with family", "government quarters".
-   tenure_months: months, only if they mention how long they want to repay.
-   Never guess. Leave a field out if it was not clearly stated. Do not invent values.
+   tenure_months: months, only if they say how long they want to repay.
 
 2. REPLY: one or two short spoken sentences. Briefly acknowledge what they said, then ask
    about the NEXT field: the first one in `still_needed` (it is in order) that the caller has not
@@ -95,16 +100,36 @@ Set "language" to "hi" (Hindi or Hinglish) or "en" (English)."""
 EXTRACT_SCHEMA = {
     "type": "object",
     "properties": {
-        "extracted": {
-            "type": "object",
-            "properties": {k: {"type": "string"} for k in KEYS + ["tenure_months"]},
+        "answers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "field": {"type": "string", "enum": KEYS + ["tenure_months"]},
+                    "value": {"type": "string"},
+                    "quote": {"type": "string"},
+                },
+                "required": ["field", "value", "quote"],
+            },
         },
         "reply": {"type": "string"},
         "asking": {"type": "string"},
         "language": {"type": "string", "enum": ["hi", "en"]},
     },
-    "required": ["extracted", "reply", "asking", "language"],
+    "required": ["answers", "reply", "asking", "language"],
 }
+
+
+def _plain(text):
+    """Lowercase, punctuation-free, single-spaced, for comparing a quote with what was said."""
+    return " ".join(re.sub(r"[^\wऀ-ॿ₹]+", " ", str(text).lower()).split())
+
+
+def quoted(quote, said):
+    """True if Gemini's quote really is in the caller's words (guards against invented answers)."""
+    q = _plain(quote)
+    return bool(q) and q in _plain(said)
+
 
 RESULT_PROMPT = """You are Loan Saathi, speaking to a caller on a voice call about a loan pre-screening.
 Turn the guidance below into what you say to the caller: 2 to 4 short spoken sentences, warm and
@@ -180,7 +205,7 @@ async def _gemini(api_key, model, system, user, schema):
         "generationConfig": {
             "responseMimeType": "application/json",
             "responseJsonSchema": schema,
-            "temperature": 0.3,
+            "temperature": 0.2,
             "maxOutputTokens": 400,
             "thinkingConfig": {"thinkingLevel": "MINIMAL"},
         },
@@ -262,7 +287,13 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
                                    if k not in s["answers"] and k not in s["skipped"]},
                 "caller_said": text,
             }, ensure_ascii=False), EXTRACT_SCHEMA)
-            extracted = out.get("extracted") or {}
+            for a in out.get("answers") or []:
+                if not isinstance(a, dict):
+                    continue
+                if quoted(a.get("quote", ""), text):
+                    extracted[a.get("field")] = a.get("value")
+                else:
+                    print(f"[converse {s['id']}] dropped unquoted answer {a.get('field')}={a.get('value')!r}", flush=True)
             g_reply, g_asking = str(out.get("reply") or "").strip(), str(out.get("asking") or "")
             if out.get("language") in ("hi", "en"):
                 s["lang"] = out["language"]

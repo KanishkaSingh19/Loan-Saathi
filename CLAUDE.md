@@ -55,7 +55,9 @@ trained models are in `models/`); only retraining or the model comparison does.
 - `src/converse.py`: the browser web call. Gemini (`GEMINI_API_KEY`, default model
   `gemini-3.5-flash-lite`, REST `generateContent` with `responseJsonSchema`) extracts answers and
   phrases replies; our code fixes the question order, validates every value with `normalize.py`, and
-  decides with `server.decide()`. Gemini's question is used only if it asks the field we expect; its
+  decides with `server.decide()`. Every Gemini answer must carry an exact quote of the caller's words
+  (`quoted()`), or it is dropped: without this, Gemini invented ages and housing in live tests.
+  Gemini's question is used only if it asks the field we expect; its
   result reply only if every number in it appears in `reply_hint`. Any Gemini failure falls back to
   scripted questions. Sessions live in memory (single instance, 30-minute expiry).
 - `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/converse`, `/v1/stt` and `/v1/tts`

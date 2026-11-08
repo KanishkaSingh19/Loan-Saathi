@@ -28,8 +28,9 @@ mic → Gnani Prisma (speech-to-text) → Gemini → our model + affordability r
   kamaata hoon 40 hazaar" fills two answers at once), answers side questions, and words each reply
   in the caller's style.
 - **Our code decides**: the question order, the risk score, the loan amount and the EMI come from
-  our model and the 50% rule, never from the LLM. Every value Gemini extracts is checked by our
-  parser (an age of 7 is rejected). Gemini's question is used only if it asks what we expect next,
+  our model and the 50% rule, never from the LLM. Gemini must quote the caller's exact words for
+  every answer it extracts, and answers it can't quote are dropped, so it can't invent an age or a
+  house. Every value is then checked by our parser (an age of 7 is rejected). Gemini's question is used only if it asks what we expect next,
   and its result reply only if every number in it matches our decision. Otherwise Saathi uses a
   scripted line.
 - **It never dies on the LLM**: without a Gemini key, or if Gemini is slow or down, the call carries

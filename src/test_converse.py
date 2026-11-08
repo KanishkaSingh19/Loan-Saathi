@@ -73,6 +73,10 @@ assert "done" in say(sid, "aur kuch?")["asking"]  # finished calls stay finished
 calls = []
 
 
+def A(field, value, quote):
+    return {"field": field, "value": value, "quote": quote}
+
+
 def fake(script):
     async def _g(api_key, model, system, user, schema):
         calls.append(user)
@@ -88,17 +92,21 @@ t = start()
 sid = t["session_id"]
 converse._gemini = fake([
     # Caller says loan + income in one go; Gemini extracts both and asks about work.
-    {"extracted": {"loan_amount": "100000", "monthly_income": "40000"}, "asking": "work",
+    {"answers": [A("loan_amount", "100000", "ek lakh chahiye"), A("monthly_income", "40000", "kamaata hoon 40 hazaar")],
+     "asking": "work",
      "reply": "Theek hai, 1 lakh ka loan aur 40 hazaar kamaai. Aap kya kaam karte hain?", "language": "hi"},
     # Junk value + asks the wrong field -> we keep asking years, scripted.
-    {"extracted": {"work": "salaried driver", "age": "7"}, "asking": "age",
+    {"answers": [A("work", "salaried driver", "driver hoon"), A("age", "7", "driver")], "asking": "age",
      "reply": "Aapki umar?", "language": "hi"},
     RuntimeError("timeout"),                    # Gemini down -> our parser takes "5 saal"
-    {"extracted": {"other_loans_count": "1"}, "asking": "other_loans_emi",
+    {"answers": [A("other_loans_count", "1", "ek loan hai")], "asking": "other_loans_emi",
      "reply": "Ek loan. Uski EMI kitni hai?", "language": "hi"},
-    {"extracted": {"other_loans_emi": "3000"}, "asking": "housing", "reply": "Aur ghar?", "language": "hi"},
-    {"extracted": {"housing": "rented"}, "asking": "age", "reply": "Umar?", "language": "hi"},
-    {"extracted": {"age": "32"}, "asking": "done", "reply": "Shukriya, check karta hoon.", "language": "hi"},
+    {"answers": [A("other_loans_emi", "3000", "teen hazaar"),
+                 A("age", "45", "45 saal")],  # invented: the caller never said it -> dropped
+     "asking": "housing", "reply": "Aur ghar?", "language": "hi"},
+    {"answers": [A("housing", "own house", "apna ghar")],  # quote not in "kiraye pe" -> dropped
+     "asking": "age", "reply": "Umar?", "language": "hi"},
+    {"answers": [A("age", "32", "32")], "asking": "done", "reply": "Shukriya, check karta hoon.", "language": "hi"},
     # Result phrasing invents an amount -> fallback text with the real numbers.
     {"reply": "Badhai ho! Aapko 9,99,999 rupaye mil gaye."},
 ])
@@ -110,14 +118,22 @@ assert "age" not in t["answers"], "age 7 must be rejected"
 assert t["asking"] == "years_in_work" and t["reply"] == converse.BY_KEY["years_in_work"]["hi"], t
 t = say(sid, "5 saal")
 assert t["answers"]["years_in_work"] == 5 and t["llm"] == "fallback", t
-for line in ["haan ek loan hai", "teen hazaar", "kiraye pe", "32"]:
-    t = say(sid, line)
+t = say(sid, "haan ek loan hai")
+t = say(sid, "teen hazaar")
+assert "age" not in t["answers"], "an answer Gemini could not quote must be dropped"
+t = say(sid, "kiraye pe")
+assert t["answers"]["housing"] == "kiraye pe", t  # our parser on the real words, not Gemini's "own house"
+t = say(sid, "32")
 assert t["done"], t
 r = t["result"]
 assert "9,99,999" not in t["reply"] and "999999" not in t["reply"].replace(",", ""), t["reply"]
 assert r["decision"] in ("pre_approved", "needs_review", "counter_offer", "not_eligible_now"), r
 print("2/3. Gemini + guardrails OK:", r["decision"], "-", t["reply"][:70], "...")
 assert '"still_needed"' in calls[0] and "loan_amount" in calls[0]
+
+assert converse.quoted("Kamaata  hoon, 40 hazaar!", "mujhe ek lakh chahiye, kamaata hoon 40 hazaar")
+assert converse.quoted("₹1,00,000 का लोन", "मुझे ₹1,00,000 का लोन चाहिए")
+assert not converse.quoted("", "anything") and not converse.quoted("apna ghar", "kiraye pe")
 
 # Result phrasing that keeps the real numbers is spoken as-is.
 assert converse._amounts_ok("Aapko ₹50,000 mil sakta hai, 12 mahine, EMI ₹4,584.",
