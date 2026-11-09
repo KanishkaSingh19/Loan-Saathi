@@ -4,7 +4,6 @@ import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
-import Journey from "./Journey";
 import { STAGES } from "../stages";
 import { StudySetup, StudySurvey } from "./Study";
 import DecisionBadge from "./DecisionBadge";
@@ -271,7 +270,6 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   return (
     <main className="layout call-layout">
       <section className="panel call-panel">
-        <Journey stage={call?.stage} busy={busy} />
         <div className="call-head">
           <div>
             <h2>
