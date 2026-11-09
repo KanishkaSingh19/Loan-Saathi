@@ -387,3 +387,58 @@ h1, h2, h3, h4 { font-family: var(--font); }
 .ws-transcript li.caller .who { color: var(--violet-700); }
 .ws-transcript li.caller > span:last-child { font-weight: 600; }
 @media (max-width: 980px) { .ws-grid, .ws-grid.two { grid-template-columns: 1fr; } }
+
+/* =====================================================================================
+   Evaluation Lab: evidence, plainly laid out. Tables and text, no decorative charts.
+   ===================================================================================== */
+.evaluation { display: grid; gap: 22px; }
+.ev-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.ev-head h2 { font-size: 28px; font-weight: 800; letter-spacing: -0.025em; margin: 0; }
+.ev-head p { margin: 4px 0 0; max-width: 70ch; }
+.ev-section { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px;
+  display: grid; gap: 14px; box-shadow: var(--shadow); }
+.ev-section h3 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.015em; }
+.ev-section h4 { margin: 6px 0 6px; font-size: 15px; font-weight: 800; }
+.ev-callout { margin: 0; padding: 12px 14px; border-left: 4px solid var(--violet-500); background: var(--violet-50);
+  border-radius: 10px; line-height: 1.55; }
+.ev-metrics { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.ev-metric { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; }
+.ev-metric dt { font-size: 13px; color: var(--muted); font-weight: 600; }
+.ev-metric dd { margin: 0; display: grid; gap: 3px; }
+.ev-metric dd strong { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ev-metric dd small { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.ev-source { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px !important; color: var(--violet-700) !important; }
+.ev-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.ev-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.ev-table th, .ev-table td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.ev-table th:first-child { text-align: left; }
+.ev-table thead th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+.ev-details summary, .ev-group summary { cursor: pointer; }
+.ev-details > summary { font-weight: 700; color: var(--violet-700); }
+.ev-details[open] { display: grid; gap: 10px; }
+.ev-guards, .ev-limits { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.ev-guards li, .ev-limits li { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; line-height: 1.5; }
+.ev-run { margin: 0; padding: 10px 14px; background: var(--panel-2); border-radius: 10px; font-size: 14px; }
+.ev-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.ev-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ev-group summary { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 10px; font-size: 14px; font-weight: 600; }
+.ev-checks { padding: 8px 4px 4px 10px !important; gap: 6px !important; font-size: 13px; }
+.ev-checks code, .ev-run code, .ev-section p code { font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-radius: 5px; }
+.ev-status { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.ev-status.good { color: var(--good); background: var(--good-bg); }
+.ev-status.bad { color: var(--bad); background: var(--bad-bg); }
+.ev-status.info { color: var(--info); background: var(--info-bg); }
+.ev-status.muted { color: var(--muted); background: var(--panel-2); }
+.ev-cases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ev-case { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.ev-case.lead { grid-column: 1 / -1; border-color: var(--violet-200); background: var(--violet-50); }
+.ev-case dl { margin: 8px 0 0; display: grid; gap: 8px; }
+.ev-case dl > div { display: grid; grid-template-columns: 130px 1fr; gap: 10px; font-size: 14px; line-height: 1.5; }
+.ev-case dt { color: var(--muted); font-weight: 600; }
+.ev-case dd { margin: 0; }
+@media (max-width: 900px) {
+  .ev-two, .ev-groups, .ev-cases { grid-template-columns: 1fr; }
+  .ev-case dl > div { grid-template-columns: 1fr; gap: 2px; }
+}

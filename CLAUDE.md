@@ -40,6 +40,9 @@ python -I -X utf8 src/tune.py                # small hyperparameter search on a 
 python -I -X utf8 src/validate_model.py      # behavioural validation on synthetic Indian profiles (~2 min)
 python -I -X utf8 src/study_dryrun.py --base http://127.0.0.1:8000 --key <KEY> --speech  # study dry run
 python -I -X utf8 src/test_safety.py         # product safety boundaries (wording scan, LLM can't decide...)
+python -I -X utf8 src/test_handoff.py        # advisor workspace: corrections, flags, timeline, transcript
+python -I -X utf8 src/test_evaluation.py     # model unavailable, STT failures, Evaluation Lab evidence integrity
+python -I -X utf8 src/evaluation.py run      # run every suite and record results for the Evaluation Lab (~5 min)
 python -I -m ruff check src                  # Python lint (requirements-dev.txt)
 cd dashboard; npm test; npm run lint; npm run typecheck; npm run build   # frontend checks
 python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)

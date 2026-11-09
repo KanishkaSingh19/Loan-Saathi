@@ -39,6 +39,7 @@ for _stream in (sys.stdout, sys.stderr):
 import advisor  # noqa: E402
 import assessment  # noqa: E402
 import converse  # noqa: E402
+import evaluation  # noqa: E402
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
@@ -755,6 +756,14 @@ def study_report_csv(x_webhook_key: str = Header(default="")):
                     "wrong_final": " ".join(r["metrics"]["wrong_final"])})
     return Response(buf.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=loan-saathi-study.csv"})
+
+
+@app.get("/v1/evaluation")
+def evaluation_evidence(x_webhook_key: str = Header(default="")):
+    """The Evaluation Lab: model metrics from models/*.json, safeguards checked against the code, and the
+    last recorded test run (python -I -X utf8 src/evaluation.py run). Nothing is computed for show."""
+    _check_key(x_webhook_key)
+    return evaluation.evidence()
 
 
 @app.get("/v1/advisor-cases")

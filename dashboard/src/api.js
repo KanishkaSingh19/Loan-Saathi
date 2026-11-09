@@ -162,6 +162,10 @@ async function getJson(key, path) {
   return res;
 }
 
+export async function fetchEvaluation(key) {
+  return (await getJson(key, "/v1/evaluation")).json();
+}
+
 export async function studyPersonas(key) {
   return (await (await getJson(key, "/v1/study/personas")).json()).personas;
 }
