@@ -67,7 +67,7 @@ async function errorText(res) {
 // `text` is still sent so the transcript reads naturally.
 /**
  * @param {string} key @param {string} sessionId @param {string} text @param {string} [language]
- * @param {string} [action] @param {{participant?: string, persona?: string}} [study] only when starting a study call
+ * @param {string} [action] @param {{participant?: string, persona?: string, consent?: boolean}} [study] study fields and the storage consent, when starting a call
  */
 export async function converse(key, sessionId, text, language = "hi", action = "", study = {}) {
   const res = await postJson(key, "/v1/converse", { session_id: sessionId || "", text, language, action, ...study });

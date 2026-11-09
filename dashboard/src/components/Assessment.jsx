@@ -230,6 +230,24 @@ export default function Assessment({
           </section>
 
           <Why why={a.why} />
+          {a.path_to_yes?.length ? (
+            <section className="as-section" aria-labelledby="path-title">
+              <h3 id="path-title">What would change this</h3>
+              <ul className="why-list good">
+                {a.path_to_yes.map((p, i) => (
+                  <li key={i}>
+                    <span className="mark" aria-hidden="true">→</span>
+                    <span>
+                      {lang === "hi" && p.text_hi ? p.text_hi : p.text}{" "}
+                      <Source source={p.source} text={SOURCE_TAGS[p.source]} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted small">Worked out from the affordability and debt rules, at the same assumed
+                18% yearly interest. Still a pre-screening, not an offer.</p>
+            </section>
+          ) : null}
           {apiKey && prescreenId ? (
             <Simulator
               apiKey={apiKey}

@@ -448,3 +448,6 @@ h1, h2, h3, h4 { font-family: var(--font); }
 .mic.live.hearing { box-shadow: 0 0 0 5px var(--violet-200); animation: saathi-hear 1.2s ease-in-out infinite; }
 @keyframes saathi-hear { 50% { box-shadow: 0 0 0 8px var(--violet-100); } }
 @media (prefers-reduced-motion: reduce) { .mic.live.hearing { animation: none; } }
+
+.hero .toggle.consent { max-width: 52ch; text-align: left; align-items: flex-start; font-size: 14px; line-height: 1.45; }
+.hero .toggle.consent input { margin-top: 3px; }

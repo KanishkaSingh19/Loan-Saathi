@@ -18,5 +18,6 @@
   "family_members": "{{family_members}}",
   "children": "{{children}}",
   "education": "{{education}}",
-  "owns_vehicle": "{{owns_vehicle}}"
+  "owns_vehicle": "{{owns_vehicle}}",
+  "consent": "{{consent}}"
 }

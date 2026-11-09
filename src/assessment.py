@@ -235,6 +235,61 @@ def outcome(decision, band, afford, policy, debt_limit_months):
     return {"tone": OUTCOME_TONE[decision], "title": OUTCOME_TITLES[decision], "detail": detail}
 
 
+def path_to_yes(applicant, decision, band, afford, policy, debt_limit_months):
+    """What would change the answer, from the deterministic rules only. Each item names a concrete figure
+    the affordability or debt rule computes; nothing comes from the model, so a high risk estimate is said
+    to be the reason without promising an amount that would change it."""
+    if decision in ("pre_approved", "needs_review"):
+        return []
+    a = applicant
+    income, requested = a["monthly_income"], a["loan_amount"]
+    tenure = int(afford["tenure_months"]) if afford else int(a.get("tenure_months") or scoring.DEFAULT_TENURE)
+    existing = afford["existing_emi"] if afford else (a.get("existing_emi") or 0)
+    owed = a.get("active_loans_outstanding") or 0
+    room = max(0.0, scoring.MAX_FOIR * income - existing)
+    req_emi = scoring.estimate_emi(requested, tenure)
+    out = []
+
+    def item(en, hi):
+        out.append({"text": en, "text_hi": hi, "source": "rules"})
+
+    if policy == "debt_over_limit":
+        limit = debt_limit_months * income
+        item(f"If what you still owe on other loans drops below {inr(limit)} (now {inr(owed)}), the debt rule "
+             "would no longer stop a new loan.",
+             f"Agar dusre loans ka baaki {inr(limit)} se kam ho jaaye (abhi {inr(owed)}), toh yeh rule naye loan "
+             "ko nahi rokega.")
+    if req_emi > room + 0.5:
+        allowed_existing = scoring.MAX_FOIR * income - req_emi
+        if allowed_existing >= 0 and existing > allowed_existing:
+            item(f"If your other EMIs drop from {inr(existing)} to {inr(allowed_existing)} a month or less, the "
+                 f"{inr(requested)} you asked for would fit the affordability rule.",
+                 f"Agar aapki dusri EMI {inr(existing)} se ghatkar {inr(allowed_existing)} mahina ya kam ho jaaye, "
+                 f"toh maanga hua {inr(requested)} affordability rule mein aa jaayega.")
+        longer = next((m for m in range(tenure + 1, 121) if scoring.estimate_emi(requested, m) <= room), None)
+        if longer and room > 0:
+            item(f"Over {longer} months instead of {tenure}, the EMI would be about "
+                 f"{inr(scoring.estimate_emi(requested, longer))} a month, within the rule.",
+                 f"{tenure} ki jagah {longer} mahine mein EMI lagbhag {inr(scoring.estimate_emi(requested, longer))} "
+                 "mahina hogi, jo rule ke andar hai.")
+        fits = math.floor(scoring.loan_for_emi(room, tenure) / 1000) * 1000 if room > 0 else 0
+        if fits >= 1000:
+            item(f"With your current EMIs, a loan of up to {inr(fits)} over {tenure} months fits now.",
+                 f"Abhi ki EMI ke saath, {tenure} mahine mein {inr(fits)} tak ka loan rule mein aata hai.")
+        elif room <= 0:
+            item(f"Your existing EMIs already use half of your income ({inr(existing)} of {inr(income)}), so "
+                 "paying some of them down comes first.",
+                 f"Aapki maujooda EMI pehle se aadhi kamaai le rahi hai ({inr(income)} mein se {inr(existing)}), "
+                 "isliye pehle unhe kam karna hoga.")
+    if band == "high" and decision == "not_eligible_now":
+        item("The estimated risk is high, and that comes from the model, so we can't name a figure that would "
+             "change it. A loan advisor can look at your situation.",
+             "Anumanit risk zyada hai, aur yeh model se aata hai, isliye hum koi rakam nahi bata sakte jo ise "
+             "badle. Loan advisor aapki sthiti dekh sakte hain.")
+        out[-1]["source"] = "model"
+    return out
+
+
 def burden(existing_emi, new_emi, income):
     """All EMIs as a share of income against the same 40% / 50% lines the suggested range uses."""
     if not income:
@@ -328,6 +383,7 @@ def build(applicant, risk, afford, decision, policy, model_up, model_down, check
         "status_text": STATUS_TEXT[status],
         "decision_label": DECISION_LABELS[decision],
         "outcome": outcome(decision, risk["band"], afford, policy, debt_limit_months),
+        "path_to_yes": path_to_yes(a, decision, risk["band"], afford, policy, debt_limit_months),
         "risk": {"band": risk["band"], "text": risk["band"].upper(), "source": "model",
                  "source_text": SOURCES["model"], "help": HELP["risk"]},
         "affordability": {**_num(max_new_emi, "rules", suffix="/month"), "help": HELP["affordability"]},

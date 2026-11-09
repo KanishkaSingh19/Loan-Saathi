@@ -101,6 +101,9 @@ class ConverseRequest(BaseModel):
     language: str = "hi"
     # A button press on the call screen: confirm, change, correct:<field>, yes, no, choose:<n>, handoff.
     action: str = Field(default="", max_length=40)
+    # Did the caller agree to their answers being stored (for RETENTION_DAYS)? The call screen asks; API
+    # integrators (e.g. the phone agent) must ask too. Without it the call runs in memory only.
+    consent: bool = True
     # User study (STUDY.md): set when a participant starts a call from a persona card.
     participant: str = Field(default="", max_length=20, pattern=r"^[A-Za-z0-9_-]*$")
     persona: str = Field(default="", max_length=8)
@@ -169,6 +172,7 @@ _SCHEMA = [
     "CREATE TABLE IF NOT EXISTS study_results (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
     "CREATE TABLE IF NOT EXISTS latency_metrics (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
     "CREATE TABLE IF NOT EXISTS wa_threads (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
+    "CREATE TABLE IF NOT EXISTS decision_audit (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
 ]
 _schema_ready = False
 
@@ -482,7 +486,79 @@ def decide(applicant, risk=None, context=None):
     except Exception as e:  # noqa: BLE001  (the decision must never fail on its explanation)
         print(f"[assessment] could not build: {type(e).__name__}: {e}", flush=True)
         result["assessment"] = None
+    path = (result["assessment"] or {}).get("path_to_yes") or []
+    if path:  # the phone agent can tell a declined caller what would change the answer
+        result["reply_hint"] += " What would change it (say one or two): " + " ".join(p["text"] for p in path[:2])
+    result["audit"] = audit_meta()
     return result, r
+
+
+# ---------- decision audit (which model, rules and inputs produced each outcome) ----------
+
+def _sha(path):
+    import hashlib
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:12]
+    except OSError:
+        return ""
+
+
+def _code_commit():
+    if os.environ.get("GIT_COMMIT"):
+        return os.environ["GIT_COMMIT"][:12]
+    try:
+        import subprocess
+        return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True,
+                              timeout=5).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+_AUDIT_STATIC = None
+
+
+def audit_meta():
+    """The model version, rule settings and code version behind a decision (computed once per process)."""
+    global _AUDIT_STATIC
+    if _AUDIT_STATIC is None:
+        _, meta = scoring._load()
+        _AUDIT_STATIC = {
+            "model": {"file": "models/voice_model.txt", "sha256": _sha(ROOT / "models" / "voice_model.txt"),
+                      "validation_auc": meta.get("validation_auc"), "features": len(meta.get("features", [])),
+                      "bands": meta.get("bands")},
+            "rules": {"max_foir": scoring.MAX_FOIR, "comfort_foir": assessment.COMFORT_FOIR,
+                      "debt_limit_months": DEBT_LIMIT_MONTHS, "assumed_annual_rate": scoring.ANNUAL_RATE,
+                      "default_tenure_months": scoring.DEFAULT_TENURE},
+            "code_commit": _code_commit(),
+        }
+    return {**_AUDIT_STATIC, "decided_at": round(time.time(), 3)}
+
+
+def _audit(pid, channel, applicant, result, consent=True):
+    """Append-only decision record. Without consent the inputs are left out (decision and versions stay)."""
+    a = result.get("assessment") or {}
+    record = {"prescreen_id": pid, "channel": channel, "consent": bool(consent),
+              "inputs": applicant if consent else None,
+              "decision": result.get("decision"), "policy_rule": result.get("policy_rule", ""),
+              "risk_band": result.get("risk_band"), "risk_percent": result.get("risk_percent"),
+              "affordable_emi": (a.get("affordability") or {}).get("value"),
+              "requested_emi": (a.get("requested_emi") or {}).get("value"),
+              "outcome": (a.get("outcome") or {}).get("title"),
+              **(result.get("audit") or audit_meta())}
+    _save("INSERT INTO decision_audit VALUES (?,?,?)", (pid, time.time(), json.dumps(record, ensure_ascii=False)))
+
+
+@app.get("/v1/audit")
+def audit_log(prescreen_id: str = "", limit: int = 50, x_webhook_key: str = Header(default="")):
+    """Decision records, newest first (or the one for a pre-screen)."""
+    _check_key(x_webhook_key)
+    if prescreen_id:
+        rows = _run("SELECT payload FROM decision_audit WHERE id = ?", (prescreen_id,), fetch=True)
+        if not rows:
+            raise HTTPException(status_code=404, detail="no audit record for that pre-screen")
+        return json.loads(rows[0][0])
+    rows = _run("SELECT payload FROM decision_audit ORDER BY ts DESC LIMIT ?", (min(max(limit, 1), 500),), fetch=True)
+    return {"records": [json.loads(r[0]) for r in rows]}
 
 
 @app.get("/dashboard", include_in_schema=False)
@@ -510,6 +586,12 @@ async def prescreen(request: Request, tasks: BackgroundTasks, x_webhook_key: str
     result, details = decide(applicant)
     pid = uuid.uuid4().hex[:12]
     result["prescreen_id"] = pid
+    consented = norm.boolean(body.get("consent")) is not False
+    tasks.add_task(_audit, pid, "phone", applicant, result, consented)
+    if not consented:  # the caller said no to storage
+        _remember_prescreen(pid, body, applicant, result)
+        print(f"[prescreen {pid}] {result['decision']} (not stored: no consent)", flush=True)
+        return result
     tasks.add_task(_save, "INSERT INTO prescreens VALUES (?,?,?,?,?)", (
         pid, time.time(), json.dumps(body, ensure_ascii=False), json.dumps(applicant, ensure_ascii=False),
         json.dumps({**result, "details": details}, ensure_ascii=False)))
@@ -550,7 +632,20 @@ def applications(limit: int = 50, x_webhook_key: str = Header(default="")):
 WEB_CONTEXT = {"channel": "web", "confirmed": True, "open_checks": 0}
 
 
+_PRESCREEN_MEM = {}  # pre-screens of callers who didn't agree to storage: memory only, for a few hours
+
+
+def _remember_prescreen(pid, said, applicant, result):
+    now = time.time()
+    for k in [k for k, v in _PRESCREEN_MEM.items() if now - v[0] > SESSION_RESUME_HOURS * 3600]:
+        _PRESCREEN_MEM.pop(k, None)
+    _PRESCREEN_MEM[pid] = (now, said, applicant, result)
+
+
 def _load_prescreen(pid):
+    if pid in _PRESCREEN_MEM:
+        _, said, applicant, result = _PRESCREEN_MEM[pid]
+        return said, applicant, result
     rows = _run("SELECT raw, applicant, result FROM prescreens WHERE id = ?", (pid,), fetch=True)
     if not rows:
         raise HTTPException(status_code=404, detail="This assessment wasn't found. Please run the pre-screening again.")
@@ -630,6 +725,59 @@ def _store_session(s):
     _save("INSERT INTO sessions VALUES (?,?,?) ON CONFLICT (id) DO UPDATE SET ts = excluded.ts, "
           "payload = excluded.payload WHERE excluded.ts >= sessions.ts",
           (s["id"], time.time(), json.dumps(converse.export_session(s), ensure_ascii=False, default=str)))
+
+
+def _persist(s):
+    """Store the call only if the caller agreed; if they withdrew consent, delete what was stored."""
+    if s.get("consent", True):
+        _store_session(s)
+    else:
+        _save("DELETE FROM sessions WHERE id = ?", (s["id"],))
+        if s.get("prescreen_id") and s.get("consent_changed"):
+            _save("DELETE FROM prescreens WHERE id = ?", (s["prescreen_id"],))
+
+
+# ---------- retention (DPDP: personal data is kept only as long as needed) ----------
+
+RETENTION_DAYS = converse.RETENTION_DAYS
+RETAINED_TABLES = ("prescreens", "calls", "sessions", "advisor_cases", "latency_metrics", "wa_threads",
+                   "study_results", "decision_audit")
+
+
+def purge_expired(now=None):
+    """Delete everything older than RETENTION_DAYS. Returns rows deleted per table."""
+    cutoff = (now or time.time()) - RETENTION_DAYS * 86400
+    out = {}
+    for table in RETAINED_TABLES:
+        before = _run(f"SELECT COUNT(*) FROM {table} WHERE ts < ?", (cutoff,), fetch=True)[0][0]
+        if before:
+            _run(f"DELETE FROM {table} WHERE ts < ?", (cutoff,))
+        out[table] = int(before)
+    return out
+
+
+async def _purge_loop():
+    while True:
+        try:
+            gone = await asyncio.to_thread(purge_expired)
+            if any(gone.values()):
+                print(f"[retention] deleted rows older than {RETENTION_DAYS} days: {gone}", flush=True)
+        except Exception as e:  # noqa: BLE001  (storage may be down; try again later)
+            print(f"[retention] purge failed: {type(e).__name__}", flush=True)
+        await asyncio.sleep(6 * 3600)
+
+
+@app.on_event("startup")
+async def _start_retention():
+    if WEBHOOK_KEY:
+        asyncio.get_running_loop().create_task(_purge_loop())
+
+
+@app.post("/v1/admin/purge")
+def purge_now(x_webhook_key: str = Header(default="")):
+    """Run the retention clean-up now (it also runs at start-up and every 6 hours)."""
+    _check_key(x_webhook_key)
+    return {"retention_days": RETENTION_DAYS, "deleted": purge_expired()}
 
 
 def _save_study_quietly(s):
@@ -808,6 +956,11 @@ async def run_turn(s, text, action, defer, channel="web-call"):
     """One caller turn through the web-call state machine (any channel). `defer(fn, *args)` runs the
     storage writes later (a FastAPI background task, or directly from a background job)."""
     def save(pid, said, applicant, result, details):
+        defer(_audit, pid, channel, applicant, result, s.get("consent", True))
+        if not s.get("consent", True):
+            _remember_prescreen(pid, {**said, "channel": channel}, applicant, result)
+            print(f"[{channel} {s['id']} -> prescreen {pid}] {result['decision']} (not stored: no consent)", flush=True)
+            return
         defer(_save, "INSERT INTO prescreens VALUES (?,?,?,?,?)", (
             pid, time.time(), json.dumps({**said, "channel": channel}, ensure_ascii=False),
             json.dumps(applicant, ensure_ascii=False), json.dumps({**result, "details": details}, ensure_ascii=False)))
@@ -838,15 +991,15 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
                 raise HTTPException(status_code=422, detail="Unknown persona card.")
             info = {"participant": body.participant or "anon", "persona": body.persona,
                     "synthetic": body.synthetic}
-        s, reply = converse.start(body.language, study=info)
-        tasks.add_task(_store_session, s)
+        s, reply = converse.start(body.language, study=info, consent=body.consent or bool(info))
+        tasks.add_task(_persist, s)
         return {**converse.public(s), "reply": reply}
     s = get_session(body.session_id)
     if s is None:
         raise HTTPException(status_code=404, detail="call not found or expired; start a new one")
     reply = await run_turn(s, body.text, body.action, tasks.add_task)
-    tasks.add_task(_store_session, s)
-    if s.get("study"):
+    tasks.add_task(_persist, s)
+    if s.get("study") and s.get("consent"):
         tasks.add_task(_save_study_quietly, s)
     return {**converse.public(s), "reply": reply}
 
@@ -1165,9 +1318,14 @@ async def _wa_transcribe(client, media_id, lang):
         return ""
 
 
+_WA_MEM = {}  # thread key -> session id, for callers who didn't agree to storage
+
+
 def _wa_session(key):
-    rows = _run("SELECT payload FROM wa_threads WHERE id = ?", (key,), fetch=True)
-    sid = json.loads(rows[0][0]).get("session_id") if rows else None
+    sid = _WA_MEM.get(key)
+    if sid is None:
+        rows = _run("SELECT payload FROM wa_threads WHERE id = ?", (key,), fetch=True)
+        sid = json.loads(rows[0][0]).get("session_id") if rows else None
     s = get_session(sid) if sid else None
     return None if s is None or s.get("state") == "COMPLETED" else s
 
@@ -1190,15 +1348,24 @@ async def whatsapp_handle(msg):
                 await _wa_send(client, whatsapp.outgoing(msg["wa_id"], converse.SAY["wa_unsupported"][lang])[0])
                 return
             greeting = None
-            if s is None:                     # a new thread: greet, then answer what they said
-                s, greeting = converse.start(lang)
+            if s is None:                     # a new thread: greet, ask about storage, answer what they said
+                s, greeting = converse.start(lang, consent=False)
                 s["channel"] = "whatsapp"
             reply = await run_turn(s, text, action, lambda fn, *a: fn(*a), channel="whatsapp")                 if (text or action) else greeting
-            _store_session(s)
-            _run("INSERT INTO wa_threads VALUES (?,?,?) ON CONFLICT (id) DO UPDATE SET ts = excluded.ts, "
-                 "payload = excluded.payload", (key, time.time(), json.dumps({"session_id": s["id"]})))
+            _persist(s)
+            if s.get("consent"):
+                _WA_MEM.pop(key, None)
+                _run("INSERT INTO wa_threads VALUES (?,?,?) ON CONFLICT (id) DO UPDATE SET ts = excluded.ts, "
+                     "payload = excluded.payload", (key, time.time(), json.dumps({"session_id": s["id"]})))
+            else:
+                _WA_MEM[key] = s["id"]
+                _run("DELETE FROM wa_threads WHERE id = ?", (key,))
             if greeting and reply is not greeting:
                 await _wa_send(client, whatsapp.outgoing(msg["wa_id"], greeting)[0])
+            if greeting:                      # then ask, with two buttons, before anything is stored
+                await _wa_send(client, whatsapp.outgoing(msg["wa_id"], converse.SAY["wa_consent"][lang], [
+                    {"label": "Haan, save karo" if lang == "hi" else "Yes, save", "action": "consent:yes"},
+                    {"label": "Nahi" if lang == "hi" else "No", "action": "consent:no"}])[0])
             if msg["kind"] == "audio" and GNANI_TTS_API_KEY:
                 media = await _wa_voice_note(client, reply, s["lang"])
                 if media:

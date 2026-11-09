@@ -94,6 +94,7 @@ const BUSY_TEXT = {
 
 export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, studyMode = false }) {
   const [lang, setLang] = useState("hi");
+  const [consent, setConsent] = useState(false); // stored only with an explicit yes (DPDP)
   const [call, setCall] = useState(null);
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -237,7 +238,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
         setSttFailures(0);
       }
       const r = await converse(apiKey, "", "", callLang, "",
-        studyMode && studyInfo ? { participant: studyInfo.participant, persona: studyInfo.persona } : {});
+        studyMode && studyInfo ? { participant: studyInfo.participant, persona: studyInfo.persona, consent: true }
+          : { consent });
       await handle(r.reply, r);
       if (voiceRef.current && !fillerCache[callLang]) {
         fetchClip(apiKey, FILLER[callLang], callLang).then((c) => (fillerCache[callLang] = c)).catch(() => {});
@@ -446,6 +448,10 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
               Speak replies aloud
             </label>
           </div>
+          <label className="toggle consent">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+            Save my answers for 30 days, so a loan advisor can follow up. Leave this unticked and nothing is stored.
+          </label>
           {error && <p className="call-error" role="alert">{error}</p>}
           <p className="hero-disclaimer">This is an estimated pre-screening, not a lender approval.</p>
         </section>
@@ -464,6 +470,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             </h2>
             <p className="muted small">
               Answer a few questions by voice or text. Saathi reads your details back before estimating anything.
+              {call ? (call.consent ? " Your answers are kept for 30 days." : " Your answers aren't being saved.")
+                : null}
             </p>
           </div>
           <div className="call-controls">

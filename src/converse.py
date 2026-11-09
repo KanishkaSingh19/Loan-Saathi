@@ -32,6 +32,7 @@ If Gemini is unavailable the call carries on with scripted questions and our own
 """
 import asyncio
 import json
+import os
 import re
 import time
 import uuid
@@ -294,6 +295,21 @@ MENTIONS = [(k, re.compile(p, re.I)) for k, p in MENTIONS]
 
 # ---------- what Saathi says ----------
 
+# Data protection (India's DPDP Act): answers are stored only with the caller's yes, and deleted after
+# RETENTION_DAYS (server.purge_expired). Without consent the call still works, in memory only.
+RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS") or 30)
+PRIVACY = {
+    "hi": {True: f"Aapke jawaab sirf is jaanch ke liye {RETENTION_DAYS} din tak save rahenge, phir mita diye "
+                 "jaayenge; 'save mat karo' bolkar aap ise rok sakte hain. ",
+           False: "Abhi aapke jawaab save nahi ho rahe. "},
+    "en": {True: f"Your answers are kept for {RETENTION_DAYS} days for this check, then deleted; say "
+                 "'don't save' to stop that. ",
+           False: "Your answers aren't being saved. "},
+}
+NO_SAVE = re.compile(r"save\s*(?:mat|na|nahi)\s*kar|mat\s*save|don'?t\s+save|do\s+not\s+save|"
+                     r"delete\s+my\s+(?:data|answers)|data\s+mat\s+rakho|(?:don'?t|do not)\s+store", re.I)
+SAVE_OK = re.compile(r"\bsave\s+kar\s*(?:o|do|lo|dijiye|dena)\b|\bsave\s+my\s+answers\b|\byou\s+can\s+save\b", re.I)
+
 GREETING = {
     "hi": "Namaste! Main Loan Saathi hoon. Main kuch aasaan sawaal poochkar bataunga ki aapko kitna loan "
           "mil sakta hai. Yeh sirf ek pre-screening hai, final approval nahi. ",
@@ -379,6 +395,14 @@ SAY = {
                       "en": "Before I can check, one thing needs clearing up. Shall we go over the details again?"},
     "assess_failed": {"hi": "Maaf kijiye, jaanch karte waqt kuch technical dikkat aa gayi. Kya main phir se koshish karoon?",
                       "en": "Sorry, something went wrong while checking. Shall I try again?"},
+    "wa_consent": {"hi": f"Kya hum aapke jawaab {RETENTION_DAYS} din ke liye save kar sakte hain, taaki zaroorat "
+                          "pade toh loan advisor aage madad kar sake? Dono tarah se baat jaari rahegi.",
+                    "en": f"May we keep your answers for {RETENTION_DAYS} days, so a loan advisor can follow up if "
+                          "needed? Either way, we can carry on."},
+    "consent_yes": {"hi": f"Theek hai, aapke jawaab {RETENTION_DAYS} din ke liye save rahenge.",
+                    "en": f"Okay, your answers will be kept for {RETENTION_DAYS} days."},
+    "consent_no": {"hi": "Theek hai, aapke jawaab save nahi honge.",
+                   "en": "Okay, your answers won't be saved."},
     "handoff": {"hi": "Theek hai. Maine aapki baatcheet ka summary loan advisor ke liye case {case} mein save kar "
                       "diya hai. Yeh prototype hai, isliye kisi advisor ko apne aap suchna nahi jaati. Dhanyavaad!",
                 "en": "Okay. I've saved a summary of our conversation for a loan advisor as case {case}. This is a "
@@ -796,7 +820,7 @@ def restore_session(d):
     return s
 
 
-def start(language="hi", study=None):
+def start(language="hi", study=None, consent=True):
     _prune()
     lang = "en" if language == "en" else "hi"
     s = {"id": uuid.uuid4().hex[:12], "lang": lang, "state": START, "trail": [],
@@ -804,11 +828,11 @@ def start(language="hi", study=None):
          "pending": [], "correcting": None, "corrections": 0, "recoveries": 0, "recover_to": None,
          "literal_ok": set(), "changed": set(), "clarify": None, "just_corrected": None,
          "problem_value": None, "result": None, "prescreen_id": None, "llm": [], "updated": time.time(),
-         "study": study, "first_values": {}, "readbacks": 0}
+         "study": study, "first_values": {}, "readbacks": 0, "consent": bool(consent)}
     SESSIONS[s["id"]] = s
     transition(s, COLLECTING, "greeting")
     first = next_field(s)
-    reply = GREETING[lang] + BY_KEY[first][lang]
+    reply = GREETING[lang] + PRIVACY[lang][bool(consent)] + BY_KEY[first][lang]
     s["history"].append(("Saathi", reply))
     s["asking"] = first
     return s, reply
@@ -902,6 +926,7 @@ def public(s):
             "buttons": buttons(s), "skipped": sorted(s["skipped"]),
             "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
             "simulation": s.get("simulation"), "advisor_case": s.get("advisor_case"),
+            "consent": s.get("consent", True),
             "stage": stage(s),
             "trail": [f"{t['from']} -> {t['to']}" for t in s["trail"][-20:]],
             "llm": s["llm"][-1] if s["llm"] else ""}
@@ -1149,8 +1174,23 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
            "safety": safety, "simulator": simulator, "advisor": advisor, "api_key": api_key, "model": model}
     s["_advisor"] = advisor  # used by _handoff, which some paths reach without env
 
+    # Consent can change at any point: "save mat karo" stops storage, "save karo" allows it.
+    choice = (action == "consent:no" or (not action and NO_SAVE.search(text or ""))) and "no" or \
+        (action == "consent:yes" or (not action and SAVE_OK.search(text or ""))) and "yes" or None
+    if choice:
+        s["consent"] = choice == "yes"
+        s["consent_changed"] = True
+        reply = SAY["consent_" + choice][s["lang"]]
+        if s["state"] == COLLECTING and s.get("asking") in BY_KEY and not s["pending"]:
+            reply += " " + BY_KEY[s["asking"]][s["lang"]]
+        s["history"].append(("Saathi", reply))
+        return reply
+
     if action == "handoff" or (not action and text and HUMAN.search(text)):
         if HANDOFF in TRANSITIONS[s["state"]]:
+            if not s.get("consent"):  # asking for an advisor is asking us to keep the summary
+                s["consent"] = True
+                s["consent_via"] = "advisor request"
             reply = _handoff(s, "caller asked for a loan advisor", question=text)
             s["history"].append(("Saathi", reply))
             return reply

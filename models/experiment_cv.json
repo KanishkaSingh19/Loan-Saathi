@@ -1,0 +1,117 @@
+{
+ "ts": 1794256368.7603028,
+ "folds": 5,
+ "rows": 307511,
+ "learning_rate": 0.05,
+ "loan_size_features": [
+  "AMT_CREDIT",
+  "AMT_GOODS_PRICE",
+  "CREDIT_TO_INCOME",
+  "ANNUITY_TO_INCOME",
+  "CREDIT_TO_GOODS"
+ ],
+ "extra_questions": {
+  "employer type": "ORGANIZATION_TYPE",
+  "PIN-code tier": "REGION_RATING_CLIENT_W_CITY",
+  "years at the address": "YEARS_AT_REGISTRATION"
+ },
+ "results": {
+  "current voice model": {
+   "auc_mean": 0.7098,
+   "auc_std": 0.0021,
+   "auc_folds": [
+    0.7072,
+    0.7122,
+    0.7075,
+    0.7119,
+    0.7104
+   ],
+   "brier_mean": 0.07044,
+   "brier_std": 9e-05,
+   "trees_mean": 270,
+   "features": 28,
+   "auc_change": 0.0
+  },
+  "without loan-size features": {
+   "auc_mean": 0.6944,
+   "auc_std": 0.0016,
+   "auc_folds": [
+    0.6924,
+    0.6971,
+    0.6932,
+    0.695,
+    0.6943
+   ],
+   "brier_mean": 0.07109,
+   "brier_std": 6e-05,
+   "trees_mean": 214,
+   "features": 23,
+   "auc_change": -0.0154
+  },
+  "+ employer type": {
+   "auc_mean": 0.7102,
+   "auc_std": 0.0017,
+   "auc_folds": [
+    0.7078,
+    0.7121,
+    0.7087,
+    0.7106,
+    0.7118
+   ],
+   "brier_mean": 0.07044,
+   "brier_std": 8e-05,
+   "trees_mean": 297,
+   "features": 29,
+   "auc_change": 0.0004
+  },
+  "+ PIN-code tier": {
+   "auc_mean": 0.7148,
+   "auc_std": 0.0029,
+   "auc_folds": [
+    0.7111,
+    0.717,
+    0.7121,
+    0.719,
+    0.7148
+   ],
+   "brier_mean": 0.07018,
+   "brier_std": 0.00011,
+   "trees_mean": 306,
+   "features": 29,
+   "auc_change": 0.005
+  },
+  "+ years at the address": {
+   "auc_mean": 0.7097,
+   "auc_std": 0.0023,
+   "auc_folds": [
+    0.7061,
+    0.7119,
+    0.7077,
+    0.7115,
+    0.7111
+   ],
+   "brier_mean": 0.07044,
+   "brier_std": 0.0001,
+   "trees_mean": 311,
+   "features": 29,
+   "auc_change": -0.0001
+  },
+  "+ all three": {
+   "auc_mean": 0.7156,
+   "auc_std": 0.0021,
+   "auc_folds": [
+    0.7131,
+    0.7184,
+    0.7134,
+    0.7173,
+    0.7156
+   ],
+   "brier_mean": 0.07014,
+   "brier_std": 0.0001,
+   "trees_mean": 324,
+   "features": 31,
+   "auc_change": 0.0058
+  }
+ },
+ "note": "Home Credit data, not Indian borrowers. The extra questions are proxies: region rating for a PIN-code tier, years since registration change for years at the address."
+}

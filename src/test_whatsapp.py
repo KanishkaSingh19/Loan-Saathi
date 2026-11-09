@@ -111,9 +111,15 @@ print("ok - webhook verification and Meta's signature are required; off unless c
 
 # ---- a conversation over text ----
 assert deliver(text("Mujhe 3 lakh ka loan chahiye")).status_code == 200
-assert len(SENT) == 2 and "Loan Saathi" in SENT[0]["text"]["body"], SENT   # greeting, then the next question
+assert len(SENT) == 3 and "Loan Saathi" in SENT[0]["text"]["body"], SENT   # greeting, consent, next question
+consent = SENT[1]["interactive"]
+assert [b["reply"]["id"] for b in consent["action"]["buttons"]] == ["consent:yes", "consent:no"]
 assert all(m["to"] == PHONE for m in SENT)
 key = whatsapp.thread_key(PHONE)
+assert not server._run("SELECT id FROM wa_threads", fetch=True), "nothing stored before the caller agrees"
+assert not server._run("SELECT id FROM sessions", fetch=True)
+deliver(button("consent:yes", "Haan, save karo"))
+assert "30 din" in last_text()
 rows = server._run("SELECT id, payload FROM wa_threads", fetch=True)
 assert rows and rows[0][0] == key and PHONE not in json.dumps(rows), "threads are stored by a hashed key"
 sid = json.loads(rows[0][1])["session_id"]

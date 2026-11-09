@@ -77,6 +77,7 @@ String avoids failures when the caller says a number in words.
 | `children` | How many children they have. |
 | `education` | How far they studied (e.g. "10th pass", "graduate", "didn't study"). |
 | `owns_vehicle` | Whether they own a two-wheeler, car or auto: yes or no. |
+| `consent` | Whether the caller agreed to their answers being kept for 30 days: haan or nahi. With nahi, the pre-screen is not stored. |
 
 ### After API Call Variables
 Name them exactly like the response keys:
