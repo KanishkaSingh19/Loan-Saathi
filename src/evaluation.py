@@ -173,7 +173,8 @@ CATALOG = [
         ("Contradictory answers", [("test_confirmation.py", "contradictory income"),
                                    ("test_states.py", "contradicting income and debt answers are asked about"),
                                    ("test_safety.py", "contradictions are asked about")]),
-        ("Bugs found by the extraction benchmark", [("test_voice.py", "parser regressions from the extraction benchmark")]),
+        ("Bugs found by the extraction benchmark", [("test_voice.py", "parser regressions from the extraction benchmark"),
+                                                    ("test_voice.py", "Gemini regressions")]),
         ("Code-mixed speech", [("test_advisor.py", "mujhe 3 lakh ka loan chahiye"),
                                ("test_history.py", "yes/no and counts in English, Hinglish and Devanagari")]),
     ]),
@@ -205,6 +206,10 @@ CATALOG = [
         ("Language-model fallback", [("test_safety.py", "a slow Gemini is cut off at the deadline")]),
         ("Misunderstood answers", [("test_advisor.py", "recovery offers the advisor"),
                                    ("test_states.py", "live-run regressions")]),
+        ("WhatsApp: text, buttons and voice notes", [("test_whatsapp.py", "a full pre-screen over WhatsApp"),
+                                                      ("test_whatsapp.py", "voice notes"),
+                                                      ("test_whatsapp.py", "webhook verification and Meta's signature")]),
+        ("Daily advisor digest", [("test_whatsapp.py", "daily advisor digest")]),
         ("Speech recognition accuracy on real callers", None),
         ("Text-to-speech quality", None),
     ]),
@@ -290,6 +295,19 @@ def failure_cases():
          "measured_after": "64 of 64 on the same cases. These are the cases that found the bugs, so this is not "
                            "an independent accuracy figure.",
          "still": "The cases are hand-written, not real callers' speech."},
+        {"title": "With Gemini, a spoken range was stored as one amount",
+         "found": "Extraction benchmark with Gemini",
+         "what": "For '30-35 hazaar' Gemini quoted only '35 hazaar' and also claimed '30-35 hazaar' as the loan "
+                 "amount; the range check then set ₹30,000 aside as 'the loan' and stored ₹35,000 as the income. "
+                 "Gemini also gave 'sixty thousand', said to the income question, to the loan, and sent a bare "
+                 "'6' for 'six months' (read as 6 years).",
+         "measured_before": "60 of 64 with Gemini answering 60 turns (reports/extraction_benchmark_gemini.json "
+                            "at the time; not kept).",
+         "fix": "One spoken amount answers one question (the field asked wins); a range in our parser's span is "
+                "always checked even if Gemini quotes one end; the caller's own unit words win over Gemini's "
+                "number.",
+         "measured_after": "See Measurements: the current Gemini run and how many turns Gemini answered.",
+         "still": "Gemini's free tier was often overloaded; turns it doesn't answer fall back to the parser."},
         {"title": "Loan size looked predictive, but it was the lender's own risk view",
          "found": "Model development",
          "what": "Loan size divided by EMI mostly reflected the interest rate the lender charged, which a voice agent "
@@ -366,8 +384,9 @@ def measurements(live=None):
                                 "gemini_turns": r.get("gemini_turns", 0), "source": f"reports/{name}",
                                 "wrong": [{"field": w["field"], "said": w["said"], "got": w["got"],
                                            "expect": w["expect"]} for w in r["wrong"]]}
-    cases = json.loads((ROOT / "tests" / "extraction_cases.json").read_text(encoding="utf-8"))
-    extraction["about"] = cases["about"]
+    cases_file = ROOT / "tests" / "extraction_cases.json"
+    extraction["about"] = (json.loads(cases_file.read_text(encoding="utf-8"))["about"]
+                           if cases_file.exists() else "")
     return {"latency": latency, "extraction": extraction,
             "real_users": _missing("No study with real first-time borrowers has been run yet (STUDY.md has the kit).")}
 

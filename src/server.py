@@ -28,7 +28,7 @@ import httpx
 from fastapi import (BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket,
                      WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -47,6 +47,7 @@ import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
 import spoken  # noqa: E402
+import whatsapp  # noqa: E402
 import study  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -76,6 +77,12 @@ ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGIN
 # Where new advisor cases are announced: any URL that accepts a JSON POST, e.g. a Slack or Microsoft
 # Teams incoming webhook ({"text": ...}). Empty = no notification, and applicants are told so.
 ADVISOR_WEBHOOK_URL = os.environ.get("ADVISOR_WEBHOOK_URL", "").strip()
+# WhatsApp Cloud API (deploy/DEPLOY.md). The channel is off unless all four are set.
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "").strip()
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+WHATSAPP_VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN", "").strip()
+WHATSAPP_APP_SECRET = os.environ.get("WHATSAPP_APP_SECRET", "").strip()
+WHATSAPP_GRAPH = os.environ.get("WHATSAPP_GRAPH", "https://graph.facebook.com/v21.0").rstrip("/")
 SESSION_RESUME_HOURS = 2  # a stored call can be resumed (e.g. after a restart) for this long
 
 app = FastAPI(title="Loan pre-screening webhook")
@@ -161,6 +168,7 @@ _SCHEMA = [
     "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
     "CREATE TABLE IF NOT EXISTS study_results (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
     "CREATE TABLE IF NOT EXISTS latency_metrics (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
+    "CREATE TABLE IF NOT EXISTS wa_threads (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
 ]
 _schema_ready = False
 
@@ -796,6 +804,28 @@ def list_advisor_cases(limit: int = 50, x_webhook_key: str = Header(default=""))
     return {"cases": [json.loads(p) for (p,) in rows]}
 
 
+async def run_turn(s, text, action, defer, channel="web-call"):
+    """One caller turn through the web-call state machine (any channel). `defer(fn, *args)` runs the
+    storage writes later (a FastAPI background task, or directly from a background job)."""
+    def save(pid, said, applicant, result, details):
+        defer(_save, "INSERT INTO prescreens VALUES (?,?,?,?,?)", (
+            pid, time.time(), json.dumps({**said, "channel": channel}, ensure_ascii=False),
+            json.dumps(applicant, ensure_ascii=False), json.dumps({**result, "details": details}, ensure_ascii=False)))
+        print(f"[{channel} {s['id']} -> prescreen {pid}] {result['decision']} band={result['risk_band']}", flush=True)
+
+    try:
+        return await converse.turn(s, text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
+                                   action=action, assess=scoring.score, safety=assessment.safety_pre,
+                                   simulator=lambda a, loan=None, tenure=None, scen=False:
+                                   simulate_for(a, loan, tenure, WEB_CONTEXT, scen),
+                                   advisor=lambda sess, question: save_case(case_from_session(sess, question)))
+    except Exception as e:  # noqa: BLE001  (never show a stack trace to the applicant)
+        print(f"[{channel} {s['id']}] turn failed: {type(e).__name__}: {e}", flush=True)
+        reply = converse.SAY["glitch"][s["lang"]]
+        s["history"].append(("Saathi", reply))
+        return reply
+
+
 @app.post("/v1/converse")
 async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
     """Browser web call: one caller utterance in (already transcribed), Saathi's reply out.
@@ -814,23 +844,7 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
     s = get_session(body.session_id)
     if s is None:
         raise HTTPException(status_code=404, detail="call not found or expired; start a new one")
-
-    def save(pid, said, applicant, result, details):
-        tasks.add_task(_save, "INSERT INTO prescreens VALUES (?,?,?,?,?)", (
-            pid, time.time(), json.dumps(said, ensure_ascii=False), json.dumps(applicant, ensure_ascii=False),
-            json.dumps({**result, "details": details}, ensure_ascii=False)))
-        print(f"[web-call {s['id']} -> prescreen {pid}] {result['decision']} band={result['risk_band']}", flush=True)
-
-    try:
-        reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
-                                    action=body.action, assess=scoring.score, safety=assessment.safety_pre,
-                                    simulator=lambda a, loan=None, tenure=None, scen=False:
-                                    simulate_for(a, loan, tenure, WEB_CONTEXT, scen),
-                                    advisor=lambda sess, question: save_case(case_from_session(sess, question)))
-    except Exception as e:  # noqa: BLE001  (never show a stack trace to the applicant)
-        print(f"[web-call {s['id']}] turn failed: {type(e).__name__}: {e}", flush=True)
-        reply = converse.SAY["glitch"][s["lang"]]
-        s["history"].append(("Saathi", reply))
+    reply = await run_turn(s, body.text, body.action, tasks.add_task)
     tasks.add_task(_store_session, s)
     if s.get("study"):
         tasks.add_task(_save_study_quietly, s)
@@ -1061,6 +1075,162 @@ def latency_records(limit=2000):
     return [json.loads(r[0]) for r in rows]
 
 
+# ---------- WhatsApp channel ----------
+
+_WA_SEEN = {}  # message id -> time, so Meta's retries are answered once
+
+
+def whatsapp_ready():
+    return all((WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET))
+
+
+@app.get("/v1/whatsapp/webhook")
+def whatsapp_verify(request: Request):
+    """Meta's one-time webhook check: echo hub.challenge only for our verify token."""
+    q = request.query_params
+    if not whatsapp_ready():
+        raise HTTPException(status_code=503, detail="WhatsApp is not configured")
+    if q.get("hub.mode") != "subscribe" or not hmac.compare_digest(q.get("hub.verify_token", ""), WHATSAPP_VERIFY_TOKEN):
+        raise HTTPException(status_code=403, detail="bad verify token")
+    return PlainTextResponse(q.get("hub.challenge", ""))
+
+
+@app.post("/v1/whatsapp/webhook")
+async def whatsapp_receive(request: Request, tasks: BackgroundTasks):
+    """Incoming WhatsApp messages. Signed by Meta (X-Hub-Signature-256); answered in the background so
+    Meta gets its 200 at once."""
+    if not whatsapp_ready():
+        raise HTTPException(status_code=503, detail="WhatsApp is not configured")
+    raw = await request.body()
+    if not whatsapp.valid_signature(WHATSAPP_APP_SECRET, raw, request.headers.get("x-hub-signature-256", "")):
+        raise HTTPException(status_code=401, detail="bad signature")
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="not JSON") from None
+    now = time.time()
+    for k in [k for k, t in _WA_SEEN.items() if now - t > 3600]:
+        _WA_SEEN.pop(k, None)
+    for msg in whatsapp.parse(payload):
+        if msg["id"] in _WA_SEEN:
+            continue
+        _WA_SEEN[msg["id"]] = now
+        tasks.add_task(whatsapp_handle, msg)
+    return {"ok": True}
+
+
+async def _wa_send(client, body):
+    r = await client.post(f"{WHATSAPP_GRAPH}/{WHATSAPP_PHONE_NUMBER_ID}/messages", json=body,
+                          headers={"Authorization": f"Bearer {WHATSAPP_TOKEN}"})
+    if not r.is_success:
+        print(f"[whatsapp] send failed: HTTP {r.status_code}", flush=True)
+    return r.is_success
+
+
+async def _wa_voice_note(client, text, lang):
+    """Saathi's reply as an OGG/Opus voice note from Gnani TTS, uploaded to WhatsApp; returns its media id."""
+    body = SpeechRequest(text=text[:5000], language="en-IN" if lang == "en" else "hi-en")
+    await _tts_turn()
+    try:
+        r = await client.post(GNANI_TTS_URL, headers={"X-API-Key-ID": GNANI_TTS_API_KEY},
+                              json={**_tts_payload(body), "audio_config": {
+                                  "sample_rate": 48000, "num_channels": 1, "sample_width": 2,
+                                  "encoding": "oggopus", "container": "ogg"}})
+    finally:
+        _TTS_LOCK.release()
+    if not r.is_success or not r.content:
+        return None
+    up = await client.post(f"{WHATSAPP_GRAPH}/{WHATSAPP_PHONE_NUMBER_ID}/media",
+                           headers={"Authorization": f"Bearer {WHATSAPP_TOKEN}"},
+                           data={"messaging_product": "whatsapp", "type": "audio/ogg"},
+                           files={"file": ("saathi.ogg", r.content, "audio/ogg")})
+    return up.json().get("id") if up.is_success else None
+
+
+async def _wa_transcribe(client, media_id, lang):
+    """A caller's voice note: fetch it from WhatsApp, then Gnani REST STT (reads OGG; 30 s limit)."""
+    auth = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+    meta = await client.get(f"{WHATSAPP_GRAPH}/{media_id}", headers=auth)
+    if not meta.is_success or not meta.json().get("url"):
+        return ""
+    audio = await client.get(meta.json()["url"], headers=auth)
+    if not audio.is_success or not audio.content or not GNANI_STT_API_KEY:
+        return ""
+    r = await client.post("https://api.vachana.ai/stt/v3", headers={"X-API-Key-ID": GNANI_STT_API_KEY},
+                          data={"language_code": "en-IN" if lang == "en" else "hi-IN", "format": "transcribe"},
+                          files={"audio_file": ("voice.ogg", audio.content, "audio/ogg")})
+    try:
+        return (r.json().get("transcript") or "").strip() if r.is_success else ""
+    except ValueError:
+        return ""
+
+
+def _wa_session(key):
+    rows = _run("SELECT payload FROM wa_threads WHERE id = ?", (key,), fetch=True)
+    sid = json.loads(rows[0][0]).get("session_id") if rows else None
+    s = get_session(sid) if sid else None
+    return None if s is None or s.get("state") == "COMPLETED" else s
+
+
+async def whatsapp_handle(msg):
+    """One WhatsApp message -> one turn of the same conversation -> text (+ buttons), and a voice note
+    back when the caller sent one."""
+    key = whatsapp.thread_key(msg["wa_id"])
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            s = _wa_session(key)
+            lang = s["lang"] if s else whatsapp.guess_language(msg["text"])
+            text, action = msg["text"], msg["action"]
+            if msg["kind"] == "audio":
+                text = await _wa_transcribe(client, msg["media_id"], lang)
+                if not text:
+                    await _wa_send(client, whatsapp.outgoing(msg["wa_id"], converse.SAY["wa_unheard"][lang])[0])
+                    return
+            elif msg["kind"] == "unsupported":
+                await _wa_send(client, whatsapp.outgoing(msg["wa_id"], converse.SAY["wa_unsupported"][lang])[0])
+                return
+            greeting = None
+            if s is None:                     # a new thread: greet, then answer what they said
+                s, greeting = converse.start(lang)
+                s["channel"] = "whatsapp"
+            reply = await run_turn(s, text, action, lambda fn, *a: fn(*a), channel="whatsapp")                 if (text or action) else greeting
+            _store_session(s)
+            _run("INSERT INTO wa_threads VALUES (?,?,?) ON CONFLICT (id) DO UPDATE SET ts = excluded.ts, "
+                 "payload = excluded.payload", (key, time.time(), json.dumps({"session_id": s["id"]})))
+            if greeting and reply is not greeting:
+                await _wa_send(client, whatsapp.outgoing(msg["wa_id"], greeting)[0])
+            if msg["kind"] == "audio" and GNANI_TTS_API_KEY:
+                media = await _wa_voice_note(client, reply, s["lang"])
+                if media:
+                    await _wa_send(client, {"messaging_product": "whatsapp", "to": msg["wa_id"], "type": "audio",
+                                            "audio": {"id": media}})
+            for body in whatsapp.outgoing(msg["wa_id"], reply, converse.buttons(s)):
+                await _wa_send(client, body)
+    except Exception as e:  # noqa: BLE001
+        print(f"[whatsapp] message failed: {type(e).__name__}: {e}", flush=True)
+
+
+# ---------- daily advisor digest ----------
+
+@app.post("/v1/advisor-digest")
+def advisor_digest(x_webhook_key: str = Header(default="")):
+    """A summary of open advisor cases, sent to ADVISOR_WEBHOOK_URL when one is set. Call it once a day
+    from a scheduler (deploy/DEPLOY.md); it reports honestly whether anything was delivered."""
+    _check_key(x_webhook_key)
+    rows = _run("SELECT payload FROM advisor_cases ORDER BY ts DESC LIMIT 500", fetch=True)
+    digest = advisor.digest([json.loads(r[0]) for r in rows], time.time())
+    if not ADVISOR_WEBHOOK_URL:
+        return {**digest, "delivered": False, "configured": False}
+    try:
+        r = httpx.post(ADVISOR_WEBHOOK_URL, json={"text": digest["text"]}, timeout=5.0)
+        ok = r.is_success
+    except httpx.HTTPError:
+        ok = False
+    print(f"[advisor digest] {digest['open']} open, {digest['in_review']} in review: "
+          f"{'delivered' if ok else 'FAILED'}", flush=True)
+    return {**digest, "delivered": ok, "configured": True}
+
+
 # The built React app holds no data: it asks for the webhook key, then polls /v1/applications.
 DASHBOARD_DIST = ROOT / "dashboard" / "dist"
 if DASHBOARD_DIST.exists():
@@ -1077,4 +1247,6 @@ if __name__ == "__main__":
     if not WEBHOOK_KEY or WEBHOOK_KEY.startswith("replace-with"):
         sys.exit("Refusing to start: set WEBHOOK_KEY in .env to a long random secret (every /v1 route needs it).")
     # HOST=0.0.0.0 inside a container; the default keeps a local run off the network.
-    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 8000)))
+    # An empty HOST= (as in .env.example) must not mean "every interface": it used to bind ":8000".
+    uvicorn.run(app, host=os.environ.get("HOST", "").strip() or "127.0.0.1",
+                port=int(os.environ.get("PORT", "").strip() or 8000))

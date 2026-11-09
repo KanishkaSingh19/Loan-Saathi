@@ -9,6 +9,32 @@ Built on **Gnani Agent Builder** (Prisma speech-to-text, LLM, Timbre text-to-spe
 LightGBM credit-risk model trained on the
 [Home Credit Default Risk](https://www.kaggle.com/c/home-credit-default-risk) dataset as a mid-call webhook.
 
+**Try it in one command:** `.\demo.ps1` (Windows) or `./demo.sh` (macOS/Linux), then open
+http://127.0.0.1:8000/dashboard/. Add Gnani keys to `.env` to talk; without them, type.
+
+## What we can show (not just claim)
+Every number below comes from a file a script wrote, and the dashboard's **Evaluation Lab** shows them
+with their sources; anything not measured says *Not currently measured*.
+
+- **We caught our own model being wrong.** Live testing found a caller owing ₹36.5 lakh on ₹40,000 a
+  month scored *safer* (6.1%) than the same caller with no debt (8.2%): in the training data big debts went
+  with wealthier borrowers. Measured on 240 synthetic profiles, risk fell as debt rose in 520 of 1,680 checks.
+  We added a hard rule (more than 24 months of income owed means "not right now", whatever the model says)
+  and retrained the model monotone in debt: **0 of 1,680** now (`models/validation_report.json`).
+- **Live voice, measured.** Gnani streaming STT hears the caller and ends the turn on its own; Gnani streaming
+  TTS starts speaking on the first chunk; the caller can interrupt. Caller stops → first audio of the reply:
+  **median 3.09 s, 90th percentile 3.41 s** over 13 scripted Hinglish turns (`reports/latency_benchmark.json`;
+  a synthetic caller voice on one machine, so a real phone line will be slower). Gemini is the slowest stage.
+- **Extraction accuracy, with the misses shown.** 64 hand-written answers ("dedh lakh", "ढाई लाख",
+  "meri salary 35 hazaar hai", "2-3 lakh") with the correct outcome for each. The first run scored 59/64 and
+  found four parser bugs ("six months" stored as 72 months, among others); after fixing them, 64/64 on the
+  same cases, so that is not an independent figure (`reports/extraction_benchmark*.json`).
+- **Tested where it matters:** confirmation before assessment, lakh/crore, ambiguous and contradictory
+  amounts, excessive debt, the model failing to load, speech-to-text failing, no LLM-made decisions, no
+  approval claims. Every suite is run and recorded by `python -I -X utf8 src/evaluation.py run`.
+- **Not yet measured:** accuracy on Indian borrowers (no labelled Indian data exists) and results with real
+  first-time borrowers (the study kit in STUDY.md is ready).
+
 ## How it works
 
 **LISTEN → EXTRACT → VALIDATE → CONFIRM → ASSESS → EXPLAIN → SIMULATE → HANDOFF**
@@ -24,16 +50,23 @@ LightGBM credit-risk model trained on the
 | **Simulate** | "What if I take ₹2 lakh over 5 years?": the same decision path on a copy of the request, labelled *Simulation, not a lender offer*. | Model + rules |
 | **Handoff** | Next steps, or a structured summary saved (and optionally sent) for a loan advisor. | The caller |
 
-The call's `stage` comes from the state machine (`converse.stage()`); the call screen shows it, and the
-result page tags its sections Assess, Explain, Simulate and Handoff. On the phone (Agent Builder) the
-same stages run without the read-back step.
+The call's `stage` comes from the state machine (`converse.stage()`) and is recorded with each call; the
+borrower sees a single status line instead (Listening, Understanding, Verifying, Confirm). On the phone
+(Agent Builder) the same stages run without the read-back step.
 
 ## Web call with Gemini (in the browser)
 The dashboard's **Web call** tab lets anyone try Saathi from a browser, with no phone line:
 
 ```
-mic → Gnani Prisma (speech-to-text) → Gemini → our model + affordability rule → Gemini → Gnani Timbre (text-to-speech) → speaker
+mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → our model + affordability rule
+    → Gemini → /v1/tts/stream → Gnani streaming TTS → speaker (plays from the first chunk)
 ```
+
+- **A live conversation, not push-to-talk**: *Talk to Saathi* keeps the microphone streaming; the caller
+  just speaks and Saathi answers when they pause. Speaking over Saathi stops it (barge-in, with a guard so
+  Saathi's own voice from the speakers isn't taken as an answer). A slow turn gets an "Achha, ek second".
+  Amounts are spoken the way people say them ("teen lakh rupaye", not digits). Tap-to-talk and typing
+  remain as fallbacks, and the Gnani keys never reach the browser.
 
 - **Gemini understands and phrases**: it pulls answers out of free speech ("ek lakh chahiye,
   kamaata hoon 40 hazaar" fills two answers at once), answers side questions, and words each reply
@@ -117,6 +150,16 @@ maximum EMI I can afford?", "EMI kam rakhni hai".
 - `src/test_safety.py` checks the product's boundaries end to end: no approval claims or lender names
   anywhere an applicant can see or hear, no protected attributes, the LLM never decides, numbers are
   validated, confirmation is required, affordability and the debt rule hold, contradictions are asked.
+
+## WhatsApp, and a daily digest for advisors
+- **WhatsApp** (`/v1/whatsapp/webhook`, Meta's WhatsApp Cloud API): the same conversation, rules and
+  model over text, reply buttons and voice notes. A voice note is transcribed by Gnani STT (OGG, up to
+  30 s) and answered with a Gnani TTS voice note plus the text. Meta's signature is checked on every
+  message, retries are answered once, and phone numbers aren't stored (threads use a hashed key). Off
+  unless the four `WHATSAPP_*` settings are present (deploy/DEPLOY.md, section 4).
+- **Daily advisor digest** (`POST /v1/advisor-digest`): open and in-review advisor cases with their
+  headline and question, sent to `ADVISOR_WEBHOOK_URL`. It runs when a scheduler calls it (a GitHub
+  Actions cron is in deploy/DEPLOY.md) and reports whether it was actually delivered.
 
 ## Operations: persistent calls, advisor notifications, user study
 - **Calls survive restarts:** every web-call turn is stored (`sessions` table, SQLite or Neon) and a
@@ -219,7 +262,8 @@ All three were trained on the same 80/20 split and features, with matched settin
 0.05, early stopping after 200 rounds, similar tree size, L2 = 5, the same monotone constraints on the
 voice model). They ran on a laptop CPU with 6 threads. Reproduce with `python -I -X utf8 src/compare_models.py`.
 
-**Voice model** (22 features, the one the agent uses)
+**Voice model, earlier version** (22 features, before the repayment-history questions; the current voice
+model has 28 features and AUC 0.7113, and this comparison was not repeated for it)
 
 | Model | AUC | Brier | Train time | Score 1 caller | Model size |
 |---|---|---|---|---|---|
@@ -263,7 +307,13 @@ src/train.py           trains voice + full models  (python -I src/train.py [--vo
 src/compare_models.py  LightGBM vs XGBoost vs CatBoost on identical splits
 src/scoring.py         score one applicant: risk, band, reasons, affordable loan
 src/normalize.py       spoken values -> model inputs ("dhai lakh" -> 250000)
-src/server.py          FastAPI webhook, Gnani STT/TTS proxy, and dashboard server
+src/server.py          FastAPI webhook, Gnani STT/TTS proxy (streaming too), and dashboard server
+src/spoken.py          numbers spelled out for speech ("teen lakh rupaye")
+src/evaluation.py      Evaluation Lab evidence; `run` records every test suite
+src/bench_latency.py   voice latency benchmark through the live pipeline
+src/bench_extraction.py extraction accuracy on tests/extraction_cases.json
+src/whatsapp.py        WhatsApp Cloud API channel (text and voice notes)
+demo.ps1 / demo.sh     one-command local start
 dashboard/             React + Vite live dashboard (src/App.jsx, src/components/, src/styles.css)
 src/test_webhook.py    end-to-end tests with Hinglish inputs
 agent/                 system prompt, action body and step-by-step Agent Builder setup

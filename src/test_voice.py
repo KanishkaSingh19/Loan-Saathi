@@ -184,4 +184,27 @@ assert cv.check({"literal_ok": set(), "answers": {}}, "other_loans_emi", "aath h
                 "aath hazaar mahina") == ("ok", 8000.0)
 print("ok - parser regressions from the extraction benchmark stay fixed")
 
+
+# ---- Gemini regressions found by the extraction benchmark (Gemini faked with its real mistakes) ----
+def gemini_says(*answers):
+    async def fake(*a, **k):
+        return {"answers": [{"field": f, "value": v, "quote": q} for f, v, q in answers], "reply": "", "asking": ""}
+    return fake
+
+
+real_gemini = cv._gemini
+env = {"api_key": "x", "model": "m"}
+s, _ = cv.start("en")
+cv._gemini = gemini_says(("loan_amount", "60000", "sixty thousand"))          # wrong field for the income answer
+out, _ = asyncio.run(cv._extract(s, env, "sixty thousand", "monthly_income"))
+assert [k for k, _, _ in out] == ["monthly_income"], out
+cv._gemini = gemini_says(("monthly_income", "35000", "35 hazaar"), ("loan_amount", "30000", "30-35 hazaar"))
+out, _ = asyncio.run(cv._extract(s, env, "30-35 hazaar", "monthly_income"))
+inc = next(w for k, _, w in out if k == "monthly_income")
+assert cv.check({"literal_ok": set(), "answers": {}}, "monthly_income", "35000", inc)[0] == "choose", out
+assert "loan_amount" not in [k for k, _, _ in out], "one spoken amount answers one question"
+cv._gemini = real_gemini
+assert cv.check({"literal_ok": set(), "answers": {}}, "tenure_months", "6", "six months") == ("ok", 6)
+print("ok - Gemini regressions: one amount answers one question, ranges are asked, 'six months' stays 6")
+
 print("All voice tests passed.")

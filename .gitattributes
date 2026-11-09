@@ -1,0 +1,6 @@
+# Model files are data: never convert their line endings (a Windows checkout with core.autocrlf
+# rewrote them with CRLF and LightGBM could not load the model).
+models/*.txt -text
+models/*.json -text
+# Shell scripts must keep LF to run.
+*.sh text eol=lf

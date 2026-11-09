@@ -351,6 +351,12 @@ SAY = {
                            "upar padhi gayi jaankari sahi hai? 'Haan' boliye, ya bataiye kya badalna hai.",
                      "en": "I can show other amounts or tenures right after the assessment. First, is the information "
                            "I read out correct? Say yes, or tell me what to change."},
+    "wa_unheard": {"hi": "Maaf kijiye, aapka voice note saaf sunai nahi diya. Kripya 30 second se chhota "
+                          "voice note bhejiye, ya likh kar bataiye.",
+                    "en": "Sorry, I couldn't hear that voice note clearly. Please send one under 30 seconds, "
+                          "or type your answer."},
+    "wa_unsupported": {"hi": "Main sirf text aur voice note samajh sakta hoon. Kripya likh kar ya bol kar bataiye.",
+                       "en": "I can only read text and voice notes. Please type or record your answer."},
     "whatif_which": {"hi": "Maine do rakam suni: {options}. Kaunsi rakam dekhni hai? Ek hi rakam boliye.",
                      "en": "I heard two amounts: {options}. Which one should I simulate? Please say one amount."},
     "whatif_bare": {"hi": "Maine sirf '{n}' suna. Poori rakam boliye, jaise '{n} hazaar' ya '2 lakh'.",
@@ -627,11 +633,14 @@ def check(s, key, raw, words):
         return ("ok", n)
     if key == "tenure_months":
         n = norm.months(raw)
+        own = norm.months(words)
+        # The caller's own words win when they name the unit ("six months" is 6 even if Gemini sent "6").
+        if own is not None and re.search(r"month|mahin|महीन|saal|sal|year|varsh|baras|साल", str(words), re.I):
+            n = own
         if n is None:
             return ("invalid", "unclear", None)
         if not 3 <= n <= 120:
             return ("invalid", "tenure_range", n)
-        own = norm.months(words)
         if own is not None and own != n:
             return ("confirm", n, "number")
         return ("ok", n)
@@ -1212,9 +1221,24 @@ async def _extract(s, env, text, asked):
         # in a dry run). Our parser fills only money/tenure fields Gemini didn't return; every value still
         # goes through check() and the read-back.
         have = {k for k, _, _ in out}
-        for k, raw, words in fallback_candidates(text, asked):
+        ours = fallback_candidates(text, asked)
+        for k, raw, words in ours:
             if k not in have and k not in s["answers"] and (k in MONEY or k == "tenure_months"):
                 out.append((k, raw, words))
+        # Gemini may quote one end of a range ("35 hazaar" out of "30-35 hazaar"). When our parser's span
+        # for the same money field holds more amounts than the quote, check the wider span, so a range or
+        # two amounts are always asked about instead of one being stored.
+        span = {k: w for k, _, w in ours if k in MONEY}
+
+        def count(w):
+            return len(norm.amounts(TENURE_PHRASE.sub(" ", str(w or ""))))
+        out = [(k, raw, span[k] if k in span and count(span[k]) > count(words) else words) for k, raw, words in out]
+    # One spoken amount answers one question: when the same words are given to two fields (Gemini read
+    # "sixty thousand", said to the income question, as the loan), keep the field we asked about.
+    by_words = {}
+    for cand in out:
+        by_words.setdefault(_plain(cand[2]), []).append(cand)
+    out = [next((c for c in group if c[0] == asked), group[0]) for group in by_words.values()]
     return out, g
 
 

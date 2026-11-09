@@ -328,3 +328,23 @@ def conversation_summary(s):
 
 def recent_turns(s, n=8):
     return [f"{who}: {text}" for who, text in s.get("history", [])[-n:]]
+
+
+def digest(cases, now):
+    """A short daily summary of advisor cases still waiting: counts, the oldest wait, and one line per
+    case (headline and question). Built from the saved cases only."""
+    waiting = [c for c in cases if c.get("status", "open") in ("open", "in_review")]
+    opened = [c for c in waiting if c.get("status", "open") == "open"]
+    review = [c for c in waiting if c.get("status") == "in_review"]
+    oldest = max(((now - c["ts"]) / 3600 for c in opened), default=0)
+    lines = [f"#{c['id']} ({'open' if c.get('status', 'open') == 'open' else 'in review'}, "
+             f"{(now - c['ts']) / 3600:.0f} h): {c.get('headline', '')}. Question: {c.get('question', '')}"
+             for c in sorted(waiting, key=lambda c: c["ts"])[:20]]
+    head = (f"Loan-Saathi daily digest: {len(opened)} open and {len(review)} in-review advisor case(s)"
+            + (f"; the oldest open case has waited {oldest:.0f} hours." if opened else "."))
+    text = head if not lines else head + chr(10) + chr(10).join(lines)
+    if len(waiting) > 20:
+        text += chr(10) + f"...and {len(waiting) - 20} more in the dashboard's Advisor cases view."
+    return {"open": len(opened), "in_review": len(review), "oldest_open_hours": round(oldest, 1),
+            "lines": lines, "text": text}
+

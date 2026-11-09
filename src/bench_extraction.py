@@ -65,7 +65,7 @@ def main():
     cases = json.loads((ROOT / "tests" / "extraction_cases.json").read_text(encoding="utf-8"))
     c = TestClient(server.app)
     rows = []
-    for case in cases["cases"]:
+    def ask(case):
         s, _ = cv.start(case["lang"])
         for k in cv.KEYS:
             if k == case["field"]:
@@ -73,8 +73,16 @@ def main():
             if k in PREFILL and not cv._skip(k, s["answers"]):
                 cv._set(s, k, PREFILL[k], str(PREFILL[k]))
         s["asking"] = case["field"]
-        t = c.post("/v1/converse", headers={"X-Webhook-Key": "bench-key"},
-                   json={"session_id": s["id"], "text": case["said"]}).json()
+        return c.post("/v1/converse", headers={"X-Webhook-Key": "bench-key"},
+                      json={"session_id": s["id"], "text": case["said"]}).json()
+
+    for case in cases["cases"]:
+        t = ask(case)
+        for _ in range(3 if GEMINI else 0):      # Gemini busy or slow: retry, so the run measures Gemini
+            if t.get("llm") == "gemini":
+                break
+            time.sleep(12)
+            t = ask(case)
         got = outcome(t, case["field"])
         ok = correct(got, case["expect"])
         rows.append({**case, "got": got, "correct": ok, "llm": t.get("llm", "")})

@@ -26,9 +26,9 @@ Limits to know about:
    `loan-saathi-api`. Public is fine: the code is already public and every `/v1` route needs the
    webhook key.
 2. Upload these files to the Space (the **Files** tab, or `git clone` the Space and copy them):
-   - `Dockerfile`, `.dockerignore`, `requirements.txt`
-   - `src/` (all of it)
-   - `models/voice_model.txt` and `models/voice_model_meta.json`
+   - `Dockerfile`, `.dockerignore`, `requirements.txt`, `.gitattributes`
+   - `src/` (all of it), `reports/`, `tests/extraction_cases.json`
+   - `models/voice_model.txt`, `models/voice_model_meta.json` and the `models/*.json` evidence files
    - `deploy/huggingface/README.md`, placed at the Space's root as `README.md` (its header tells
      Hugging Face to use Docker on port 7860)
 3. Under **Settings → Variables and secrets**, add as **secrets**:
@@ -38,6 +38,12 @@ Limits to know about:
    - `GEMINI_API_KEY`: for the web call's understanding and replies (free from aistudio.google.com)
    - `ALLOWED_ORIGINS`: the Vercel URL from step 3, e.g. `https://loan-saathi.vercel.app`
      (add it once you know it; comma-separate several)
+   - Optional: `ADVISOR_WEBHOOK_URL` (Slack/Teams incoming webhook for advisor cases and the daily
+     digest) and the four `WHATSAPP_*` values (section 4)
+
+   Live voice uses a WebSocket (`/ws/stt`); Hugging Face Spaces allow WebSockets, so nothing extra
+   is needed. Easiest upload: push this repository to the Space, since the Dockerfile copies what it
+   needs (the model, the evidence files for the Evaluation Lab, and `src/`).
 4. Wait for the build, then open `https://<username>-loan-saathi-api.hf.space/health`. It should
    return `{"ok": true}`.
 5. In Agent Builder, set the action URL to `https://<username>-loan-saathi-api.hf.space/v1/prescreen`
@@ -52,6 +58,29 @@ Limits to know about:
 5. Deploy, then copy the site URL into the Space's `ALLOWED_ORIGINS` secret. The Space restarts,
    and after that the dashboard can load data. Open it and enter the webhook key, which stays in
    that browser tab only.
+
+## 4. WhatsApp (optional)
+Saathi answers on WhatsApp with the same conversation: text, reply buttons, and voice notes (a voice
+note is answered with a voice note made by Gnani TTS, plus the text).
+1. In Meta for Developers, create an app with the **WhatsApp** product. Note the **Phone number ID**
+   and create a permanent access token (a system user token with `whatsapp_business_messaging`).
+2. Add the Space secrets `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET` (the
+   app's secret, used to check Meta's signature) and `WHATSAPP_VERIFY_TOKEN` (any long random value).
+3. Under WhatsApp → Configuration, set the callback URL to
+   `https://<username>-loan-saathi-api.hf.space/v1/whatsapp/webhook`, the verify token to the same
+   value, and subscribe to **messages**.
+4. Send a message to the test number. Notes: Meta only lets a business reply within 24 hours of the
+   user's last message; voice notes over 30 seconds can't be transcribed (Saathi asks for a shorter one).
+   Phone numbers are not stored: threads are kept under a hashed key.
+
+## 5. Daily advisor digest (optional)
+`POST /v1/advisor-digest` (with the webhook key) sends a summary of open advisor cases to
+`ADVISOR_WEBHOOK_URL` and returns it. Nothing calls it by itself: schedule it once a day, for example
+with a GitHub Actions workflow (`on: schedule: - cron: "30 3 * * *"`, which is 9:00 IST) running
+```bash
+curl -fsS -X POST https://<username>-loan-saathi-api.hf.space/v1/advisor-digest -H "X-Webhook-Key: $WEBHOOK_KEY"
+```
+with `WEBHOOK_KEY` stored as a repository secret.
 
 ## Checking it
 ```bash
