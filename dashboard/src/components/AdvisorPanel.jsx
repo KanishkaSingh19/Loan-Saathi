@@ -47,7 +47,9 @@ export default function AdvisorPanel({
         <div>
           <h3 id="advisor-title">Want to talk it through with a person?</h3>
           <p className="muted small">
-            A loan advisor can look at your answers, this assessment and any option you tried.
+            Saathi saves the details you confirmed, this assessment and any option you tried as a case for a
+            loan advisor, so you won&rsquo;t have to repeat yourself. Saving doesn&rsquo;t contact anyone by
+            itself; we&rsquo;ll tell you whether an advisor was notified.
           </p>
         </div>
         {!open && (

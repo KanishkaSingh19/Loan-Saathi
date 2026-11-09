@@ -58,6 +58,31 @@ function Rows({ rows }) {
   );
 }
 
+// The money fields an advisor reads first; loan-history answers fold away below them.
+const PROFILE_FIRST = new Set(["Income", "Existing EMI", "Existing debt", "Other loans running"]);
+const FLAG_TONE = {
+  excessive_debt: "bad", contradiction: "warn", missing_critical: "bad", affordability: "warn",
+  unconfirmed: "warn", extraction: "info", skipped: "info", unverified: "info", assessment_unavailable: "warn",
+};
+const clock = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+function Reasons({ title, items, tone }) {
+  if (!items?.length) return null;
+  return (
+    <>
+      <h5 className="ws-sub">{title}</h5>
+      <ul className={`why-list ${tone}`}>
+        {items.map((t, i) => (
+          <li key={i}>
+            <span className="mark" aria-hidden="true">{tone === "good" ? "✓" : "⚠"}</span>
+            <span>{t}</span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function CaseCard({ c: initial, apiKey, onUnauthorized }) {
   const [c, setC] = useState(initial);
   const when = new Date(c.ts * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -85,34 +110,50 @@ function CaseCard({ c: initial, apiKey, onUnauthorized }) {
         <small>Applicant&rsquo;s question</small>
         {c.question}
       </blockquote>
-      <div className="case-grid">
-        <section>
-          <h4>Financial profile</h4>
-          <Rows rows={c.financial_profile} />
-          <Rows rows={[{ label: "Requested loan", text: c.request.loan }, { label: "Tenure", text: c.request.tenure }]} />
-        </section>
-        <section>
+
+      <div className="ws-grid">
+        <section className="ws-block">
           <h4>Applicant</h4>
           <Rows rows={c.applicant} />
         </section>
-        <section>
+        <section className="ws-block">
+          <h4>Financial profile</h4>
+          <Rows
+            rows={[
+              ...c.financial_profile.filter((r) => PROFILE_FIRST.has(r.label)),
+              { label: "Requested loan", text: c.request.loan },
+              { label: "Tenure", text: c.request.tenure },
+            ]}
+          />
+          <details>
+            <summary>Loan history answers</summary>
+            <Rows rows={c.financial_profile.filter((r) => !PROFILE_FIRST.has(r.label))} />
+          </details>
+        </section>
+        <section className="ws-block">
           <h4>Assessment</h4>
           {c.assessment ? (
-            <Rows
-              rows={[
-                { label: "Result", text: c.assessment.label },
-                { label: "Estimated risk", text: c.assessment.risk },
-                { label: "Estimated affordable EMI", text: c.assessment.affordable_emi },
-                { label: "Requested EMI", text: c.assessment.requested_emi },
-                { label: "Suggested range", text: c.assessment.suggested_range },
-              ]}
-            />
+            <>
+              <Rows
+                rows={[
+                  { label: "Status", text: c.assessment.outcome || c.assessment.label },
+                  { label: "Estimated risk band", text: c.assessment.risk },
+                  { label: "Affordability", text: c.assessment.status_text },
+                  { label: "Estimated EMI", text: c.assessment.requested_emi },
+                  { label: "Room for a new EMI", text: c.assessment.affordable_emi },
+                  ...(c.assessment.burden ? [{ label: "Monthly burden", text: c.assessment.burden }] : []),
+                  { label: "Suggested range", text: c.assessment.suggested_range },
+                ]}
+              />
+              <Reasons title="Working in their favour" items={c.assessment.why_helping} tone="good" />
+              <Reasons title="Holding it back" items={c.assessment.why_risk} tone="warn" />
+            </>
           ) : (
-            <p className="muted small">Not assessed yet (the applicant hadn&rsquo;t confirmed a full profile).</p>
+            <p className="muted small">Not assessed (the applicant hadn&rsquo;t confirmed a full profile).</p>
           )}
           {c.simulation ? (
             <>
-              <h4>Current simulation</h4>
+              <h4>Simulation on screen at handoff</h4>
               <Rows
                 rows={[
                   { label: "Loan / tenure", text: `${c.simulation.loan} over ${c.simulation.tenure}` },
@@ -123,14 +164,98 @@ function CaseCard({ c: initial, apiKey, onUnauthorized }) {
             </>
           ) : null}
         </section>
-        <section>
-          <h4>Conversation summary</h4>
-          <ul className="case-list">
-            {c.conversation.map((line, i) => (
-              <li key={i}>{line}</li>
+      </div>
+
+      <div className="ws-grid two">
+        <section className="ws-block">
+          <h4>Corrections</h4>
+          {!c.corrections ? (
+            <p className="muted small">Not recorded for this case (no web-call record).</p>
+          ) : c.corrections.length === 0 ? (
+            <p className="muted small">No answer was changed during the call.</p>
+          ) : (
+            <ul className="ws-corrections">
+              {c.corrections.map((x) => (
+                <li key={x.field}>
+                  <span className="ws-field">{x.label}</span>
+                  <span className="ws-change">
+                    <s>{x.before}</s> <span aria-hidden="true">→</span>
+                    <span className="sr-only"> changed to </span> <b>{x.after}</b>
+                  </span>
+                  <small className="muted">
+                    {x.how} · {x.status}{x.said ? <> · said: &ldquo;{x.said}&rdquo;</> : null}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="ws-block">
+          <h4>Safety flags</h4>
+          {(c.flags || []).length === 0 ? (
+            <p className="muted small">No flags were raised.</p>
+          ) : (
+            <ul className="ws-flags">
+              {c.flags.map((f, i) => (
+                <li key={i} className={`flag-${FLAG_TONE[f.kind] || "info"}`}>
+                  <b>{f.label}</b>
+                  <span>{f.detail}</span>
+                  <small className="muted">Source: {f.source}</small>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <section className="ws-block">
+        <h4>Timeline</h4>
+        {c.timeline?.length ? (
+          <ol className="ws-timeline">
+            {c.timeline.map((e, i) => (
+              <li key={i}>
+                <time>{clock(e.ts)}</time>
+                <b>{e.label}</b>
+                {e.detail ? <span className="muted"> · {e.detail}</span> : null}
+              </li>
             ))}
-          </ul>
-          <h4>Assessment completeness</h4>
+          </ol>
+        ) : (
+          <p className="muted small">No event record for this case.</p>
+        )}
+      </section>
+
+      <section className="ws-block">
+        <h4>Conversation</h4>
+        <ul className="case-list">
+          {c.conversation.map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+        {c.transcript?.length ? (
+          <details>
+            <summary>Full conversation ({c.transcript.length} turns, the caller&rsquo;s exact words)</summary>
+            <ol className="ws-transcript">
+              {c.transcript.map((t, i) => (
+                <li key={i} className={t.who}>
+                  <span className="who">{t.who === "caller" ? "Caller" : "Saathi"}</span>
+                  <span>{t.text}</span>
+                </li>
+              ))}
+            </ol>
+          </details>
+        ) : c.recent?.length ? (
+          <details>
+            <summary>Last few turns of the conversation</summary>
+            <ul className="case-list">
+              {c.recent.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+        <details>
+          <summary>Assessment completeness</summary>
           <ul className="checklist">
             {c.completeness.map((i) => (
               <li key={i.label} className={i.state === "known" ? "good" : "warn"}>
@@ -139,18 +264,9 @@ function CaseCard({ c: initial, apiKey, onUnauthorized }) {
               </li>
             ))}
           </ul>
-        </section>
-      </div>
-      {c.recent?.length ? (
-        <details>
-          <summary>Last few turns of the conversation</summary>
-          <ul className="case-list">
-            {c.recent.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
         </details>
-      ) : null}
+      </section>
+
       {c.events?.length ? (
         <details>
           <summary>Case history</summary>

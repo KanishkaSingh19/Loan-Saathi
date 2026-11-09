@@ -30,6 +30,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Log lines carry ₹ and Hindi; on a Windows console without -X utf8 printing them raised
+# UnicodeEncodeError mid-request (a saved advisor case came back as HTTP 500). Never let a log fail a request.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="backslashreplace")
+
 import advisor  # noqa: E402
 import assessment  # noqa: E402
 import converse  # noqa: E402
@@ -633,9 +639,12 @@ def case_from_session(s, question="", loan=None, tenure=None):
             sim = simulate_for(s["applicant"], loan, tenure, WEB_CONTEXT)["simulation"]
         except simulate.InvalidSimulation:
             pass
-    return advisor.build(applicant, s["answers"], s["status"], s.get("result"), sim, question,
+    now = time.time()
+    case = advisor.build(applicant, s["answers"], s["status"], s.get("result"), sim, question,
                          advisor.conversation_summary(s), advisor.recent_turns(s), "web-call",
-                         s.get("prescreen_id") or "", s["id"])
+                         s.get("prescreen_id") or "", s["id"], advisor.workspace(s, now))
+    case["ts"] = now
+    return case
 
 
 @app.post("/v1/advisor-cases")
@@ -657,9 +666,13 @@ def create_advisor_case(body: AdvisorRequest, x_webhook_key: str = Header(defaul
             except simulate.InvalidSimulation as e:
                 raise HTTPException(status_code=422, detail=str(e)) from None
         answers = {k: v for k, v in said.items() if k in converse.BY_KEY}
+        now = time.time()
         case = advisor.build(applicant, answers, {}, result, sim, body.question,
                              ["Created from the dashboard for a saved pre-screen."], [],
-                             said.get("source") or "phone", body.prescreen_id)
+                             said.get("source") or "phone", body.prescreen_id,
+                             workspace={"timeline": [{"ts": now, "label": "Advisor requested",
+                                            "detail": "From a saved pre-screen (no call record)"}]})
+        case["ts"] = now
     else:
         raise HTTPException(status_code=400, detail="Start a pre-screening first so there is something to summarise.")
     return save_case(case)

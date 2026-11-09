@@ -894,6 +894,11 @@ def public(s):
 
 def _set(s, k, v, said, status="validated"):
     s.setdefault("first_values", {}).setdefault(k, v)  # what we first understood (study: first-pass accuracy)
+    old = s["answers"].get(k)
+    if old is not None and not _same(k, old, v):
+        s.setdefault("change_log", []).append({
+            "field": k, "before": old, "after": v, "said": said, "ts": round(time.time(), 3),
+            "how": "correction" if s["state"] == CORRECTION else "clarified"})
     s["answers"][k] = v
     s["status"][k] = status
     s["said"][k] = said
@@ -903,6 +908,11 @@ def _set(s, k, v, said, status="validated"):
         for d in ("other_loans_emi", "other_loans_outstanding"):
             s["answers"].pop(d, None)
             s["status"].pop(d, None)
+
+
+def _flag(s, kind, field, values):
+    s.setdefault("flag_log", []).append({"kind": kind, "field": field, "values": values,
+                                         "ts": round(time.time(), 3)})
 
 
 def _unset(s, k):
@@ -929,9 +939,11 @@ def _commit(s, k, v, said, mode):
     if mode == "collect" and old is not None and not _same(k, old, v):
         _queue(s, {"kind": "choose", "why": "contradiction", "field": k, "options": [old, v], "said": said,
                    "mode": mode})
+        _flag(s, "contradiction", k, [old, v])
         return
     if k in ("other_loans_emi", "other_loans_outstanding") and v > 0 and s["answers"].get("other_loans_count") == 0:
         _queue(s, {"kind": "loans_conflict", "field": k, "value": v, "said": said, "mode": mode})
+        _flag(s, "loans_conflict", k, [0, v])
         return
     _set(s, k, v, said)
     if mode == "correct":
@@ -1629,6 +1641,7 @@ def _try_what_if(s, env, text, action):
     if sm.get("status") != "paused":
         s.setdefault("sim_log", []).append(f"{sm['loan_amount']['text']} over {sm['tenure']['value']} months "
                                            f"(EMI {sm['emi']['text']})")
+        s.setdefault("sim_events", []).append({"ts": round(time.time(), 3), "text": s["sim_log"][-1]})
     if s["state"] != WHAT_IF:
         transition(s, WHAT_IF, "caller asked a what-if")
     return sim_mod.spoken(out["simulation"], lang) + SAY["whatif_more"][lang]

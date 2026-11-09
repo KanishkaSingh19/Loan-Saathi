@@ -60,7 +60,8 @@ def _status_label(status):
 
 
 def build(applicant, answers=None, statuses=None, result=None, simulation=None, question="",
-          conversation=None, recent=None, channel="dashboard", prescreen_id="", session_id=""):
+          conversation=None, recent=None, channel="dashboard", prescreen_id="", session_id="",
+          workspace=None):
     """The case payload. `answers`/`statuses` come from a web call (may be partial); `applicant` is the
     normalised profile (server.build_applicant)."""
     answers, statuses = answers or {}, statuses or {}
@@ -98,6 +99,8 @@ def build(applicant, answers=None, statuses=None, result=None, simulation=None, 
             "suggested_range": (x.get("suggested_range") or {}).get("text") or "Not available",
             "why_helping": [i["text"] for i in x["why"]["helping"]],
             "why_risk": [i["text"] for i in x["why"]["risk"]],
+            "outcome": (x.get("outcome") or {}).get("title") or x["decision_label"],
+            "burden": ((x.get("picture") or {}).get("burden") or {}).get("text"),
         }
         completeness = [{"label": i["label"], "state": i["state"]} for i in x["completeness"]]
     else:
@@ -136,7 +139,169 @@ def build(applicant, answers=None, statuses=None, result=None, simulation=None, 
         "completeness": completeness,
         "prescreen_id": prescreen_id,
         "session_id": session_id,
+        **(workspace or {}),
+        "flags": (workspace or {}).get("flags", []) + result_flags(result, a),
     }
+
+
+# ---------- the advisor workspace: corrections, flags, timeline, transcript ----------
+
+FIELD_KIND = {"loan_amount": "money", "monthly_income": "money_month", "other_loans_emi": "money_month",
+              "other_loans_outstanding": "money", "tenure_months": "months", "other_loans_count": "count",
+              "past_loans": "count", "years_in_work": "years", "age": "years"}
+FIELD_TITLE = {"loan_amount": "Requested loan", "monthly_income": "Income", "other_loans_emi": "Existing EMI",
+               "other_loans_outstanding": "Existing debt", "tenure_months": "Tenure", "other_loans_count": "Other loans",
+               "work": "Work", "years_in_work": "Years in work", "housing": "Housing", "age": "Age",
+               "past_loans": "Loans taken before", "ever_refused": "Ever refused", "ever_late": "Ever paid late",
+               "late_last_year": "Late in the last 12 months", "late_over_month": "Over a month late",
+               "overdue_now": "EMI overdue now"}
+CRITICAL_FIELDS = ("loan_amount", "monthly_income")
+
+
+def _field_text(k, v):
+    if isinstance(v, bool) or k in ("ever_refused", "ever_late", "late_last_year", "late_over_month", "overdue_now"):
+        return _fmt("yesno", v)
+    return _fmt(FIELD_KIND.get(k, "text"), v)
+
+
+def _flagged(kind, label, detail, source):
+    return {"kind": kind, "label": label, "detail": detail, "source": source}
+
+
+def result_flags(result, applicant):
+    """Flags the decision itself raised: its safety checks, the debt rule, a missing assessment."""
+    out = []
+    if not result:
+        return out
+    x = result.get("assessment")
+    if x is None and result.get("decision") not in (None, "need_more_info"):
+        out.append(_flagged("assessment_unavailable", "Assessment details unavailable",
+                            "The decision was made, but its explanation couldn't be built.", "server"))
+    if result.get("policy_rule") == "debt_over_limit":
+        owed = applicant.get("active_loans_outstanding")
+        out.append(_flagged("excessive_debt", "Excessive existing debt",
+                            f"{inr(owed)} still owed is more than 2 years of income (debt rule)." if owed
+                            else "Existing debt is more than 2 years of income (debt rule).", "rules"))
+    for c in ((x or {}).get("safety") or {}).get("checks", []):
+        if c["state"] == "fail":
+            kind = {"required": "missing_critical", "contradictions": "contradiction",
+                    "consistency": "contradiction"}.get(c["id"], c["id"])
+            out.append(_flagged(kind, c["label"] + ": needs attention", c["detail"], "safety check"))
+        elif c["state"] == "flag" and c["id"] == "affordability":
+            out.append(_flagged("affordability", "Above the affordability limit", c["detail"], "rules"))
+        elif c["state"] == "flag" and c["id"] == "debt" and result.get("policy_rule") != "debt_over_limit":
+            out.append(_flagged("excessive_debt", "High existing debt", c["detail"], "rules"))
+    if result.get("decision") == "need_more_info" and result.get("missing_fields"):
+        out.append(_flagged("missing_critical", "Missing critical information", result["missing_fields"], "server"))
+    if x and x.get("status") != "paused":
+        unverified = [i["label"].replace(" unavailable", "") for i in x.get("completeness", [])
+                      if i["state"] == "unavailable"]
+        if unverified:
+            out.append(_flagged("unverified", "Unverified information",
+                                "Self-reported, not checked: " + ", ".join(unverified).lower() + ".", "pre-screening"))
+    return out
+
+
+def workspace(s, case_ts=None):
+    """Corrections, flags, a timeline and the transcript of a web call, all from what the session
+    recorded. Nothing is reconstructed: a field with no change log has no correction."""
+    answers, status, said = s.get("answers", {}), s.get("status", {}), s.get("said", {})
+
+    corrections = []
+    for k in dict.fromkeys(c["field"] for c in s.get("change_log", [])):
+        log = [c for c in s["change_log"] if c["field"] == k]
+        first, final = log[0]["before"], answers.get(k, log[-1]["after"])
+        if _same_value(first, final):
+            continue
+        corrections.append({
+            "field": k, "label": FIELD_TITLE.get(k, k),
+            "before": _field_text(k, first), "after": _field_text(k, final),
+            "status": _status_label(status.get(k)),
+            "said": said.get(k, ""),
+            "how": "Corrected at the read-back" if any(c["how"] == "correction" for c in log)
+            else "Clarified during the questions",
+            "steps": len(log)})
+
+    flags = []
+    for f in s.get("flag_log", []):
+        title = FIELD_TITLE.get(f["field"], f["field"])
+        if f["kind"] == "contradiction":
+            vals = " and ".join(_field_text(f["field"], v) for v in f["values"])
+            flags.append(_flagged("contradiction", f"Contradictory {title.lower()}",
+                                  f"Two values were heard: {vals}. Saathi asked which one is right.", "conversation"))
+        elif f["kind"] == "loans_conflict":
+            flags.append(_flagged("contradiction", "Contradictory loan details",
+                                  f"No other loans were mentioned, then {title.lower()} "
+                                  f"{_field_text(f['field'], f['values'][1])}. Saathi asked.", "conversation"))
+    missing = [FIELD_TITLE[k] for k in CRITICAL_FIELDS if k not in answers]
+    if missing:
+        flags.append(_flagged("missing_critical", "Missing critical information",
+                              "Not given: " + ", ".join(missing).lower() + ".", "conversation"))
+    skipped = [FIELD_TITLE.get(k, k) for k in sorted(s.get("skipped") or [])]
+    if skipped:
+        flags.append(_flagged("skipped", "Questions skipped",
+                              "Not answered: " + ", ".join(skipped).lower() + ".", "conversation"))
+    if s.get("recoveries"):
+        flags.append(_flagged("extraction", "Trouble understanding answers",
+                              f"Saathi couldn't understand the caller {s['recoveries']} time(s) and asked again.",
+                              "conversation"))
+    used = s.get("llm", [])
+    fallback = sum(1 for u in used if u == "fallback")
+    if fallback:
+        every = fallback == len(used)
+        flags.append(_flagged("extraction", "Language model unavailable" if every
+                              else "Language model unavailable on some turns",
+                              f"On {fallback} of {len(used)} turns Saathi's own parser read the answer "
+                              "instead of Gemini.", "conversation"))
+    unconfirmed = [FIELD_TITLE.get(k, k) for k in answers if status.get(k) != "confirmed"]
+    if unconfirmed and answers:
+        flags.append(_flagged("unconfirmed", "Not confirmed by the applicant",
+                              "Heard but not confirmed: " + ", ".join(unconfirmed).lower() + ".", "conversation"))
+
+    events = []
+    trail = s.get("trail", [])
+    first_of = {}
+    for t in trail:
+        first_of.setdefault(t["to"], t)
+    if trail:
+        events.append({"ts": trail[0]["ts"], "label": "Call started",
+                       "detail": "Hindi/Hinglish" if s.get("lang") == "hi" else "English"})
+    if "VERIFYING_INFORMATION" in first_of:
+        events.append({"ts": first_of["VERIFYING_INFORMATION"]["ts"], "label": "Information collected",
+                       "detail": "Saathi read the profile back"})
+    for t in trail:
+        if t["to"] == "CORRECTION_REQUIRED":
+            field = t["why"].replace("caller wants to change ", "")
+            events.append({"ts": t["ts"], "label": "Correction requested",
+                           "detail": f"Caller wanted to change: {FIELD_TITLE.get(field, field).lower()}"
+                           if field in FIELD_TITLE else t["why"].capitalize()})
+        if t["to"] == "ERROR_RECOVERY":
+            events.append({"ts": t["ts"], "label": "Saathi couldn't understand", "detail": t["why"].capitalize()})
+    for c in s.get("change_log", []):
+        events.append({"ts": c["ts"], "label": f"{FIELD_TITLE.get(c['field'], c['field'])} changed",
+                       "detail": f"{_field_text(c['field'], c['before'])} → {_field_text(c['field'], c['after'])}"})
+    if "CONFIRMED" in first_of:
+        events.append({"ts": first_of["CONFIRMED"]["ts"], "label": "Profile confirmed", "detail": "By the applicant"})
+    if "SHOWING_RESULT" in first_of:
+        label = ((s.get("result") or {}).get("assessment") or {}).get("outcome", {}).get("title")
+        events.append({"ts": first_of["SHOWING_RESULT"]["ts"], "label": "Assessment completed",
+                       "detail": label or ""})
+    for e in s.get("sim_events", []):
+        events.append({"ts": e["ts"], "label": "Simulation performed", "detail": e["text"]})
+    if case_ts:
+        events.append({"ts": case_ts, "label": "Advisor requested", "detail": "Case saved for a loan advisor"})
+    events.sort(key=lambda e: e["ts"])
+
+    transcript = [{"who": "caller" if who != "Saathi" else "saathi", "text": text}
+                  for who, text in s.get("history", [])]
+    return {"corrections": corrections, "flags": flags, "timeline": events, "transcript": transcript}
+
+
+def _same_value(a, b):
+    try:
+        return abs(float(a) - float(b)) < 0.5
+    except (TypeError, ValueError):
+        return str(a).strip().lower() == str(b).strip().lower()
 
 
 def conversation_summary(s):

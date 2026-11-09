@@ -358,3 +358,32 @@ h1, h2, h3, h4 { font-family: var(--font); }
 .what-if-card .delta.bad { color: var(--warn); }
 .loading-line { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); margin: 0; }
 @media (max-width: 760px) { .what-if-pair { grid-template-columns: 1fr; } }
+
+/* =====================================================================================
+   Advisor workspace (Advisor cases view)
+   ===================================================================================== */
+.ws-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.ws-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ws-block { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px;
+  align-content: start; background: #fff; }
+.ws-block h4 { margin: 0; font-size: 15px; font-weight: 800; }
+.ws-sub { margin: 6px 0 0; font-size: 13px; color: var(--muted); font-weight: 700; }
+.ws-block details summary { cursor: pointer; font-size: 13.5px; font-weight: 700; color: var(--violet-700); padding: 4px 0; }
+.ws-corrections, .ws-flags, .ws-timeline, .ws-transcript { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ws-corrections li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); }
+.ws-field { font-size: 13px; color: var(--muted); font-weight: 700; }
+.ws-change { font-size: 16px; font-variant-numeric: tabular-nums; }
+.ws-change s { color: var(--muted); }
+.ws-flags li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; border-left: 4px solid var(--violet-400);
+  background: var(--panel-2); font-size: 14px; }
+.ws-flags li.flag-bad { border-left-color: var(--bad); }
+.ws-flags li.flag-warn { border-left-color: var(--warn); }
+.ws-timeline li { display: grid; grid-template-columns: 76px 1fr; gap: 2px 10px; font-size: 14px; }
+.ws-timeline li > :not(time) { grid-column: 2; }
+.ws-timeline time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; grid-row: span 2; }
+.ws-transcript { max-height: 420px; overflow-y: auto; padding: 6px 2px; }
+.ws-transcript li { display: grid; grid-template-columns: 64px 1fr; gap: 10px; font-size: 14px; line-height: 1.45; }
+.ws-transcript .who { font-weight: 700; font-size: 12.5px; color: var(--muted); padding-top: 1px; }
+.ws-transcript li.caller .who { color: var(--violet-700); }
+.ws-transcript li.caller > span:last-child { font-weight: 600; }
+@media (max-width: 980px) { .ws-grid, .ws-grid.two { grid-template-columns: 1fr; } }

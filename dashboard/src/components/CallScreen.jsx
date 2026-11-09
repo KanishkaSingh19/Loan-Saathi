@@ -518,6 +518,15 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                   See your assessment
                 </button>
               )}
+              {result.assessment && (
+                <button className="btn primary" onClick={() => {
+                  const panel = assessmentRef.current?.querySelector(".advisor");
+                  panel?.scrollIntoView({ block: "center" });
+                  panel?.querySelector("button")?.focus();
+                }}>
+                  Talk to a Loan Advisor
+                </button>
+              )}
               {call.prescreen_id && (
                 <button className="btn" onClick={() => onOpenPrescreen(call.prescreen_id)}>
                   Open in Pre-screens (advisor view)
