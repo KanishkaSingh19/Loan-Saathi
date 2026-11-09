@@ -53,6 +53,27 @@ function notNeeded(field, answers) {
   return false;
 }
 
+// Per-month money fields on the confirmation card.
+const PER_MONTH = new Set(["monthly_income", "other_loans_emi"]);
+
+// One quiet status line for where the conversation is: listen -> understand -> verify -> confirm.
+// Derived only from what the server and the recorder report; nothing is staged for show.
+function callPhase(call, busy) {
+  if (!call) return busy === "starting" ? { id: "listen", word: "Connecting", text: "Starting your call" } : null;
+  if (busy === "listening") return { id: "listen", word: "Listening", text: "Tap the mic again when you finish" };
+  if (busy === "transcribing") return { id: "listen", word: "Listening", text: "Turning your speech into text" };
+  if (busy === "thinking") return { id: "understand", word: "Understanding", text: "Reading what you said" };
+  if (call.done) return null;
+  if (call.pending || call.state === "CORRECTION_REQUIRED")
+    return { id: "verify", word: "Verifying", text: "Checking one detail with you" };
+  if (call.state === "VERIFYING_INFORMATION")
+    return { id: "confirm", word: "Confirm", text: "Check your details before anything is estimated" };
+  if (busy === "speaking") return { id: "listen", word: "Saathi is speaking", text: "You can answer any time" };
+  if (call.state === "COLLECTING_PROFILE" || call.state === "ERROR_RECOVERY")
+    return { id: "listen", word: "Your turn", text: "Speak or type your answer" };
+  return null;
+}
+
 const BUSY_TEXT = {
   starting: "Connecting…",
   listening: "Listening… tap again when you finish",
@@ -67,7 +88,14 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
-  const [voiceOn, setVoiceOn] = useState(true);
+  const [voiceOn, setVoiceOnState] = useState(true);
+  const voiceRef = useRef(true);
+  const setVoiceOn = (on) => {
+    voiceRef.current = on;
+    setVoiceOnState(on);
+  };
+  const inputRef = useRef(null);
+  const focusInput = useRef(false);
   const [voiceNote, setVoiceNote] = useState("");
   const [text, setText] = useState("");
   const recorder = useRef(null);
@@ -83,6 +111,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     audio.current?.pause();
   }, []);
 
+  useEffect(() => {
+    if (call && focusInput.current && !busy) {
+      focusInput.current = false;
+      inputRef.current?.focus();
+    }
+  }, [call, busy]);
+
   const [retry, setRetry] = useState(null); // { text, action } of a turn the server never answered
   const [studyInfo, setStudyInfo] = useState(null); // { participant, persona, language } in study mode
   const [sttFailures, setSttFailures] = useState(0);
@@ -95,7 +130,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   };
 
   const say = async (reply) => {
-    if (!voiceOn || !reply) return;
+    if (!voiceRef.current || !reply) return;
     setBusy("speaking");
     try {
       const blob = await speak(apiKey, reply);
@@ -123,7 +158,9 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setBusy(null);
   };
 
-  const begin = async () => {
+  const begin = async ({ typing = false } = {}) => {
+    if (typing) setVoiceOn(false);
+    focusInput.current = typing;
     audio.current?.pause();
     setMessages([]);
     setError("");
@@ -216,28 +253,40 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const fields = call?.fields || {};
   const buttonsOn = active && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
   const verifying = call?.state === "VERIFYING_INFORMATION";
+  const phase = callPhase(call, busy);
+  const cardRows = verifying ? (call.summary || []).filter((r) => r.card ?? r.critical) : [];
+  const confirmBtn = call?.buttons?.find((b) => b.action === "confirm");
+  const changeBtn = call?.buttons?.find((b) => b.action === "change");
+  const cardOn = verifying && cardRows.length > 0 && confirmBtn && changeBtn;
 
   if (!call && !busy && !studyMode) {
     return (
       <main className="layout call-layout">
         <section className="hero" aria-labelledby="hero-title">
-          <span className="eyebrow">Voice loan pre-screening</span>
+          <span className="hero-brand">Loan-Saathi</span>
           <h2 id="hero-title">
-            Know what you can <em>safely</em> borrow.
+            Understand your loan.
+            <br />
+            <span>Before you take it.</span>
           </h2>
           <p className="lede">
-            Talk to Saathi in Hindi, Hinglish or English. In about two minutes you&rsquo;ll see an estimate of
-            what fits your income, and why. A pre-screening, not a loan decision.
+            Talk to Saathi in your own words. It will understand your financial situation, check affordability, and
+            help you explore safer options.
           </p>
           <div className="hero-actions">
-            <button type="button" className="wave-cta" onClick={begin}>
+            <button type="button" className="wave-cta" onClick={() => begin()}>
               <span className="wave-badge" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="#fff">
                   <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" />
                 </svg>
               </span>
-              Start a call
+              Talk to Saathi
             </button>
+            <button type="button" className="btn outline type-cta" onClick={() => begin({ typing: true })}>
+              Type instead
+            </button>
+          </div>
+          <div className="hero-options">
             <div className="hero-langs" role="group" aria-label="Language">
               {[["hi", "Hinglish"], ["en", "English"]].map(([id, label]) => (
                 <button key={id} type="button" aria-pressed={lang === id} onClick={() => setLang(id)}>
@@ -245,17 +294,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                 </button>
               ))}
             </div>
+            <label className="toggle">
+              <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
+              Speak replies aloud
+            </label>
           </div>
-          <label className="toggle">
-            <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
-            Speak replies aloud
-          </label>
           {error && <p className="call-error" role="alert">{error}</p>}
-          <ul className="hero-points">
-            <li>Reads your details back before estimating</li>
-            <li>Shows where every number comes from</li>
-            <li>Try other amounts with the what-if simulator</li>
-          </ul>
+          <p className="hero-disclaimer">This is an estimated pre-screening, not a lender approval.</p>
         </section>
       </main>
     );
@@ -283,7 +328,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
               <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
               Speak replies
             </label>
-            <button className="btn primary" onClick={begin}
+            <button className="btn primary" onClick={() => begin()}
               disabled={(busy !== null && busy !== "speaking") || (studyMode && !studyInfo)}>
               {call ? "New call" : "Start call"}
             </button>
@@ -299,15 +344,49 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           )}
           {messages.map((m, i) => (
             <div key={i} className={`bubble ${m.who}`}>
+              <span className="bubble-who">{m.who === "caller" ? "You said" : "Saathi"}</span>
               {m.text}
             </div>
           ))}
-          {busy && busy !== "speaking" && <div className="typing muted small">{BUSY_TEXT[busy]}</div>}
-          {busy === "speaking" && <div className="typing muted small">{BUSY_TEXT.speaking}</div>}
+          {cardOn && (
+            <section className="confirm-card" aria-labelledby="confirm-title">
+              <header>
+                <h3 id="confirm-title">Here&rsquo;s what I understood</h3>
+                <p>From what you told Saathi. Nothing is estimated until you confirm.</p>
+              </header>
+              <dl>
+                {cardRows.map((r) => (
+                  <div key={r.field} className={r.status === "default" ? "is-default" : ""}>
+                    <dt>{r.label}</dt>
+                    <dd>
+                      {r.text}
+                      {r.status !== "default" && PER_MONTH.has(r.field) && <span className="per"> / month</span>}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="confirm-actions">
+                <button type="button" className="btn primary" disabled={!buttonsOn}
+                  onClick={() => send(confirmBtn.text, "confirm")}>
+                  <span aria-hidden="true">✓</span> Everything looks correct
+                </button>
+                <button type="button" className="btn" disabled={!buttonsOn}
+                  onClick={() => send(changeBtn.text, "change")}>
+                  <span aria-hidden="true">✎</span> Correct something
+                </button>
+              </div>
+            </section>
+          )}
+          {busy && busy !== "speaking" && (
+            <div className="typing" role="status">
+              <span className="dots" aria-hidden="true"><i /><i /><i /></span>
+              {BUSY_TEXT[busy]}
+            </div>
+          )}
           <div ref={bottom} />
         </div>
 
-        {buttonsOn && (
+        {buttonsOn && !cardOn && (
           <div className="quick-replies" role="group" aria-label="Quick replies">
             {call.buttons.map((b) => (
               <button
@@ -334,6 +413,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
         )}
         {voiceNote && <p className="muted small call-note">{voiceNote}</p>}
 
+        {phase && (
+          <p className={`call-status phase-${phase.id}`} aria-live="polite">
+            <i aria-hidden="true" />
+            <b>{phase.word}</b>
+            <span>{phase.text}</span>
+          </p>
+        )}
         <form
           className="composer"
           onSubmit={(e) => {
@@ -354,9 +440,11 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             </svg>
           </button>
           <input
+            ref={inputRef}
+            aria-label="Your answer"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={active ? "…or type your answer" : call ? "Call finished. Start a new call to try again" : "Tap Start call first"}
+            placeholder={active ? "Type your answer…" : call ? "Call finished. Start a new call to try again" : "Tap Start call first"}
             disabled={!active || busy === "listening"}
             maxLength={1000}
           />
@@ -368,7 +456,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
 
       <aside className="panel detail-panel">
         <div className="detail">
-          {verifying && (
+          {verifying && !cardOn && (
             <section className="understood">
               <h3>Here&rsquo;s what I understood</h3>
               <dl className="said">
@@ -383,7 +471,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             </section>
           )}
           <section>
-            <h3>Answers so far</h3>
+            <h3>What you&rsquo;ve told Saathi</h3>
             <dl className="said">
               {ORDER.map((f) => (
                 <div key={f} className={asking === f || call?.correcting === f ? "asking" : ""}>
@@ -434,8 +522,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             </section>
           )}
           <p className="muted small">
-            Saathi checks every number with you first. The estimate comes from fixed affordability rules and a
-            risk model, never from the chat itself.
+            Saathi checks every number with you first. Calculations use fixed affordability rules; the risk estimate
+            comes from a model, never from the chat itself.
           </p>
         </div>
       </aside>

@@ -180,6 +180,11 @@ export default function Assessment({
         </>
       ) : (
         <>
+          <ul className="source-key" aria-label="Where each number comes from">
+            <li className="source source-you"><i aria-hidden="true" />What you said</li>
+            <li className="source source-rules"><i aria-hidden="true" />Calculated by Loan-Saathi</li>
+            <li className="source source-model"><i aria-hidden="true" />Estimated by the risk model</li>
+          </ul>
           <div className="figures">
             <Figure label="Estimated risk" figure={a.risk} tone={BAND_TONE[a.risk?.band]} />
             <Figure label="Estimated affordability" figure={a.affordability} />

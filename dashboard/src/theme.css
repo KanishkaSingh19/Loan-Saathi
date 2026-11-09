@@ -205,3 +205,79 @@ h1, h2, h3, h4 { font-family: var(--font); }
   gap: 6px 4px; font-size: 12.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .pipeline li { color: var(--violet-700); }
 .pipeline li + li::before { content: "→"; margin: 0 8px 0 4px; color: var(--violet-400); font-weight: 400; }
+
+/* =====================================================================================
+   Borrower journey: opening screen, conversation, confirmation card, source key.
+   Restrained on purpose: one accent colour, thin borders, no decorative gradients.
+   ===================================================================================== */
+.hero { padding: 72px 16px 88px; gap: 20px; }
+.hero-brand { font-size: 14px; font-weight: 800; letter-spacing: -0.01em; color: var(--violet-700); }
+.hero h2 { font-size: clamp(36px, 5.6vw, 64px); max-width: 18ch; line-height: 1.08; }
+.hero h2 span { color: var(--violet-700); }
+.hero p.lede { max-width: 52ch; }
+.hero-actions { margin-top: 14px; }
+.wave-cta { background: var(--violet-700); box-shadow: 0 8px 22px rgba(109, 40, 217, 0.25); }
+.wave-cta:hover:not(:disabled) { background: var(--ink-hover); box-shadow: 0 10px 26px rgba(109, 40, 217, 0.3); }
+.type-cta { padding: 16px 24px; border-radius: 999px; font-size: 16px; }
+.hero-options { display: flex; flex-wrap: wrap; gap: 12px 18px; justify-content: center; align-items: center; }
+.hero-langs { box-shadow: none; }
+.hero-disclaimer { margin: 18px 0 0; font-size: 13px; color: var(--muted); }
+
+/* conversation */
+.call-panel .chat { gap: 14px; padding: 22px; }
+.bubble { padding: 10px 14px 12px; }
+.bubble-who { display: block; font-size: 11.5px; font-weight: 700; margin-bottom: 2px; color: var(--violet-700); }
+.bubble.caller .bubble-who { color: rgba(255, 255, 255, 0.78); }
+.typing { display: inline-flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--muted);
+  padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
+.dots { display: inline-flex; gap: 4px; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--violet-400); animation: saathi-dot 1.2s infinite ease-in-out; }
+.dots i:nth-child(2) { animation-delay: .15s; }
+.dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes saathi-dot { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: .7; } }
+
+/* the one-line status above the composer */
+.call-status { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 10px 22px 0; font-size: 13.5px; color: var(--muted); }
+.call-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--violet-400); flex: none; align-self: center; }
+.call-status b { color: var(--text); font-weight: 700; }
+.call-status.phase-verify i { background: var(--warn); }
+.call-status.phase-confirm i { background: var(--violet-700); }
+.composer { padding: 10px 22px 18px; border-top: none; }
+
+/* "Here's what I understood" */
+.confirm-card { align-self: stretch; max-width: 560px; border: 1.5px solid var(--violet-200); border-radius: 18px;
+  background: #fff; padding: 20px 22px; box-shadow: var(--shadow); }
+.confirm-card header h3 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -0.015em; }
+.confirm-card header p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+.confirm-card dl { margin: 16px 0 0; display: grid; }
+.confirm-card dl > div { display: flex; justify-content: space-between; gap: 16px; align-items: baseline;
+  padding: 11px 0; border-top: 1px solid var(--line); }
+.confirm-card dt { color: var(--muted); font-size: 14.5px; }
+.confirm-card dd { margin: 0; font-size: 16.5px; font-weight: 700; text-align: right; color: var(--text); }
+.confirm-card dd .per { font-weight: 500; color: var(--muted); font-size: 14px; }
+.confirm-card .is-default dd { font-weight: 500; font-size: 14px; color: var(--muted); }
+.confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.confirm-actions .btn { padding: 11px 18px; border-radius: 12px; font-size: 15px; }
+.confirm-actions .btn span { margin-right: 4px; }
+
+/* where each number comes from */
+.source i { width: 8px; height: 8px; }
+.source-you i, .source-default i { background: #fff; box-shadow: inset 0 0 0 2px var(--violet-400); }
+.source-rules i, .source-calc i, .source-estimate i { background: #64748b; border-radius: 2px; }
+.source-model i { background: var(--violet-700); }
+.source-key { list-style: none; padding: 10px 14px; margin: 0 0 16px; display: flex; flex-wrap: wrap; gap: 8px 20px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.source-key .source { font-size: 13px; color: var(--text); }
+
+@media (max-width: 560px) {
+  .hero { padding: 40px 4px 56px; }
+  .hero-actions { flex-direction: column; width: 100%; max-width: 340px; }
+  .hero-actions > * { width: 100%; justify-content: center; }
+  .wave-cta { padding-right: 24px; }
+  .call-panel .chat { padding: 16px; max-height: none; }
+  .call-status { padding: 10px 16px 0; }
+  .composer { padding: 10px 16px 16px; }
+  .confirm-card { padding: 16px; }
+  .confirm-actions .btn { flex: 1 1 100%; }
+}
