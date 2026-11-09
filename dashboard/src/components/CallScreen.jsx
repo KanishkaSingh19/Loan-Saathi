@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { converse, speak, transcribe, Unauthorized } from "../api";
 import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
+import Assessment from "./Assessment";
 import DecisionBadge from "./DecisionBadge";
 
 // Browser web call: mic -> Gnani Prisma (/v1/stt) -> Gemini + our model (/v1/converse)
@@ -61,6 +62,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
   const recorder = useRef(null);
   const audio = useRef(null);
   const bottom = useRef(null);
+  const assessmentRef = useRef(null);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "nearest" }); // returns a Promise in new Chromium: never return it
@@ -263,7 +265,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
         <div className="detail">
           {verifying && (
             <section className="understood">
-              <h3>Here's what I understood</h3>
+              <h3>Here&rsquo;s what I understood</h3>
               <dl className="said">
                 {call.summary.filter((r) => r.critical).map((r) => (
                   <div key={r.field}>
@@ -309,15 +311,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           {result && (
             <section className="call-result">
               <div className="detail-head">
-                <h3>Decision</h3>
+                <h3>Result</h3>
                 <DecisionBadge decision={result.decision} />
               </div>
-              {result.offer_amount > 0 && (
-                <div className="offer">
-                  <div><small>Offer</small><strong>{result.offer_amount_text}</strong></div>
-                  <div><small>Tenure</small><strong>{result.tenure_months} months</strong></div>
-                  <div><small>EMI</small><strong>{result.offer_emi_text}/mo</strong></div>
-                </div>
+              {result.assessment && (
+                <button className="btn" onClick={() => assessmentRef.current?.scrollIntoView({ block: "start" })}>
+                  See your assessment
+                </button>
               )}
               {call.prescreen_id && (
                 <button className="btn" onClick={() => onOpenPrescreen(call.prescreen_id)}>
@@ -332,6 +332,12 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           </p>
         </div>
       </aside>
+
+      {result?.assessment && (
+        <section className="panel assessment-panel span-all" ref={assessmentRef}>
+          <Assessment assessment={result.assessment} />
+        </section>
+      )}
     </main>
   );
 }

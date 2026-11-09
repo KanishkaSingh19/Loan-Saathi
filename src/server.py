@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import assessment  # noqa: E402
 import converse  # noqa: E402
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
@@ -224,9 +225,40 @@ def build_applicant(body):
     return {k: v for k, v in a.items() if v is not None or k == "years_employed"}
 
 
-def decide(applicant, risk=None):
+# Factors whose direction everyone expects. The model is not monotone in debt (see decide()), so a
+# reason that runs against the applicant's own value ("little is owed" for someone owing more than
+# typical) is dropped rather than shown.
+_WORSE_WHEN_HIGHER = {"BUREAU_ACTIVE_DEBT", "DEBT_TO_INCOME", "ANNUITY_TO_INCOME"}
+_BETTER_WHEN_HIGHER = {"YEARS_EMPLOYED"}
+
+
+def _direction_ok(item, direction):
+    raw, typical = item.get("raw"), item.get("typical_raw")
+    if raw is None or typical is None:
+        return True
+    up = direction == "up"
+    if item["feature"] in _WORSE_WHEN_HIGHER:
+        return raw > typical if up else raw < typical
+    if item["feature"] in _BETTER_WHEN_HIGHER:
+        return raw < typical if up else raw > typical
+    return True
+
+
+def _reasons(items, direction):
+    """[(feature, plain-English text)] for factors that may be spoken and point the expected way."""
+    out = []
+    for i in items:
+        text = _reason_text(i, direction)
+        if text and _direction_ok(i, direction):
+            out.append((i["feature"], text))
+    return out
+
+
+def decide(applicant, risk=None, context=None):
     """Model risk + the affordability rule + the debt rule -> decision. `risk` is a precomputed
-    scoring.score() result (the web call runs risk and affordability as separate steps)."""
+    scoring.score() result (the web call runs risk and affordability as separate steps).
+    `context` tells the safety check about the channel: {"channel": "web", "confirmed": bool,
+    "open_checks": int}; without it the call is treated as a phone call."""
     missing = [f for f in ("monthly_income", "loan_amount") if not applicant.get(f)]
     if missing:
         ask = {"monthly_income": "monthly income", "loan_amount": "loan amount needed"}
@@ -239,12 +271,26 @@ def decide(applicant, risk=None):
                           + " and ".join(ask[m] for m in missing) + ".",
         }, None
 
+    # Deterministic safety check before anything is assessed; a failure pauses with what's needed.
+    checks = assessment.safety_pre(applicant, context)
+    if assessment.failed(checks):
+        held = assessment.paused(checks)
+        return {
+            "decision": "need_more_info",
+            "risk_band": "",
+            "risk_percent": "",
+            "missing_fields": "; ".join(held["needed"]),
+            "reply_hint": "Before I can check, please clear this up with the caller: " + " ".join(held["needed"]),
+            "assessment": held,
+        }, None
+
     r = risk if risk is not None else scoring.score(applicant)
     afford = scoring.affordable_loan(applicant)
     band = r["band"]
-    ups = [t for t in (_reason_text(i, "up") for i in r["raises_risk"]) if t]
-    downs = [t for t in (_reason_text(i, "down") for i in r["lowers_risk"]) if t]
-    tips = [_TIPS[i["feature"]] for i in r["raises_risk"] if i["feature"] in _TIPS]
+    up_items, down_items = _reasons(r["raises_risk"], "up"), _reasons(r["lowers_risk"], "down")
+    ups = [t for _, t in up_items]
+    downs = [t for _, t in down_items]
+    tips = [_TIPS[f] for f, _ in up_items if f in _TIPS]
 
     requested = applicant["loan_amount"]
     tenure = int(afford["tenure_months"]) if afford else 24
@@ -273,8 +319,8 @@ def decide(applicant, risk=None):
         offer_amount, offer_emi = requested, afford["emi"]
         if band == "low":
             decision = "pre_approved"
-            hint = (f"Good news: they are pre-approved for {inr(requested)} over {tenure} months, "
-                    f"EMI about {inr(offer_emi)} per month. ")
+            hint = (f"Good news: based on this pre-screening they look eligible for further review for "
+                    f"{inr(requested)} over {tenure} months, EMI about {inr(offer_emi)} per month. ")
         else:
             decision = "needs_review"
             hint = (f"Their request for {inr(requested)} over {tenure} months (EMI about {inr(offer_emi)}) "
@@ -307,6 +353,12 @@ def decide(applicant, risk=None):
         "policy_rule": policy,
         "reply_hint": hint,
     }
+    try:
+        result["assessment"] = assessment.build(applicant, r, afford, decision, policy, up_items, down_items,
+                                                checks, DEBT_LIMIT_MONTHS)
+    except Exception as e:  # noqa: BLE001  (the decision must never fail on its explanation)
+        print(f"[assessment] could not build: {type(e).__name__}: {e}", flush=True)
+        result["assessment"] = None
     return result, r
 
 
@@ -389,7 +441,7 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
         print(f"[web-call {s['id']} -> prescreen {pid}] {result['decision']} band={result['risk_band']}", flush=True)
 
     reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
-                                action=body.action, assess=scoring.score)
+                                action=body.action, assess=scoring.score, safety=assessment.safety_pre)
     return {**converse.public(s), "reply": reply}
 
 

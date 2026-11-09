@@ -25,6 +25,9 @@ python -I -X utf8 src/test_webhook.py        # end-to-end webhook tests with Hin
 python -I -X utf8 src/test_speech_api.py     # speech proxy route tests (mocked, no API calls)
 python -I -X utf8 src/test_converse.py       # web-call conversation tests (Gemini mocked)
 python -I -X utf8 src/test_states.py         # web-call state machine: confirm, correct, ambiguity, contradictions
+python -I -X utf8 src/test_assessment.py     # applicant assessment: provenance, wording, why, safety check
+python -I -m ruff check src                  # Python lint (requirements-dev.txt)
+cd dashboard; npm test; npm run lint; npm run typecheck; npm run build   # frontend checks
 python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
 python -I -X utf8 src/demo_applicants.py     # score three sample applicants
 python -I -X utf8 src/compare_models.py      # LightGBM vs XGBoost vs CatBoost, ~30 min
@@ -71,6 +74,12 @@ trained models are in `models/`); only retraining or the model comparison does.
   becomes a "which one?" question, never an overwrite. Button presses arrive as `action`
   (confirm, change, correct:<field>, yes, no, choose:<n>, handoff). `normalize.amounts()` parses
   compound Indian amounts ("1 lakh 50 hazaar", "saadhe teen lakh", "2 crore 50 lakh").
+- `src/assessment.py`: the applicant-facing assessment attached to every decision as
+  `result["assessment"]`: figures with `source`/`source_text` provenance, the financial picture,
+  why (rules + direction-checked model reasons), completeness and the safety check. `safety_pre()`
+  runs before the model (in `decide()` and before ASSESSING_RISK in the web call); a "fail" pauses
+  with what's needed. Wording says "estimated" / "eligible for further review", never "approved";
+  decision codes (`pre_approved` etc.) are unchanged for Agent Builder.
 - `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/converse`, `/v1/stt` and `/v1/tts`
   (pass-throughs to Gnani's speech APIs), `/dashboard`, `/health`. Stores data in SQLite under `data/`.
 - Evon (Gnani's LLM) has no public API; Agent Builder offers Gnani's Pampa Go / Pampa Priority (not

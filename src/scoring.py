@@ -223,6 +223,9 @@ def score(applicant, n_reasons=3, min_impact=0.003):
             "label": LABELS.get(col, col),
             "value": _fmt(col, v if isinstance(v, str) else float(v)),
             "typical": _fmt(col, typical[col] if isinstance(typical[col], str) else float(typical[col])),
+            # Numbers behind value/typical, so callers can check a factor's direction.
+            "raw": None if isinstance(v, str) else float(v),
+            "typical_raw": None if isinstance(typical[col], str) else float(typical[col]),
             "impact": round(p - float(pt), 4),
         })
     items.sort(key=lambda d: d["impact"])
@@ -238,6 +241,14 @@ def score(applicant, n_reasons=3, min_impact=0.003):
 
 
 MAX_FOIR = 0.5  # all EMIs together at most half of monthly income (common Indian lending rule)
+
+
+def loan_for_emi(emi, months, annual_rate=ANNUAL_RATE):
+    """Largest loan a monthly EMI can repay over `months` (inverse of estimate_emi)."""
+    if not emi or emi <= 0:
+        return 0
+    r = annual_rate / 12
+    return emi * (1 - (1 + r) ** -months) / r
 
 
 def affordable_loan(applicant):

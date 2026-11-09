@@ -172,7 +172,11 @@ def to_markdown(out):
         lines.append("|---|---|---|---|")
         for algo, r in block["results"].items():
             b = r["bands"]
-            cell = lambda k: f"{b[k]['share']:.0%} / {b[k]['default_rate']:.1%}" if b[k]["default_rate"] is not None else f"{b[k]['share']:.0%} / –"
+
+            def cell(k, b=b):
+                rate = f"{b[k]['default_rate']:.1%}" if b[k]["default_rate"] is not None else "–"
+                return f"{b[k]['share']:.0%} / {rate}"
+
             lines.append(f"| {algo} | {cell('low')} | {cell('medium')} | {cell('high')} |")
         lines.append("")
     return "\n".join(lines)

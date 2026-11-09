@@ -5,10 +5,10 @@ export default function StatTiles({ prescreens, calls }) {
     .reduce((sum, p) => sum + p.result.offer_amount, 0);
   const tiles = [
     { value: prescreens.length, label: "Callers pre-screened" },
-    { value: count("pre_approved"), label: "Pre-approved", tone: "good" },
-    { value: count("counter_offer", "needs_review"), label: "Counter-offer / review", tone: "warn" },
+    { value: count("pre_approved"), label: "Eligible for review", tone: "good" },
+    { value: count("counter_offer", "needs_review"), label: "Smaller amount / review", tone: "warn" },
     { value: count("not_eligible_now"), label: "Not eligible now", tone: "bad" },
-    { value: offered ? `₹${(offered / 100000).toFixed(1)}L` : "–", label: "Total offered" },
+    { value: offered ? `₹${(offered / 100000).toFixed(1)}L` : "–", label: "Total suggested" },
     { value: calls.length, label: "Calls logged" },
   ];
   return (

@@ -55,6 +55,28 @@ Agent Builder (the phone agent) can't use Gemini (it offers Gnani's Pampa, OpenA
 the web call is a second front door to the same model, not a replacement. Callers' answers are
 sent to Google when `GEMINI_API_KEY` is set.
 
+## Your Loan-Saathi Assessment
+Every finished pre-screen comes with an applicant-facing assessment (`src/assessment.py`), shown at
+the end of a web call and at the top of each live-feed entry:
+- **At a glance**: estimated risk (low / medium / high), estimated affordability (the most a new EMI
+  can be while all EMIs stay within 50% of income), the requested loan and its EMI, and a suggested
+  range (all EMIs within 40% to 50% of income, never above what was asked). One plain sentence says
+  whether the loan is *within your estimated repayment capacity* or *may put too much pressure on
+  your monthly income*. It never says "approved": the best outcome is *eligible for further review*.
+- **Your financial picture**: one bar splits monthly income into existing EMIs, the new EMI and what
+  is left, with the 50% line marked.
+- **Why this result?**: helping and risk factors from the affordability rule, the debt rule and the
+  model's speakable what-if reasons. Gender and marital status are never used; age is never a reason;
+  a model reason that runs against the applicant's own number (e.g. "little is owed" for someone
+  who owes more than typical) is dropped.
+- **Number provenance**: every figure carries its source ("Provided by you", "Calculated by
+  Loan-Saathi affordability rules", "Estimated by Loan-Saathi risk model"...) in the data itself.
+- **Assessment completeness**: what is known, and what a pre-screening can't know (credit history,
+  income proof, employment verification). No made-up "AI score".
+- **Safety check**: before the model runs, deterministic checks (required information, valid values,
+  caller confirmation, contradictions resolved, consistent answers) must pass, or the assessment
+  pauses and says what is needed. Debt and EMI affordability checks are shown with the result.
+
 ## Live dashboard (React + Vite)
 Open `https://<tunnel>/dashboard` (or `http://127.0.0.1:8000/dashboard`) and paste your
 `WEBHOOK_KEY`. It has a live feed on the left and the selected caller's full breakdown on the
@@ -74,6 +96,9 @@ cd dashboard
 npm ci
 npm run build   # the webhook serves dashboard/dist at /dashboard
 npm run dev     # optional: hot-reload UI on :5173, proxying /v1 to the webhook on :8000
+npm test        # view-logic tests (node --test)
+npm run lint    # ESLint
+npm run typecheck   # TypeScript over the JS/JSX (checkJs)
 ```
 
 ## The model, honestly

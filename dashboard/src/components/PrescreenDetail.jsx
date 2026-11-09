@@ -1,3 +1,4 @@
+import Assessment from "./Assessment";
 import DecisionBadge from "./DecisionBadge";
 import RiskMeter from "./RiskMeter";
 import { SAID_LABELS, friendly, isBlank } from "../constants";
@@ -28,11 +29,18 @@ export default function PrescreenDetail({ prescreen }) {
   return (
     <article className="detail">
       <header className="detail-head">
-        <DecisionBadge decision={result.decision} />
+        {result.assessment ? <span /> : <DecisionBadge decision={result.decision} />}
         <span className="muted mono">
           {when} · #{id}
         </span>
       </header>
+
+      {result.assessment ? (
+        <>
+          <Assessment assessment={result.assessment} />
+          <h3 className="officer-head">For loan officers</h3>
+        </>
+      ) : null}
 
       {result.offer_amount ? (
         <div className="offer">
@@ -94,7 +102,7 @@ export default function PrescreenDetail({ prescreen }) {
 
       {details.all_factors ? (
         <details>
-          <summary>All model factors, including ones the agent doesn't speak</summary>
+          <summary>All model factors, including ones the agent doesn&rsquo;t speak</summary>
           <table className="factors">
             <thead>
               <tr>

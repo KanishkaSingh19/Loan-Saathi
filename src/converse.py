@@ -243,6 +243,8 @@ SAY = {
                        "Kya hum phir se koshish karein, ya main aapko loan officer se jod doon?",
                  "en": "Sorry, I'm having trouble understanding. You can also type your answer. "
                        "Shall we try again, or would you like a loan officer to call you?"},
+    "safety_failed": {"hi": "Jaanch se pehle ek baat saaf karni hai. Kya hum details phir se dekhein?",
+                      "en": "Before I can check, one thing needs clearing up. Shall we go over the details again?"},
     "assess_failed": {"hi": "Maaf kijiye, jaanch karte waqt kuch technical dikkat aa gayi. Kya main phir se koshish karoon?",
                       "en": "Sorry, something went wrong while checking. Shall I try again?"},
     "handoff": {"hi": "Theek hai, main aapki request hamare loan officer ke liye note kar raha hoon. Woh aapse "
@@ -891,7 +893,7 @@ def _cross_checks(s):
 # ---------- the turn ----------
 
 async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini-3.5-flash-lite",
-               action="", assess=None):
+               action="", assess=None, safety=None):
     """Handles one caller utterance (or button press) and returns the reply to speak."""
     text = (text or "").strip()[:1000]
     action = (action or "").strip()
@@ -903,7 +905,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
         return SAY["finished"][s["lang"]]
     s["history"].append(("Caller", text or f"[{action}]"))
     env = {"decide": decide, "build_applicant": build_applicant, "save": save, "assess": assess,
-           "api_key": api_key, "model": model}
+           "safety": safety, "api_key": api_key, "model": model}
 
     if action == "handoff" or (not action and text and HUMAN.search(text)):
         if HANDOFF in TRANSITIONS[s["state"]]:
@@ -1193,12 +1195,23 @@ async def _assess(s, env):
     require_confirmed(s)
     s["asking"] = "done"
     body = {k: str(v) for k, v in s["answers"].items()}
+    context = {"channel": "web", "confirmed": True, "open_checks": len(s["pending"])}
     try:
         applicant = env["build_applicant"](body)
+        if env.get("safety"):
+            # Deterministic safety check before the model runs: a failure pauses with what's needed.
+            failed = [c for c in env["safety"](applicant, context) if c["state"] == "fail"]
+            if failed:
+                print(f"[converse {s['id']}] safety check failed: {[c['id'] for c in failed]}", flush=True)
+                transition(s, RECOVERY, "safety check failed")
+                s["recover_to"] = VERIFYING
+                s["asking"] = "recovery"
+                s["safety_failed"] = failed
+                return SAY["safety_failed"][s["lang"]] + " " + " ".join(c["detail"] for c in failed)
         transition(s, ASSESSING, "profile confirmed")
         risk = env["assess"](applicant) if env["assess"] else None
         transition(s, AFFORDABILITY, "risk scored")
-        result, details = env["decide"](applicant, risk) if risk is not None else env["decide"](applicant)
+        result, details = env["decide"](applicant, risk, context)
         if result.get("decision") == "need_more_info":
             raise ValueError(f"decision needs more info: {result.get('missing_fields')}")
     except Exception as e:  # noqa: BLE001
@@ -1304,24 +1317,27 @@ def _fallback_result(r, lang):
     tips = r.get("tips", "")
     if lang == "hi":
         if d == "pre_approved":
-            return (f"Achhi khabar! Aap {amt} ke loan ke liye pre-approved hain, {n} mahine ke liye, "
-                    f"EMI lagbhag {emi} mahina. Yeh sirf pre-screening hai, final approval nahi.")
+            return (f"Achhi khabar! Is pre-screening ke hisaab se aap {amt} ke loan ki aage ki jaanch ke liye "
+                    f"eligible lagte hain, {n} mahine ke liye, EMI lagbhag {emi} mahina. "
+                    "Yeh sirf pre-screening hai, final approval nahi.")
         if d == "needs_review":
             return (f"Aapki {amt} ki request, {n} mahine mein, EMI lagbhag {emi}, mumkin lagti hai. "
                     "Hamare loan officer ise dekhkar 2 working din mein call karenge.")
         if d == "counter_offer":
             return (f"Aapki maangi hui rakam se EMI aapki kamaai ke aadhe se zyada ho jaati. "
-                    f"Hum {amt} {n} mahine ke liye de sakte hain, EMI lagbhag {emi} mahina. Kya yeh theek rahega?")
+                    f"{amt}, {n} mahine ke liye, EMI lagbhag {emi} mahina, aapki kamaai mein fit ho sakta hai. "
+                    "Kya yeh theek rahega?")
         return ("Abhi aapki batayi jaankari ke hisaab se hum yeh loan nahi de paayenge. "
                 + (f"Isme madad karega: {tips}. " if tips else "") + "Kuch samay baad dobara try zaroor kijiye.")
     if d == "pre_approved":
-        return (f"Good news! You're pre-approved for {amt} over {n} months, with an EMI of about {emi} a month. "
-                "This is a pre-screening, not a final approval.")
+        return (f"Good news! Based on this pre-screening you look eligible for further review for {amt} over "
+                f"{n} months, with an EMI of about {emi} a month. This is a pre-screening, not a final approval.")
     if d == "needs_review":
         return (f"Your request for {amt} over {n} months, EMI about {emi}, looks possible. "
                 "A loan officer will review it and call you within 2 working days.")
     if d == "counter_offer":
         return (f"The amount you asked for would take more than half your income in EMIs. "
-                f"We could offer {amt} over {n} months instead, EMI about {emi} a month. Would that work?")
+                f"A smaller loan of {amt} over {n} months, EMI about {emi} a month, would fit your estimated "
+                "capacity. Would that work?")
     return ("Based on what you shared, we can't offer this loan right now. "
             + (f"What would help: {tips}. " if tips else "") + "Please do try again later.")

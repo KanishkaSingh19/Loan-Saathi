@@ -1,0 +1,2 @@
+# Lint the Python code: python -I -m ruff check src
+ruff==0.8.4

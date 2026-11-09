@@ -20,7 +20,7 @@ export default function RiskMeter({ percent, band }) {
         aria-valuemax={MAX}
         aria-valuenow={percent}
         aria-label={`Repayment risk ${percent.toFixed(1)} percent, ${band}`}
-        style={{ "--low": `${(LOW / MAX) * 100}%`, "--medium": `${(MEDIUM / MAX) * 100}%` }}
+        style={/** @type {import("react").CSSProperties} */ ({ "--low": `${(LOW / MAX) * 100}%`, "--medium": `${(MEDIUM / MAX) * 100}%` })}
       >
         <i style={{ left: `${pos}%` }} />
       </div>
