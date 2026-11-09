@@ -125,10 +125,12 @@ export default function App() {
           <button role="tab" aria-selected={view === "cases"} className={`chip${view === "cases" ? " active" : ""}`}
             onClick={() => setView("cases")}>Advisor cases</button>
         </nav>
-        <div className={`status ${status}`} role="status">
-          <span className="dot" />
-          {statusText}
-        </div>
+        {view !== "call" && (
+          <div className={`status ${status}`} role="status">
+            <span className="dot" />
+            {statusText}
+          </div>
+        )}
       </header>
 
       {view === "cases" ? (
@@ -158,7 +160,7 @@ export default function App() {
             <input type="checkbox" checked={followLive} onChange={(e) => setFollowLive(e.target.checked)} />
             Follow live
           </label>
-          <span className="muted small">Test caller:</span>
+          <span className="muted small">Try a sample caller:</span>
           {Object.keys(SAMPLES).map((name) => (
             <button key={name} className="btn" disabled={sending !== null} onClick={() => sendSample(name)}>
               {sending === name ? "Sending…" : name}

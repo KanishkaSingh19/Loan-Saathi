@@ -286,7 +286,7 @@ export default function Simulator({
             </table>
             {showing.shares ? <IncomeBar shares={showing.shares} /> : null}
             <p className="muted small">
-              EMIs and totals use an assumed 18% yearly interest; a lender&rsquo;s real rate may differ.
+              EMIs and totals: {showing.emi.source_text.toLowerCase()}; a lender&rsquo;s real rate may differ.
               Estimated affordability keeps all your EMIs within half of your income.
             </p>
           </>

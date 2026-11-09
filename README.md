@@ -14,8 +14,8 @@ LightGBM credit-risk model trained on the
 2. The Gnani agent asks follow-up questions (income, work, existing loans…) one at a time.
 3. It calls our webhook, which normalises spoken answers ("dhai lakh", "6 mahine", "apna ghar"),
    scores repayment risk and applies the affordability rule.
-4. The agent explains the outcome in the caller's language: pre-approved, a safer counter-offer,
-   a loan-officer review, or kindly "not right now", with reasons and tips.
+4. The agent explains the outcome in the caller's language: eligible for further review, a smaller
+   suggested amount, an advisor review, or kindly "not right now", with reasons and tips.
 
 ## Web call with Gemini (in the browser)
 The dashboard's **Web call** tab lets anyone try Saathi from a browser, with no phone line:

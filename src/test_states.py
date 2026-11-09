@@ -364,5 +364,56 @@ t = say(sid, "hello?")
 assert cv.SESSIONS[sid]["state"] == cv.COMPLETED
 ok("human handoff from any point")
 
+# ---------- regressions found running the live system (Part 5 QA) ----------
+# Gnani Prisma writes "one and a half lakh" as "one and a 1/2 lakh".
+for text, want in {"one and a 1/2 lakh": 150000, "one and a half lakh": 150000, "1 1/2 lakh": 150000,
+                   "two and a half lakh": 250000, "half lakh": 50000, "aadha lakh": 50000}.items():
+    assert norm.number(text) == want, (text, norm.number(text))
+# The tenure's number is not a second amount: no "₹6,00,000 or ₹2?" read-back.
+assert cv.check({"literal_ok": set()}, "loan_amount", "600000", "6 lakh for 2 years") == ("ok", 600000)
+assert cv.check({"literal_ok": set()}, "other_loans_emi", "9000", "4 loans with 9,000 EMI") == ("ok", 9000)
+# Language is decided by our code from the caller's words: "3 lakh" doesn't flip an English call.
+assert cv._language("3 lakh", "hi", "en") == "en" and cv._language("35", "en", "hi") == "hi"
+assert cv._language("mujhe 3 lakh ka loan chahiye", "en", "en") == "hi"
+assert cv._language("I want 3 lakh for 3 years", "hi", "hi") == "en"
+sid = new("en")
+t = say(sid, "3 lakh")
+assert t["language"] == "en" and t["reply"].startswith("Over how many"), t
+st = {"literal_ok": set(), "claims": {"monthly_income": 40000}}
+assert cv.check(st, "loan_amount", "300000", "I want 3 lakh for 3 years, I earn 40,000") == ("ok", 300000)
+assert cv.check({"literal_ok": set()}, "loan_amount", "300000", "3 lakh, I earn 40,000")[0] == "choose"
+sid = new("en")
+say(sid, "3 lakh")
+say(sid, "3 years")
+t = say(sid, "40,000")
+t = say(sid, "my income is wrong")                                # before the summary
+assert "monthly_income" not in t["answers"] and t["asking"] == "monthly_income", t
+assert "correct monthly income" in t["reply"], t["reply"]
+t = say(sid, "45,000")
+assert t["answers"]["monthly_income"] == 45000 and t["asking"] == "work", t
+# Gemini timed out on a long first sentence: the scripted parser must still get every field.
+sid = new("en")
+t = say(sid, "I need 1 lakh for 2 years, I earn 40,000, I have 4 loans with 9,000 EMI and 50 lakh still owed")
+assert t["answers"] == {"loan_amount": 100000, "tenure_months": 24, "monthly_income": 40000,
+                        "other_loans_emi": 9000, "other_loans_count": 4, "other_loans_outstanding": 5000000}, t
+assert t["asking"] == "work", t
+sid = new("en")
+t = say(sid, "i earn ₹40,000 per month i already pay 8,000 emi i have around one and a 1/2 lakh debt "
+             "i want 3,00,000 loan for three years")                      # Prisma's real transcript
+assert t["answers"] == {"monthly_income": 40000, "other_loans_emi": 8000, "other_loans_outstanding": 150000,
+                        "loan_amount": 300000, "tenure_months": 36}, t
+# A what-if at the summary never changes the request.
+sid, t = to_summary()
+t = say(sid, "what if I take 2 lakh?")
+assert t["state"] == cv.VERIFYING and t["answers"]["loan_amount"] == 300000 and "after the assessment" in t["reply"]
+# A retry after error recovery asks plainly.
+sid = new()
+for _ in range(cv.MAX_TRIES):
+    say(sid, "pata nahi")
+t = say(sid, "yes, try again")
+assert t["state"] == cv.COLLECTING and not t["reply"].startswith("Sorry"), t["reply"]
+ok("live-run regressions: spoken halves, tenure numbers, language drift, wide quotes, early corrections, "
+   "multi-field fallback, what-if at the summary, plain retry")
+
 asyncio.run(asyncio.sleep(0))
 print(f"All {len(passed)} state machine tests passed.")

@@ -63,7 +63,7 @@ async function errorText(res) {
 // `text` is still sent so the transcript reads naturally.
 export async function converse(key, sessionId, text, language = "hi", action = "") {
   const res = await postJson(key, "/v1/converse", { session_id: sessionId || "", text, language, action });
-  if (!res.ok) throw new Error(await errorText(res));
+  if (!res.ok) throw new ApiError(await errorText(res), res.status);
   return res.json();
 }
 
@@ -85,7 +85,13 @@ export async function speak(key, text) {
 
 // ---------- what-if simulator ----------
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  /** @param {string} message @param {number} [status] */
+  constructor(message, status = 0) {
+    super(message);
+    this.status = status;
+  }
+}
 
 // Read-only what-if for a completed pre-screen. Server errors come back as ApiError with a message
 // that is safe to show the applicant (e.g. "The tenure must be between 3 months and 10 years").

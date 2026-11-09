@@ -96,7 +96,7 @@ Agent settings → Post-call trigger → on
 3. **Trigger Agent Call** to your whitelisted phone number for the real telephony test (and the demo video).
 
 ### Three scripts to try
-- **Pre-approved:** 50 hazaar for the kirana shop, 1 saal, earn 30 hazaar a month, shop for 15 years, age 45, no other loans, own house.
+- **Eligible for further review:** 50 hazaar for the kirana shop, 1 saal, earn 30 hazaar a month, shop for 15 years, age 45, no other loans, own house.
 - **Counter-offer:** 3 lakh, 2 saal, salary 25 hazaar, sales job for 6 years, one loan with 40 hazaar left and 2000 EMI.
 - **Not now:** 2 lakh, construction work for 6 months, earn 15 hazaar, 3 loans with 1.5 lakh left.
 

@@ -42,7 +42,7 @@ import simulate as sim_mod
 from scoring import inr
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-GEMINI_TIMEOUT = 12.0
+GEMINI_TIMEOUT = 8.0  # a voice turn should not hang; the scripted parser takes over
 
 # ---------- states ----------
 
@@ -272,6 +272,10 @@ SAY = {
                        "Kya hum phir se koshish karein, ya main aapka summary loan advisor ke liye save kar doon?",
                  "en": "Sorry, I'm having trouble understanding. You can also type your answer. "
                        "Shall we try again, or shall I save your summary for a loan advisor?"},
+    "whatif_later": {"hi": "Alag rakam ya samay ka asar main jaanch ke baad dikha sakta hoon. Pehle bataiye, kya "
+                           "upar padhi gayi jaankari sahi hai? 'Haan' boliye, ya bataiye kya badalna hai.",
+                     "en": "I can show other amounts or tenures right after the assessment. First, is the information "
+                           "I read out correct? Say yes, or tell me what to change."},
     "whatif_more": {"hi": " Koi aur rakam ya samay try karna hai? Ya 'aage ke steps' boliye.",
                     "en": " Want to try another amount or tenure? Or say 'next steps'."},
     "whatif_unclear": {"hi": "Aap koi rakam ya samay boliye, jaise 'agar 2 lakh loon' ya '5 saal mein'. "
@@ -365,8 +369,8 @@ next, and the caller's latest words. Do two things:
    something, answer it in one sentence first, but never promise approval, quote interest rates,
    or mention any score or model. If nothing is left to ask, set asking to "done" and do not ask
    anything: just say "Thank you." in their language.
-   Match the caller's language and script style: Hinglish in Latin script by default; English if
-   they speak English; Devanagari only if they clearly prefer pure Hindi. No emojis, no lists.
+   Reply in `reply_language` (our system decides it from the caller's words). Hinglish means Hindi
+   in Latin script. No emojis, no lists.
 
 Set "asking" to exactly the field you asked about in the reply (or "done").
 Set "language" to "hi" (Hindi or Hinglish) or "en" (English)."""
@@ -483,8 +487,15 @@ def check(s, key, raw, words):
     if key in NUMERIC and (norm.negative(words) or norm.negative(raw)):
         return ("invalid", "negative", None)
     if key in MONEY:
-        heard = norm.amounts(words)
+        # "6 lakh for 2 years": the tenure's number is not a second amount.
+        heard = norm.amounts(TENURE_PHRASE.sub(" ", str(words)))
+        if any(a["value"] >= 1000 for a in heard):
+            heard = [a for a in heard if a["value"] >= 100 or a["scaled"]]
         strong = [a for a in heard if a["digits"] or a["scaled"]] or heard
+        # An over-wide quote ("3 lakh chahiye, 40,000 kamata hoon" for the loan) is not ambiguous when
+        # the other amount belongs to another field the caller stated in the same breath.
+        others = [v for f, v in (s.get("claims") or {}).items() if f != key and v]
+        strong = [a for a in strong if not any(abs(a["value"] - o) <= 0.5 for o in others)] or strong
         distinct = []
         for a in strong:
             if all(abs(a["value"] - d) > 0.5 for d in distinct):
@@ -492,6 +503,8 @@ def check(s, key, raw, words):
         if len(distinct) > 1:
             return ("choose", distinct[:2])
         n = valid(key, raw)
+        if str(raw) == str(words) and len(distinct) == 1 and n is not None:
+            n = distinct[0]  # the caller's own words: use the amount we picked out, not just the first number
         if n is None:
             if norm.number(raw) == 0 and key in ("loan_amount", "monthly_income"):
                 return ("invalid", "too_small", 0)
@@ -954,6 +967,8 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
             transition(s, COMPLETED, "call over")
         return SAY["finished"][s["lang"]]
     s["history"].append(("Caller", text or f"[{action}]"))
+    if text and not action:
+        s["lang"] = _language(text, None, s["lang"])
     env = {"decide": decide, "build_applicant": build_applicant, "save": save, "assess": assess,
            "safety": safety, "simulator": simulator, "advisor": advisor, "api_key": api_key, "model": model}
     s["_advisor"] = advisor  # used by _handoff, which some paths reach without env
@@ -1006,6 +1021,7 @@ async def _extract(s, env, text, asked):
                 "question_hints": {k: BY_KEY[k]["en"] for k in KEYS
                                    if k not in s["answers"] and k not in s["skipped"]},
                 "caller_said": text,
+                "reply_language": "English" if s["lang"] == "en" else "Hinglish (Hindi in Latin script)",
             }, ensure_ascii=False), EXTRACT_SCHEMA)
             for a in res.get("answers") or []:
                 if not isinstance(a, dict) or a.get("field") not in BY_KEY:
@@ -1016,19 +1032,64 @@ async def _extract(s, env, text, asked):
                     print(f"[converse {s['id']}] dropped unquoted answer {a.get('field')}={a.get('value')!r}", flush=True)
             g = {"reply": str(res.get("reply") or "").strip(), "asking": str(res.get("asking") or ""),
                  "used": "gemini"}
-            s["lang"] = _language(text, res.get("language"), s["lang"])
         except Exception as e:  # noqa: BLE001
             print(f"[converse {s['id']}] Gemini failed, using fallback: {type(e).__name__}: {e}", flush=True)
     if g["used"] == "fallback" and text:
-        # Our own parser on the raw answer. "Actually I earn 60 hazaar" while we ask about work goes
-        # to the income, so a changed value is caught without Gemini too.
-        other = mentioned_field(text)
-        found = [a for a in norm.amounts(text) if a["scaled"] or a["value"] >= 1000]
-        if other in MONEY and other != asked and asked not in MONEY and len(found) == 1:
-            out.append((other, text, text))
-        else:
-            out.append((asked, text, text))
+        out = fallback_candidates(text, asked)
     return out, g
+
+
+# Clause breaks for the scripted parser: punctuation, "and"/"aur"/"but" (not "one and a half"), and
+# where a new "I ..." / "main ..." / "mujhe ..." statement starts (speech-to-text drops punctuation).
+CLAUSES = re.compile(r"(?<!\d)[,.]|[,.](?!\d)|[;!?]|\b(?:and|aur|but|par)\b(?!\s+(?:a\s+)?(?:half|1/2))|"
+                     r"(?=\b(?:i|main|mujhe|meri|mera|mere|my)\b)", re.I)  # not inside "40,000" or "1.5"
+LOANS_COUNT = re.compile(r"(?<![\d,.])\b(\d{1,2}|[a-z]+)\s+(?:other\s+|aur\s+)?loans?\b", re.I)
+
+
+def fallback_candidates(text, asked):
+    """Without Gemini: [(field, value text, caller's words)] from one utterance, deterministically.
+
+    "I need 1 lakh for 2 years, I earn 40,000, I have 4 loans with 9,000 EMI and 50 lakh still owed"
+    gives loan, tenure, income, loan count, EMI and debt. Each clause goes to the field its words name
+    (earn -> income, EMI -> EMI, owed/debt -> debt, loan -> loan); an amount with no field word answers
+    the question we asked. Every value still goes through check() and the read-back like any other.
+    """
+    found, leftover = {}, []
+    for clause in CLAUSES.split(text):
+        c = (clause or "").strip()
+        if not c:
+            continue
+        money = [a for a in norm.amounts(TENURE_PHRASE.sub(" ", c)) if a["scaled"] or a["value"] >= 1000]
+        field = mentioned_field(c)
+        used = False
+        if money and field in MONEY:
+            target = field
+        elif money and field in (None, "loan_amount") and asked in MONEY:
+            target = asked if field is None else "loan_amount"
+        else:
+            target = None
+        if target:  # two clauses for one amount ("salary 20 hazaar aur dukaan se 10 hazaar") stay together
+            found[target] = f"{found[target]} aur {c}" if target in found else c
+            used = True
+        m = LOANS_COUNT.search(c)
+        if m and norm.number(m.group(1)) is not None and norm.number(m.group(1)) < 50:
+            found.setdefault("other_loans_count", m.group(0))
+            used = True
+        tenure = next((t.group(1) for t in TENURE_PHRASE.finditer(c) if norm.number(t.group(1)) is not None), None)
+        if tenure and (money or re.search(r"\b(loan|repay|chukana|chukane|for|mein|ke liye)\b", c, re.I)) \
+                and asked != "years_in_work" and "kaam" not in c.lower() and "work" not in c.lower():
+            found.setdefault("tenure_months", tenure)
+            used = True
+        if not used:
+            leftover.append(c)
+    if asked in BY_KEY and asked not in found:
+        if not found:
+            found[asked] = text  # a plain answer to the question we asked ("kirana shop", "35", "nahi")
+        elif asked in ("work", "housing") and leftover:
+            rest = " ".join(leftover)
+            if valid(asked, rest) and (asked == "housing" or norm.work_known(rest)):
+                found[asked] = rest  # "I run a kirana shop and earn 30,000": the shop is the work
+    return [(k, v, v) for k, v in found.items()]
 
 
 async def _collecting(s, env, text, action):
@@ -1046,8 +1107,19 @@ async def _collecting(s, env, text, action):
         s["prefers_low_emi"] = True
         return _advance(s, env, SAY["low_emi_noted"][s["lang"]])
 
+    # "My income is wrong" before the summary: forget that answer and ask for it again.
+    wrong = mentioned_field(text)
+    if wrong in s["answers"] and NO.search(text) and not norm.amounts(text) and not action:
+        _unset(s, wrong)
+        s["tries"].pop(wrong, None)
+        if next_field(s) == wrong:
+            s["asking"] = wrong
+            return SAY["noted"][s["lang"]] + SAY["ask_correct"][s["lang"]].format(label=LABELS[s["lang"]][wrong])
+        return _advance(s, env, SAY["noted"][s["lang"]])  # asked again when its turn comes
+
     s["asked_before"] = asked
     candidates, g = await _extract(s, env, text, asked)
+    s["claims"] = {k: valid(k, raw) for k, raw, _ in candidates if k in MONEY}
     problem = None
     for k, raw, words in candidates:
         p = offer(s, k, raw, words, "collect")
@@ -1108,7 +1180,8 @@ def _advance(s, env, prefix="", problem=None, g=None):
             if problem[1] == "unclear" and nxt in MONEY:
                 return prefix + SAY["sorry"][lang] + SAY["repeat"][lang].format(label=LABELS[lang][nxt])
             return prefix + _problem_text(s, nxt, problem[1]) + BY_KEY[nxt][lang]
-        if g and g["used"] == "gemini" and g["asking"] == nxt and g["reply"] and not prefix:
+        if g and g["used"] == "gemini" and g["asking"] == nxt and g["reply"] and not prefix \
+                and _question_ok(g["reply"], s):
             return g["reply"]
         if nxt == s.get("asked_before") and not prefix and nxt in MONEY:
             return SAY["sorry"][lang] + SAY["repeat"][lang].format(label=LABELS[lang][nxt])
@@ -1143,6 +1216,7 @@ async def _recovering(s, env, text, action):
         transition(s, COLLECTING, "retry")
         k = next_field(s)
         s["tries"].pop(k, None)
+        s["asked_before"] = None  # a fresh start: ask plainly, not "sorry, I didn't understand"
         if _yes(text, action) or not text:
             return _advance(s, env)
         s["asking"] = k
@@ -1189,7 +1263,13 @@ def _apply_correction_value(s, k, text):
     return None
 
 
+WHAT_IF_WORDS = re.compile(r"\bwhat if\b|\bagar\b|\bsuppose\b|\bkya hoga\b", re.I)
+
+
 async def _verifying(s, env, text, action):
+    if not action and WHAT_IF_WORDS.search(text or ""):
+        # A what-if before the assessment would silently change the request: answer it after.
+        return SAY["whatif_later"][s["lang"]]
     intent, field = await _intent(s, env, text, action)
     if intent == "confirm":
         transition(s, CONFIRMED, "caller confirmed")
@@ -1431,6 +1511,26 @@ NUMBER_WORDS = re.compile(
     re.I)
 
 
+SPELLED_NUMBERS = re.compile(
+    r"\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|bees|pachees|tees|chalis|chaalis|"
+    r"pachas|pachaas|sattar|assi|nabbe|sau)\b", re.I)
+
+
+def _question_ok(reply, s):
+    """Gemini's next question may echo the caller's own numbers but never bring new ones: in a live
+    test it told a caller "most people borrow between twenty thousand and one lakh", an invented
+    anchor. Spelled-out numbers are refused (they can't be checked), and every figure must be one
+    the caller said or one of their collected answers."""
+    if SPELLED_NUMBERS.search(reply):
+        return False
+    said = set()
+    for _, text in (h for h in s["history"] if h[0] == "Caller"):
+        said |= {int(a["value"]) for a in norm.amounts(text)}  # "ek lakh" -> 100000, "2 saal" -> 2
+    said |= {int(v) for v in s["answers"].values() if isinstance(v, (int, float))}
+    # Only figures written in digits or with lakh/hazaar count: a lone word like "do" is English "do".
+    return {int(a["value"]) for a in norm.amounts(reply) if a["digits"] or a["scaled"]} <= said
+
+
 def _amounts_ok(reply, result):
     """Every number Gemini says must appear in the guidance, written in digits, and the offer
     amount itself must be in the reply. Number words are refused because they can't be checked."""
@@ -1443,11 +1543,25 @@ def _amounts_ok(reply, result):
     return said <= allowed
 
 
+HI_WORDS = re.compile(r"\b(hai|hain|hoon|hu|mujhe|mera|meri|mere|chahiye|kamaata|kamata|kamaati|kamati|nahi|nahin|"
+                      r"haan|kya|aap|main|ka|ki|ke|ko|se|mein|saal|mahine|mahina|hazaar|hazar|wala|wali|kar|raha|"
+                      r"rahi|karta|karti|ghar|kiraye|dukaan|apna|apni|toh|bhi|aur|kitna|kitne|baaki|kist)\b", re.I)
+EN_WORDS = re.compile(r"\b(i|am|my|is|the|a|an|want|need|earn|have|for|and|of|to|do|it|yes|per|month|months|"
+                      r"years|what|how|much|own|live|work|loan|loans|rent|with)\b", re.I)
+
+
 def _language(text, gemini_says, current):
-    """Devanagari speech is always Hindi; otherwise trust Gemini, else keep the current language."""
+    """Decided by our code from the caller's own words, never by Gemini's guess: Devanagari is Hindi;
+    otherwise a clear majority of Hindi or English words switches; anything else (\"3 lakh\", \"35\")
+    keeps the call's language. `gemini_says` is ignored and kept only for compatibility."""
     if re.search(r"[ऀ-ॿ]", text or ""):
         return "hi"
-    return gemini_says if gemini_says in ("hi", "en") else current
+    hi, en = len(HI_WORDS.findall(text or "")), len(EN_WORDS.findall(text or ""))
+    if hi >= 2 and hi > en:
+        return "hi"
+    if en >= 2 and en > hi:
+        return "en"
+    return current
 
 
 def _fallback_result(r, lang):

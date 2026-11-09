@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { converse, speak, transcribe, Unauthorized } from "../api";
+import { ApiError, converse, speak, transcribe, Unauthorized } from "../api";
 import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
@@ -140,6 +140,10 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
       await handle(r.reply, r);
     } catch (err) {
       setBusy(null);
+      if (err instanceof ApiError && err.status === 404) {
+        fail(err, "This call has expired (it was idle too long or the server restarted). Tap New call to start again.");
+        return;
+      }
       setRetry({ text: clean, action });
       fail(err, "Saathi couldn't reach the server, so your last answer wasn't heard. Tap Try again.");
     }
@@ -243,7 +247,12 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
         {buttonsOn && (
           <div className="quick-replies" role="group" aria-label="Quick replies">
             {call.buttons.map((b) => (
-              <button key={b.action} type="button" className="btn" onClick={() => send(b.text, b.action)}>
+              <button
+                key={b.action}
+                type="button"
+                className={`btn${["confirm", "yes"].includes(b.action) ? " primary" : ""}`}
+                onClick={() => send(b.text, b.action)}
+              >
                 {b.label}
               </button>
             ))}
@@ -284,7 +293,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={active ? "…or type what the caller says" : call ? "Call finished. Start a new call to try again" : "Start a call first"}
+            placeholder={active ? "…or type your answer" : call ? "Call finished. Start a new call to try again" : "Tap Start call first"}
             disabled={!active || busy === "listening"}
             maxLength={1000}
           />
@@ -320,7 +329,9 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
                     {answers[f] !== undefined ? (
                       <>
                         {show(f, answers[f])}
-                        <span className={`field-status ${fields[f]?.status || ""}`}>{fields[f]?.status}</span>
+                        <span className={`field-status ${fields[f]?.status || ""}`}>
+                          {fields[f]?.status === "confirmed" ? "confirmed ✓" : "to confirm"}
+                        </span>
                       </>
                     ) : call?.pending?.field === f ? (
                       <span className="accent">checking…</span>

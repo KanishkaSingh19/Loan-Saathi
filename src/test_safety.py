@@ -84,8 +84,23 @@ script[:] = [{"answers": [{"field": k, "value": v, "quote": v} for k, v in (
 t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "300000 loan, I earn 40000"}).json()
 assert t["state"] == cv.COLLECTING and "approved" not in t["reply"] and "age" not in t["answers"], t
 assert t["result"] is None
+# Its questions can't bring in numbers the caller never said (a live test produced "most people borrow
+# between twenty thousand and one lakh"); the scripted question is used instead.
+sid = c.post("/v1/converse", headers=H, json={"language": "en"}).json()["session_id"]
+script[:] = [{"answers": [], "asking": "loan_amount", "language": "en",
+              "reply": "No problem. Most people borrow between twenty thousand and one lakh. How much do you need?"}]
+t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "I don't know"}).json()
+assert "twenty" not in t["reply"] and "loan" in t["reply"], t["reply"]
+script[:] = [{"answers": [{"field": "loan_amount", "value": "300000", "quote": "3 lakh"}], "asking": "tenure_months",
+              "language": "en", "reply": "Got it, 3 lakh. Most people pick 24 months. How long would you like?"}]
+t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "3 lakh"}).json()
+assert "24 months" not in t["reply"], t["reply"]
+script[:] = [{"answers": [{"field": "tenure_months", "value": "36", "quote": "3 years"}], "asking": "monthly_income",
+              "language": "en", "reply": "Got it, 3 lakh over 3 years. How much do you earn in a month?"}]
+t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "3 years"}).json()
+assert t["reply"].startswith("Got it, 3 lakh over 3 years"), t["reply"]   # echoing the caller is fine
 server.GEMINI_API_KEY = ""
-print("ok 4 - Gemini can't skip questions, invent answers, or announce a decision")
+print("ok 4 - Gemini can't skip questions, invent answers or numbers, or announce a decision")
 
 # 5. numbers are validated
 assert cv.check({"literal_ok": set()}, "monthly_income", "-40000", "-40000")[1] == "negative"

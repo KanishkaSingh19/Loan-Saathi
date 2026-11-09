@@ -18,6 +18,7 @@ _WORDS = {
     "ek": 1, "one": 1, "do": 2, "two": 2, "teen": 3, "three": 3, "char": 4, "chaar": 4, "four": 4,
     "paanch": 5, "panch": 5, "five": 5, "chhe": 6, "six": 6, "saat": 7, "seven": 7, "aath": 8,
     "eight": 8, "nau": 9, "nine": 9, "das": 10, "ten": 10, "dedh": 1.5, "dhai": 2.5, "adhai": 2.5,
+    "half": 0.5, "aadha": 0.5, "adha": 0.5,
     "gyarah": 11, "eleven": 11, "barah": 12, "baarah": 12, "twelve": 12, "terah": 13, "thirteen": 13,
     "chaudah": 14, "fourteen": 14, "pandrah": 15, "pandra": 15, "fifteen": 15, "solah": 16,
     "sixteen": 16, "satrah": 17, "seventeen": 17, "atharah": 18, "eighteen": 18, "unnees": 19,
@@ -44,6 +45,15 @@ def _blank(v):
                          ("null", "none", "na", "n/a", "unknown", "nil") or "{{" in v))
 
 
+def _plus_half(word):
+    """'one' -> '1.5', '2' -> '2.5'; unknown words are left as they were."""
+    try:
+        n = float(word)
+    except ValueError:
+        n = _WORDS.get(word)
+    return f"{n + 0.5:g}" if n is not None else f"{word} and a half"
+
+
 def negative(v):
     """True when the caller states a negative amount ("-5000", "minus 5 hazaar")."""
     s = str(v or "").lower().translate(_DEV_DIGITS)
@@ -64,6 +74,12 @@ def amounts(v):
     s = str(v).lower().translate(_DEV_DIGITS).replace("₹", " ")
     s = re.sub(r"(?<=\d),(?=\d)", "", s)
     s = re.sub(r"\b(rs\.?|inr|rupees?|rupaye|rupay|rupaiye|rupiya)\b", " ", s)
+    # Halves, as people say them and as speech-to-text writes them: "one and a half lakh",
+    # "one and a 1/2 lakh" (Gnani Prisma), "1 1/2 lakh", "dhai" is handled by _WORDS.
+    s = re.sub(r"(\d+(?:\.\d+)?|[a-zऀ-ॿ]+)\s+and\s+(?:a\s+)?(?:half|1/2)\b",
+               lambda m: _plus_half(m.group(1)), s)
+    s = re.sub(r"\b(\d+)\s+1/2\b", lambda m: str(float(m.group(1)) + 0.5), s)
+    s = re.sub(r"(?<![\d/])1/2\b", "0.5", s)
     tokens = re.findall(r"\d+(?:\.\d+)?|[a-zऀ-ॿ]+|[-/]", s)
 
     out = []
@@ -200,6 +216,12 @@ _WORK = [
       "construction", "factory", "worker", "mill"), "Working", "Laborers"),
     (("job", "naukri", "salary", "private", "company", "salaried"), "Working", None),
 ]
+
+
+def work_known(v):
+    """True when the text names a kind of work we recognise (not just any words)."""
+    s = f" {str(v or '').lower()} "
+    return any(k in s for keys, _, _ in _WORK for k in keys)
 
 
 def work(v):

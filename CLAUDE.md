@@ -89,6 +89,14 @@ trained models are in `models/`); only retraining or the model comparison does.
   your request, higher burden (1.5x). `POST /v1/simulate` is read-only on a saved pre-screen; 409 for
   paused/incomplete ones. The web call answers "what if I take 2 lakh?", "5 saal", "max EMI" and
   "EMI kam" in SHOWING_RESULT / WHAT_IF / NEXT_STEPS. Labels: "Simulation — not a lender offer."
+- Web-call robustness rules (all from running the live system, keep them): our code, not Gemini,
+  decides the reply language (`_language`, word counts) and tells Gemini via `reply_language`;
+  Gemini's questions are dropped if they contain numbers the caller never said (`_question_ok`);
+  without Gemini (timeouts happen: `GEMINI_TIMEOUT` 8 s) `fallback_candidates()` splits one long
+  utterance into clauses and fills several fields; `normalize.amounts()` reads Prisma's
+  "one and a 1/2 lakh"; a tenure phrase's number is never a second amount. Python heredocs in
+  bash turn `\b` into backspace characters: edit regexes with the Edit tool and grep for `\x08`.
+- `DEMO.md`: the 2-minute demo path and what to do if something fails on stage.
 - `src/advisor.py`: advisor cases (`POST/GET /v1/advisor-cases`, table `advisor_cases`), built only
   from session/prescreen data; voice handoff in `converse._handoff` saves one. Prototype: nobody is
   notified, and replies say so. Use "loan advisor" in applicant-facing text, never "officer".
