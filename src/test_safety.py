@@ -75,6 +75,7 @@ script = []
 async def fake(api_key, model, system, user, schema):
     return script.pop(0)
 
+real_gemini = cv._gemini
 cv._gemini = fake
 sid = c.post("/v1/converse", headers=H, json={"language": "en"}).json()["session_id"]
 script[:] = [{"answers": [{"field": k, "value": v, "quote": v} for k, v in (
@@ -101,6 +102,36 @@ t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "3 years"
 assert t["reply"].startswith("Got it, 3 lakh over 3 years"), t["reply"]   # echoing the caller is fine
 server.GEMINI_API_KEY = ""
 print("ok 4 - Gemini can't skip questions, invent answers or numbers, or announce a decision")
+
+# A slow Gemini can't stall a voice turn: the hard deadline cuts it off and the scripted parser answers.
+import asyncio  # noqa: E402
+import time as _time  # noqa: E402
+
+
+class SlowClient:
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, *a, **k):
+        await asyncio.sleep(60)
+
+real_client, real_timeout = cv.httpx.AsyncClient, cv.GEMINI_TIMEOUT
+cv._gemini = real_gemini
+cv.httpx.AsyncClient, cv.GEMINI_TIMEOUT = SlowClient, 0.5
+server.GEMINI_API_KEY = "fake"
+sid = c.post("/v1/converse", headers=H, json={"language": "en"}).json()["session_id"]
+t0 = _time.time()
+t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "3 lakh"}).json()
+cv.httpx.AsyncClient, cv.GEMINI_TIMEOUT = real_client, real_timeout
+server.GEMINI_API_KEY = ""
+assert _time.time() - t0 < 5 and t["answers"]["loan_amount"] == 300000 and t["llm"] == "fallback", t
+print("ok 4b - a slow Gemini is cut off at the deadline; the scripted parser carries the turn")
 
 # 5. numbers are validated
 assert cv.check({"literal_ok": set()}, "monthly_income", "-40000", "-40000")[1] == "negative"

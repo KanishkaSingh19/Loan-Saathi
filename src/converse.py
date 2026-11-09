@@ -30,6 +30,7 @@ parser and checks:
 
 If Gemini is unavailable the call carries on with scripted questions and our own parser.
 """
+import asyncio
 import json
 import re
 import time
@@ -668,9 +669,16 @@ async def _gemini(api_key, model, system, user, schema):
             "thinkingConfig": {"thinkingLevel": "MINIMAL"},
         },
     }
-    async with httpx.AsyncClient(timeout=GEMINI_TIMEOUT) as client:
-        r = await client.post(GEMINI_URL.format(model=model), json=body,
-                              headers={"x-goog-api-key": api_key})
+    async def post():
+        async with httpx.AsyncClient(timeout=GEMINI_TIMEOUT) as client:
+            return await client.post(GEMINI_URL.format(model=model), json=body, headers={"x-goog-api-key": api_key})
+
+    # httpx's timeout is per phase (connect, each read...), so a slow, trickling reply could hold a voice
+    # turn for minutes (seen in a dry run). This is a hard deadline for the whole call.
+    try:
+        r = await asyncio.wait_for(post(), timeout=GEMINI_TIMEOUT)
+    except asyncio.TimeoutError:
+        raise TimeoutError(f"Gemini took longer than {GEMINI_TIMEOUT:.0f}s") from None
     if not r.is_success:
         raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
     data = r.json()
