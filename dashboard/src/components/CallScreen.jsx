@@ -232,11 +232,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           <div className="hero-actions">
             <button type="button" className="wave-cta" onClick={begin}>
               <span className="wave-badge" aria-hidden="true">
-                <svg viewBox="0 0 34 34">
-                  {[3, 7, 11, 15, 19, 23, 27, 31].map((x, i) => (
-                    <rect key={x} x={x - 1} width="2" rx="1" fill="#fff"
-                      y={17 - [4, 8, 13, 6, 11, 14, 7, 3][i]} height={2 * [4, 8, 13, 6, 11, 14, 7, 3][i]} />
-                  ))}
+                <svg viewBox="0 0 24 24" fill="#fff">
+                  <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" />
                 </svg>
               </span>
               Start a call
