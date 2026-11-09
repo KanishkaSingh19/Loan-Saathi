@@ -59,8 +59,10 @@ async function errorText(res) {
 
 // ---------- web call ----------
 
-export async function converse(key, sessionId, text, language = "hi") {
-  const res = await postJson(key, "/v1/converse", { session_id: sessionId || "", text, language });
+// `action` is a button press (confirm, change, correct:<field>, yes, no, choose:<n>, handoff);
+// `text` is still sent so the transcript reads naturally.
+export async function converse(key, sessionId, text, language = "hi", action = "") {
+  const res = await postJson(key, "/v1/converse", { session_id: sessionId || "", text, language, action });
   if (!res.ok) throw new Error(await errorText(res));
   return res.json();
 }

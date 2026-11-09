@@ -6,22 +6,37 @@ as an unfilled "{{placeholder}}". Everything here is forgiving: unknown -> None.
 """
 import re
 
-_UNITS = [
-    (r"(crore|cr)\b", 10_000_000),
-    (r"(lakh|lac|lakhs|lacs|l)\b", 100_000),
-    (r"(hazaar|hazar|hajar|thousand|k)\b", 1_000),
-    (r"(sau|hundred)\b", 100),
-]
+_SCALES = {
+    "crore": 10_000_000, "crores": 10_000_000, "cr": 10_000_000, "karod": 10_000_000, "karor": 10_000_000,
+    "करोड़": 10_000_000, "करोड": 10_000_000,
+    "lakh": 100_000, "lakhs": 100_000, "lac": 100_000, "lacs": 100_000, "l": 100_000, "लाख": 100_000,
+    "hazaar": 1_000, "hazar": 1_000, "hajar": 1_000, "thousand": 1_000, "thousands": 1_000,
+    "k": 1_000, "हज़ार": 1_000, "हजार": 1_000,
+    "sau": 100, "hundred": 100, "सौ": 100,
+}
 _WORDS = {
     "ek": 1, "one": 1, "do": 2, "two": 2, "teen": 3, "three": 3, "char": 4, "chaar": 4, "four": 4,
     "paanch": 5, "panch": 5, "five": 5, "chhe": 6, "six": 6, "saat": 7, "seven": 7, "aath": 8,
     "eight": 8, "nau": 9, "nine": 9, "das": 10, "ten": 10, "dedh": 1.5, "dhai": 2.5, "adhai": 2.5,
-    "gyarah": 11, "barah": 12, "baarah": 12, "pandrah": 15, "pandra": 15, "bees": 20, "twenty": 20,
+    "gyarah": 11, "eleven": 11, "barah": 12, "baarah": 12, "twelve": 12, "terah": 13, "thirteen": 13,
+    "chaudah": 14, "fourteen": 14, "pandrah": 15, "pandra": 15, "fifteen": 15, "solah": 16,
+    "sixteen": 16, "satrah": 17, "seventeen": 17, "atharah": 18, "eighteen": 18, "unnees": 19,
+    "nineteen": 19, "bees": 20, "twenty": 20,
     "pachees": 25, "pachchis": 25, "pachis": 25, "tees": 30, "tis": 30, "thirty": 30,
     "paintees": 35, "pentis": 35, "chalis": 40, "chaalis": 40, "chalees": 40, "forty": 40,
     "paintalis": 45, "pachaas": 50, "pachas": 50, "fifty": 50, "saath": 60, "sixty": 60,
     "sattar": 70, "seventy": 70, "assi": 80, "eighty": 80, "nabbe": 90, "ninety": 90,
+    "एक": 1, "दो": 2, "तीन": 3, "चार": 4, "पांच": 5, "पाँच": 5, "दस": 10, "बीस": 20, "तीस": 30,
+    "चालीस": 40, "पचास": 50, "डेढ़": 1.5, "ढाई": 2.5,
 }
+# Words that add to the next number: "saadhe teen lakh" = 3.5 lakh, "sawa lakh" = 1.25 lakh.
+_PLUS = {"saadhe": 0.5, "sadhe": 0.5, "saade": 0.5, "साढ़े": 0.5, "sawa": 0.25, "savva": 0.25, "सवा": 0.25}
+_JOIN = {"aur", "and", "or"}          # "1 lakh aur 50 hazaar" is one amount
+_RANGE = {"-", "/", "ya", "or", "to", "se", "या"}  # "40-50 hazaar": both get the scale
+# English -teen/-ty words are easily misheard ("fourteen" / "forty"), so callers confirm them.
+TEEN_TY = re.compile(r"\b(thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|"
+                     r"thirty|forty|fifty|sixty|seventy|eighty|ninety)\b", re.I)
+_DEV_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 
 
 def _blank(v):
@@ -29,29 +44,93 @@ def _blank(v):
                          ("null", "none", "na", "n/a", "unknown", "nil") or "{{" in v))
 
 
-def number(v):
-    """'25,000' -> 25000, '2.5 lakh' -> 250000, '25k' -> 25000, 'dedh lakh' -> 150000."""
-    if _blank(v):
-        return None
-    if isinstance(v, bool):
-        return None
+def negative(v):
+    """True when the caller states a negative amount ("-5000", "minus 5 hazaar")."""
+    s = str(v or "").lower().translate(_DEV_DIGITS)
+    return bool(re.search(r"(^|[^\w\d])-\s*\d", s) or re.search(r"\b(minus|negative|ghata|ghaata)\b", s))
+
+
+def amounts(v):
+    """Every amount stated in some text, in order, as dicts {value, scaled, digits}.
+
+    '1 lakh 50 hazaar' -> [150000] (one compound amount), 'saadhe teen lakh' -> [350000],
+    '13,00,000 ka 12 lakh ka' -> [1300000, 1200000], '40-50 hazaar' -> [40000, 50000],
+    'forty five thousand' -> [45000]. `scaled` means it had lakh/hazaar/k etc.; `digits` that it was
+    written in digits (a lone word like "do" is weak: it is also the verb "give")."""
+    if _blank(v) or isinstance(v, bool):
+        return []
     if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).lower().replace(",", "").replace("₹", "").replace("rs.", "").replace("rs", "").strip()
-    s = s.replace("rupees", "").replace("rupaye", "").replace("rupay", "").strip()
-    m = re.search(r"\d+(\.\d+)?", s)
-    base = float(m.group()) if m else None
-    if base is None:
-        for w, n in _WORDS.items():
-            if re.search(rf"\b{w}\b", s):
-                base = n
-                break
-    if base is None:
+        return [{"value": float(v), "scaled": False, "digits": True}]
+    s = str(v).lower().translate(_DEV_DIGITS).replace("₹", " ")
+    s = re.sub(r"(?<=\d),(?=\d)", "", s)
+    s = re.sub(r"\b(rs\.?|inr|rupees?|rupaye|rupay|rupaiye|rupiya)\b", " ", s)
+    tokens = re.findall(r"\d+(?:\.\d+)?|[a-zऀ-ॿ]+|[-/]", s)
+
+    out = []
+    cur = {"total": 0.0, "num": None, "last": float("inf"), "scaled": False, "digits": False,
+           "word": False, "plus": 0.0, "range": None}
+
+    def flush():
+        total = cur["total"] + (cur["num"] or 0)
+        if cur["range"] is not None:
+            out.append({"value": cur["range"], "scaled": False, "digits": cur["digits"]})
+        if cur["num"] is not None or cur["total"]:
+            out.append({"value": total, "scaled": cur["scaled"], "digits": cur["digits"]})
+        cur.update(total=0.0, num=None, last=float("inf"), scaled=False, digits=False, word=False,
+                   plus=0.0, range=None)
+
+    for i, tok in enumerate(tokens):
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+        is_digit = tok[0].isdigit()
+        val = float(tok) if is_digit else _WORDS.get(tok)
+        if val is not None:
+            val += cur["plus"]
+            cur["plus"] = 0.0
+            if cur["num"] is not None:
+                # "forty five" -> 45; otherwise two numbers in a row are two amounts.
+                if (not is_digit and cur["word"] and cur["num"] % 10 == 0 and 20 <= cur["num"] < 100
+                        and val < 10):
+                    cur["num"] += val
+                    continue
+                flush()
+            cur["num"], cur["word"] = val, not is_digit
+            cur["digits"] = cur["digits"] or is_digit
+        elif tok in _SCALES:
+            scale = _SCALES[tok]
+            if cur["num"] is None:
+                continue
+            if scale >= cur["last"]:  # "5 hazaar 3 hazaar": a new amount starts
+                carry, digits = cur["num"], cur["digits"]
+                cur["num"] = None
+                flush()
+                cur["num"], cur["digits"] = carry, digits
+            if cur["range"] is not None and cur["total"] == 0:
+                out.append({"value": cur["range"] * scale, "scaled": True, "digits": cur["digits"]})
+                cur["range"] = None
+            cur["total"] += cur["num"] * scale
+            cur["num"], cur["last"], cur["scaled"], cur["word"] = None, scale, True, False
+        elif tok in _PLUS:
+            cur["plus"] = _PLUS[tok]
+        elif tok in _RANGE and cur["num"] is not None and cur["total"] == 0 and cur["range"] is None and (
+                nxt[:1].isdigit() or nxt in _WORDS):
+            cur["range"], cur["num"] = cur["num"], None
+        elif tok in _JOIN and (cur["total"] or cur["num"] is not None):
+            continue
+        elif cur["num"] is not None or cur["total"]:
+            flush()
+    flush()
+    return out
+
+
+def number(v):
+    """'25,000' -> 25000, '2.5 lakh' -> 250000, '25k' -> 25000, 'dedh lakh' -> 150000,
+    '1 lakh 50 hazaar' -> 150000. The first amount stated in digits or with a scale wins over a lone
+    number word; None if there is no number at all."""
+    found = amounts(v)
+    if not found:
         return None
-    for pat, mult in _UNITS:
-        if re.search(r"(\d|\b)" + pat, s):
-            return base * mult
-    return base
+    strong = [a for a in found if a["digits"] or a["scaled"]]
+    return (strong or found)[0]["value"]
 
 
 def years(v):

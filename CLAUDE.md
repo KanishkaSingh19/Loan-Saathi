@@ -24,6 +24,7 @@ python -I -X utf8 src/train.py --voice-only  # voice model only, ~1 min
 python -I -X utf8 src/test_webhook.py        # end-to-end webhook tests with Hinglish inputs
 python -I -X utf8 src/test_speech_api.py     # speech proxy route tests (mocked, no API calls)
 python -I -X utf8 src/test_converse.py       # web-call conversation tests (Gemini mocked)
+python -I -X utf8 src/test_states.py         # web-call state machine: confirm, correct, ambiguity, contradictions
 python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
 python -I -X utf8 src/demo_applicants.py     # score three sample applicants
 python -I -X utf8 src/compare_models.py      # LightGBM vs XGBoost vs CatBoost, ~30 min
@@ -60,6 +61,16 @@ trained models are in `models/`); only retraining or the model comparison does.
   Gemini's question is used only if it asks the field we expect; its
   result reply only if every number in it appears in `reply_hint`. Any Gemini failure falls back to
   scripted questions. Sessions live in memory (single instance, 30-minute expiry).
+  The call is an explicit state machine (`TRANSITIONS`; `transition()` raises `InvalidTransition`):
+  COLLECTING_PROFILE → VERIFYING_INFORMATION → CONFIRMED → ASSESSING_RISK → CHECKING_AFFORDABILITY →
+  SHOWING_RESULT → NEXT_STEPS → COMPLETED, plus CORRECTION_REQUIRED, ERROR_RECOVERY, HUMAN_HANDOFF and
+  WHAT_IF (reserved, nothing enters it yet). Fields are "validated" until the caller confirms the
+  read-back, then "confirmed"; `require_confirmed()` guards the assessment. Risky values wait in
+  `pending` for a read-back (`check()`: bare numbers, ranges, two amounts, -teen/-ty words, large
+  values, Gemini figures that differ from the quote); a differing value for an answered field
+  becomes a "which one?" question, never an overwrite. Button presses arrive as `action`
+  (confirm, change, correct:<field>, yes, no, choose:<n>, handoff). `normalize.amounts()` parses
+  compound Indian amounts ("1 lakh 50 hazaar", "saadhe teen lakh", "2 crore 50 lakh").
 - `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/converse`, `/v1/stt` and `/v1/tts`
   (pass-throughs to Gnani's speech APIs), `/dashboard`, `/health`. Stores data in SQLite under `data/`.
 - Evon (Gnani's LLM) has no public API; Agent Builder offers Gnani's Pampa Go / Pampa Priority (not

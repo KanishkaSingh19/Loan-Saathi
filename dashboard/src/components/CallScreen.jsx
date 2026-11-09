@@ -7,9 +7,23 @@ import DecisionBadge from "./DecisionBadge";
 // Browser web call: mic -> Gnani Prisma (/v1/stt) -> Gemini + our model (/v1/converse)
 // -> Gnani Timbre (/v1/tts) -> speaker. Typing works too, for testing without speech keys.
 
-const ORDER = ["loan_amount", "monthly_income", "work", "years_in_work", "other_loans_count",
-  "other_loans_outstanding", "other_loans_emi", "housing", "age", "tenure_months"];
-const OPTIONAL = new Set(["tenure_months", "other_loans_outstanding"]); // shown only once mentioned
+const ORDER = ["loan_amount", "tenure_months", "monthly_income", "work", "years_in_work", "other_loans_count",
+  "other_loans_emi", "other_loans_outstanding", "housing", "age"];
+
+// Readable names for the server's conversation states (converse.py).
+const STATE_LABELS = {
+  COLLECTING_PROFILE: "Collecting answers",
+  VERIFYING_INFORMATION: "Waiting for confirmation",
+  CORRECTION_REQUIRED: "Correcting an answer",
+  CONFIRMED: "Confirmed",
+  ASSESSING_RISK: "Assessing risk",
+  CHECKING_AFFORDABILITY: "Checking affordability",
+  SHOWING_RESULT: "Result",
+  NEXT_STEPS: "Next steps",
+  COMPLETED: "Completed",
+  ERROR_RECOVERY: "Recovering",
+  HUMAN_HANDOFF: "Handed to an officer",
+};
 const MONEY = new Set(["loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding"]);
 const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
@@ -22,7 +36,7 @@ function show(field, value) {
 
 // Mirrors converse._skip(): questions that don't apply given earlier answers.
 function notNeeded(field, answers) {
-  if (field === "other_loans_emi") return answers.other_loans_count === 0;
+  if (field === "other_loans_emi" || field === "other_loans_outstanding") return answers.other_loans_count === 0;
   if (field === "years_in_work") return /retir|student|unemploy|pension/i.test(answers.work || "");
   return false;
 }
@@ -104,15 +118,15 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
     }
   };
 
-  const send = async (said) => {
+  const send = async (said, action = "") => {
     const clean = said.trim();
-    if (!clean || !call || call.done) return;
+    if ((!clean && !action) || !call || call.done) return;
     setMessages((m) => [...m, { who: "caller", text: clean }]);
     setText("");
     setError("");
     setBusy("thinking");
     try {
-      const r = await converse(apiKey, call.session_id, clean, lang);
+      const r = await converse(apiKey, call.session_id, clean, lang, action);
       await handle(r.reply, r);
     } catch (err) {
       setBusy(null);
@@ -150,13 +164,19 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
   const result = call?.result;
   const answers = call?.answers || {};
   const asking = call?.asking;
+  const fields = call?.fields || {};
+  const buttonsOn = active && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
+  const verifying = call?.state === "VERIFYING_INFORMATION";
 
   return (
     <main className="layout call-layout">
       <section className="panel call-panel">
         <div className="call-head">
           <div>
-            <h2>Web call</h2>
+            <h2>
+              Web call
+              {call?.state && <span className="state-pill">{STATE_LABELS[call.state] || call.state}</span>}
+            </h2>
             <p className="muted small">Gnani Prisma hears, Gemini understands, our model decides, Timbre speaks.</p>
           </div>
           <div className="call-controls">
@@ -193,6 +213,16 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           {busy === "speaking" && <div className="typing muted small">{BUSY_TEXT.speaking}</div>}
           <div ref={bottom} />
         </div>
+
+        {buttonsOn && (
+          <div className="quick-replies" role="group" aria-label="Quick replies">
+            {call.buttons.map((b) => (
+              <button key={b.action} type="button" className="btn" onClick={() => send(b.text, b.action)}>
+                {b.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {error && <p className="call-error" role="alert">{error}</p>}
         {voiceNote && <p className="muted small call-note">{voiceNote}</p>}
@@ -231,15 +261,36 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
 
       <aside className="panel detail-panel">
         <div className="detail">
+          {verifying && (
+            <section className="understood">
+              <h3>Here's what I understood</h3>
+              <dl className="said">
+                {call.summary.filter((r) => r.critical).map((r) => (
+                  <div key={r.field}>
+                    <dt>{r.label}</dt>
+                    <dd>{r.status === "default" ? <span className="muted">{r.text}</span> : r.text}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="muted small">Is this information correct? Nothing is assessed until you confirm.</p>
+            </section>
+          )}
           <section>
             <h3>Answers so far</h3>
             <dl className="said">
-              {ORDER.filter((f) => !OPTIONAL.has(f) || answers[f] !== undefined).map((f) => (
-                <div key={f} className={asking === f ? "asking" : ""}>
+              {ORDER.map((f) => (
+                <div key={f} className={asking === f || call?.correcting === f ? "asking" : ""}>
                   <dt>{SAID_LABELS[f] || f}</dt>
                   <dd>
                     {answers[f] !== undefined ? (
-                      show(f, answers[f])
+                      <>
+                        {show(f, answers[f])}
+                        <span className={`field-status ${fields[f]?.status || ""}`}>{fields[f]?.status}</span>
+                      </>
+                    ) : call?.pending?.field === f ? (
+                      <span className="accent">checking…</span>
+                    ) : f === "tenure_months" && call?.skipped?.includes(f) ? (
+                      <span className="muted">not given (24 months used)</span>
                     ) : call?.skipped?.includes(f) ? (
                       <span className="muted">skipped</span>
                     ) : notNeeded(f, answers) ? (
@@ -276,8 +327,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
             </section>
           )}
           <p className="muted small">
-            Gemini only understands answers and phrases replies. The loan amount, EMI and decision come
-            from our model and the 50% affordability rule, and every value is checked before it's used.
+            Gemini only understands answers and phrases replies. Every value is checked and confirmed by
+            the caller first; then our model scores the risk and the 50% affordability rule sets the amount.
           </p>
         </div>
       </aside>

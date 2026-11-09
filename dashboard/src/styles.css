@@ -256,3 +256,14 @@ pre { margin: 10px 0 0; padding: 12px; background: var(--panel-2); border: 1px s
 .call-result .offer { grid-template-columns: 1fr; }
 .composer input:focus, .call-controls select:focus, .mic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .mic.on, .status.live .dot { animation: none; } }
+
+/* web call: conversation state, quick replies, field status */
+.state-pill { margin-left: 10px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  vertical-align: middle; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+.quick-replies { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 18px 10px; }
+.quick-replies .btn { padding: 8px 14px; border-radius: 999px; }
+.said .field-status { margin-left: 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); }
+.said .field-status.confirmed { color: var(--good); }
+.understood { border: 1px solid var(--accent); border-radius: 12px; padding: 12px 14px; }
+.understood h3 { margin-top: 0; }

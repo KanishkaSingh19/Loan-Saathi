@@ -72,6 +72,8 @@ class ConverseRequest(BaseModel):
     session_id: str = Field(default="", max_length=40)
     text: str = Field(default="", max_length=2000)
     language: str = "hi"
+    # A button press on the call screen: confirm, change, correct:<field>, yes, no, choose:<n>, handoff.
+    action: str = Field(default="", max_length=40)
 
 
 class SpeechRequest(BaseModel):
@@ -222,7 +224,9 @@ def build_applicant(body):
     return {k: v for k, v in a.items() if v is not None or k == "years_employed"}
 
 
-def decide(applicant):
+def decide(applicant, risk=None):
+    """Model risk + the affordability rule + the debt rule -> decision. `risk` is a precomputed
+    scoring.score() result (the web call runs risk and affordability as separate steps)."""
     missing = [f for f in ("monthly_income", "loan_amount") if not applicant.get(f)]
     if missing:
         ask = {"monthly_income": "monthly income", "loan_amount": "loan amount needed"}
@@ -235,7 +239,7 @@ def decide(applicant):
                           + " and ".join(ask[m] for m in missing) + ".",
         }, None
 
-    r = scoring.score(applicant)
+    r = risk if risk is not None else scoring.score(applicant)
     afford = scoring.affordable_loan(applicant)
     band = r["band"]
     ups = [t for t in (_reason_text(i, "up") for i in r["raises_risk"]) if t]
@@ -384,7 +388,8 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
             json.dumps({**result, "details": details}, ensure_ascii=False)))
         print(f"[web-call {s['id']} -> prescreen {pid}] {result['decision']} band={result['risk_band']}", flush=True)
 
-    reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL)
+    reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
+                                action=body.action, assess=scoring.score)
     return {**converse.public(s), "reply": reply}
 
 

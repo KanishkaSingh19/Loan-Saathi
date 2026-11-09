@@ -33,6 +33,20 @@ mic → Gnani Prisma (speech-to-text) → Gemini → our model + affordability r
   house. Every value is then checked by our parser (an age of 7 is rejected). Gemini's question is used only if it asks what we expect next,
   and its result reply only if every number in it matches our decision. Otherwise Saathi uses a
   scripted line.
+- **A state machine, not a free chat**: the call moves through fixed states
+  (collecting → verifying → confirmed → assessing risk → checking affordability → result → next steps),
+  plus correction, error recovery and handoff to a person. Gemini interprets; our code picks every
+  transition.
+- **"Here's what I understood"**: before any assessment Saathi reads back the financial profile
+  (loan, tenure, income, EMI, debt) and the screen shows it with **Confirm** / **Change** buttons. Each
+  answer is *validated* until the caller confirms it; the model never runs on an unconfirmed profile.
+- **Corrections without restarting**: "my income is wrong" asks for just the income, changes only
+  that field, and reads the profile back again.
+- **Risky numbers are checked, not guessed**: a bare "40" for an income ("did you mean ₹40,000?"), a
+  range ("40-50 hazaar"), two amounts in one answer, "fourteen/forty", very large values, or a Gemini
+  figure that differs from the caller's words are read back. A new value that contradicts an earlier
+  one ("actually I earn ₹60,000") is asked about, never silently overwritten. Negative or zero income,
+  a tenure over 10 years and an EMI above the income are refused with a reason.
 - **It never dies on the LLM**: without a Gemini key, or if Gemini is slow or down, the call carries
   on with scripted Hinglish/English questions and our own Hindi number parser.
 - Typing works too, for testing without speech keys. Every finished call appears in the live feed.

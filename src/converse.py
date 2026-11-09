@@ -1,17 +1,36 @@
-"""Web-call conversation manager: Gemini understands and phrases, our code decides.
+"""Web-call conversation manager: a deterministic state machine around Gemini and our model.
 
-Each caller turn makes one Gemini call that (1) pulls answers out of what the caller said and
-(2) phrases the next question in the caller's own style (Hinglish, Hindi or English). Our code
-fixes the question order, validates every value with normalize.py, and makes the decision with
-the model + affordability rule (server.decide). When all answers are in, a second Gemini call
-turns the decision's reply_hint into a short spoken reply.
+    LLM interprets -> our code validates -> caller confirms -> model scores risk
+    -> affordability rule decides the amount.
 
-Gemini never chooses an amount or a decision, and its reply is used only if it asks about the
-field our code expects next. If Gemini is unavailable or returns something unusable, the call
-carries on with scripted questions and our own parser, so a call never dies on the LLM.
+States (TRANSITIONS lists every allowed move; anything else raises InvalidTransition):
+
+    START -> COLLECTING_PROFILE -> VERIFYING_INFORMATION -> CONFIRMED -> ASSESSING_RISK
+          -> CHECKING_AFFORDABILITY -> SHOWING_RESULT -> NEXT_STEPS -> COMPLETED
+    plus CORRECTION_REQUIRED (caller changes one answer), ERROR_RECOVERY (we keep failing to
+    understand, or the assessment failed), HUMAN_HANDOFF (caller asks for a person) and WHAT_IF
+    (reserved for the what-if simulator; nothing enters it yet).
+
+Gemini only ever (1) pulls answers out of what the caller said, each with an exact quote of the
+caller's words, (2) phrases the next question, (3) classifies a reply to the summary when our
+keyword rules can't, and (4) phrases the final result, whose numbers must match ours. It never
+chooses a state, a value it can't quote, an amount or a decision. Every value goes through our
+parser and checks:
+
+- each field has a status: "validated" (passed our checks) or "confirmed" (the caller confirmed
+  the summary). A value that needs the caller's OK first waits in `pending` ("extracted").
+  Assessment refuses to run unless the call is in CONFIRMED and every answer is confirmed
+  (`require_confirmed`).
+- risky numbers are read back before use: a bare "40" for an income, a range ("40-50 hazaar"),
+  two amounts in one answer, an English -teen/-ty word, a value far outside the usual range, or a
+  Gemini value that differs from the caller's own words.
+- a new value that differs from an earlier one is never silently overwritten: Saathi asks which
+  one to use. Corrections from the summary change only that field.
+- impossible values (negative, zero income, tenure over 10 years...) are refused with a reason.
+
+If Gemini is unavailable the call carries on with scripted questions and our own parser.
 """
 import json
-import os
 import re
 import time
 import uuid
@@ -19,15 +38,70 @@ import uuid
 import httpx
 
 import normalize as norm
+from scoring import inr
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_TIMEOUT = 12.0
 
-# Question order. `need` = we keep asking (up to MAX_TRIES) because no decision is possible
-# without it; the rest are skipped after MAX_TRIES unclear answers.
+# ---------- states ----------
+
+START = "START"
+COLLECTING = "COLLECTING_PROFILE"
+VERIFYING = "VERIFYING_INFORMATION"
+CORRECTION = "CORRECTION_REQUIRED"
+CONFIRMED = "CONFIRMED"
+ASSESSING = "ASSESSING_RISK"
+AFFORDABILITY = "CHECKING_AFFORDABILITY"
+RESULT = "SHOWING_RESULT"
+WHAT_IF = "WHAT_IF"
+NEXT_STEPS = "NEXT_STEPS"
+COMPLETED = "COMPLETED"
+RECOVERY = "ERROR_RECOVERY"
+HANDOFF = "HUMAN_HANDOFF"
+
+TRANSITIONS = {
+    START: {COLLECTING},
+    COLLECTING: {VERIFYING, RECOVERY, HANDOFF},
+    VERIFYING: {CONFIRMED, CORRECTION, RECOVERY, HANDOFF},
+    CORRECTION: {VERIFYING, COLLECTING, RECOVERY, HANDOFF},
+    CONFIRMED: {ASSESSING, RECOVERY},
+    ASSESSING: {AFFORDABILITY, RECOVERY},
+    AFFORDABILITY: {RESULT, RECOVERY},
+    RESULT: {NEXT_STEPS, WHAT_IF, HANDOFF, COMPLETED},
+    WHAT_IF: {RESULT, NEXT_STEPS, HANDOFF},  # reserved for the what-if simulator
+    NEXT_STEPS: {COMPLETED, HANDOFF},
+    RECOVERY: {COLLECTING, VERIFYING, HANDOFF, COMPLETED},
+    HANDOFF: {COMPLETED},
+    COMPLETED: set(),
+}
+STATES = tuple(TRANSITIONS)
+FINISHED = (COMPLETED, HANDOFF)
+
+
+class InvalidTransition(Exception):
+    pass
+
+
+class NotConfirmed(Exception):
+    """Raised when something tries to assess a profile the caller hasn't confirmed."""
+
+
+def transition(s, to, why=""):
+    if to not in TRANSITIONS.get(s["state"], ()):
+        raise InvalidTransition(f"{s['state']} -> {to}")
+    s["trail"].append({"from": s["state"], "to": to, "why": why, "ts": round(time.time(), 3)})
+    s["state"] = to
+
+
+# ---------- fields ----------
+
+# Question order. `need` = no decision is possible without it, so we never skip it.
 FIELDS = [
     {"key": "loan_amount", "need": True,
      "en": "How much loan do you need?", "hi": "Aapko kitne ka loan chahiye?"},
+    {"key": "tenure_months",
+     "en": "Over how many months or years would you like to repay it? If you're not sure, say 'you decide'.",
+     "hi": "Yeh loan aap kitne mahine ya saal mein chukana chahenge? Pakka na ho toh 'aap bataiye' boliye."},
     {"key": "monthly_income", "need": True,
      "en": "Roughly how much do you earn in a month?", "hi": "Aap mahine mein lagbhag kitna kamaate hain?"},
     {"key": "work",
@@ -40,14 +114,94 @@ FIELDS = [
     {"key": "other_loans_emi",
      "en": "What is the total EMI you pay on those loans every month?",
      "hi": "Un sab loans ki total EMI mahine ki kitni jaati hai?"},
+    {"key": "other_loans_outstanding",
+     "en": "And how much do you still owe in total on those loans?",
+     "hi": "Aur un loans par abhi kul kitna chukana baaki hai?"},
     {"key": "housing",
      "en": "Do you live in your own house, on rent, or with family?",
      "hi": "Aap apne ghar mein rehte hain, kiraye pe, ya parivaar ke saath?"},
     {"key": "age", "en": "And lastly, what is your age?", "hi": "Aur aakhri sawaal, aapki umar kitni hai?"},
 ]
 KEYS = [f["key"] for f in FIELDS]
-# Captured when the caller mentions them, but never asked for.
-EXTRA = ("tenure_months", "other_loans_outstanding")
+BY_KEY = {f["key"]: f for f in FIELDS}
+EXTRA = ()  # kept for compatibility: every captured field is now asked for
+REQUIRED = tuple(f["key"] for f in FIELDS if f.get("need"))
+MONEY = ("loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding")
+NUMERIC = MONEY + ("tenure_months", "other_loans_count", "years_in_work", "age")
+CRITICAL = MONEY + ("tenure_months", "other_loans_count")  # the financial profile spoken back
+SUMMABLE = ("monthly_income", "other_loans_emi", "other_loans_outstanding")  # "both" can mean a total
+DEFAULT_TENURE = 24
+MAX_TRIES = 3
+MAX_CORRECTIONS = 6
+
+# (minimum, read back above, refuse above)
+LIMITS = {
+    "loan_amount": (1_000, 50_00_000, 10_00_00_000),
+    "monthly_income": (1_000, 5_00_000, 1_00_00_000),
+    "other_loans_emi": (0, None, 1_00_00_000),
+    "other_loans_outstanding": (0, None, 1_00_00_00_000),
+}
+
+LABELS = {
+    "en": {"loan_amount": "requested loan", "tenure_months": "repayment period",
+           "monthly_income": "monthly income", "work": "work", "years_in_work": "years in work",
+           "other_loans_count": "number of other loans", "other_loans_emi": "existing EMI",
+           "other_loans_outstanding": "existing debt", "housing": "housing", "age": "age"},
+    "hi": {"loan_amount": "loan ki rakam", "tenure_months": "chukane ka samay",
+           "monthly_income": "mahine ki kamaai", "work": "kaam", "years_in_work": "kaam ke saal",
+           "other_loans_count": "chal rahe loans ki ginti", "other_loans_emi": "maujooda EMI",
+           "other_loans_outstanding": "baaki loan", "housing": "ghar", "age": "umar"},
+}
+TITLES = {"loan_amount": "Requested loan", "tenure_months": "Tenure", "monthly_income": "Monthly income",
+          "work": "Work", "years_in_work": "Years in work", "other_loans_count": "Other loans",
+          "other_loans_emi": "Existing EMI", "other_loans_outstanding": "Existing debt",
+          "housing": "Housing", "age": "Age"}
+
+HOUSING_WORDS = re.compile(
+    r"own|apna|apne|khud|rent|kiray|family|parivaar|parivar|parents|maa|papa|ghar|house|home|flat|"
+    r"quarter|government|sarkari|hostel|\bpg\b|घर|किराय|परिवार|अपन", re.I)
+DONT_KNOW = re.compile(
+    r"pata nahi|nahi pata|maloom nahi|aap (bataiye|batao|batayein|decide|dekh)|you decide|"
+    r"not sure|don'?t know|koi bhi|kuch bhi|jo (theek|sahi) (ho|lage)|whatever|any tenure|पता नहीं", re.I)
+YES = re.compile(
+    r"\b(haan|haa|han|ha|hanji|ji|jee|yes|yeah|yep|yup|correct|sahi|theek|thik|bilkul|right|confirm|"
+    r"confirmed|ok|okay|sure|done|chalega|perfect)\b|हाँ|हां|सही|ठीक|जी", re.I)
+NO = re.compile(
+    r"\b(nahi|nahin|nai|na|no|nope|galat|wrong|incorrect|change|badlo|badalna|badal|update|mistake|"
+    r"not)\b|नहीं|नही|गलत|ग़लत|बदल", re.I)
+HUMAN = re.compile(
+    r"\b(human|insaan|insan|real person|actual person|customer care|customer support|helpline)\b|"
+    r"kisi (insaan|aadmi|vyakti|person) se|(agent|officer|manager|executive) se baat|"
+    r"(talk|speak) to (a |an |the )?(loan )?(person|human|agent|officer|someone|real)|इंसान|किसी से बात", re.I)
+FIRST = re.compile(r"\b(pehla|pehle|pahla|pahle|first|purana|old|earlier)\b|पहल", re.I)
+SECOND = re.compile(r"\b(doosra|dusra|doosre|dusre|second|naya|nayi|new|latest|abhi wala|baad wala|later)\b|दूसर|नया", re.I)
+BOTH = re.compile(r"\b(total|dono|both|jod|jodo|add|sum|milakar|mila ke)\b|दोनों|कुल", re.I)
+
+# Words that point at a field, for corrections and for "actually I earn 60k" mid-call.
+# Checked in order: specific words first, plain "loan" last.
+MENTIONS = [
+    ("other_loans_emi", r"\bemi\b|\bkist|\bkisht|किस्त|installment|instalment"),
+    ("other_loans_outstanding", r"\bdebt|outstanding|\bbaaki|\bbaki\b|bakaya|\bowe|\bkarz|कर्ज|बकाया|udhaar|udhar"),
+    ("other_loans_count", r"kitne loan|how many loans|number of loans|other loans|aur loan|dusre loan|loans? count"),
+    ("monthly_income", r"income|kamaai|kamai|kamaata|kamata|kamaati|kamati|kamaate|salary|tankhwah|tankha|"
+                       r"\bearn|aamdani|कमाई|कमाता|आय|तनख्वाह|सैलरी"),
+    ("years_in_work", r"experience|kitne saal se|years in work|years of work|years working"),
+    ("tenure_months", r"tenure|duration|repay|chukana|chukane|chukaun|अवधि|kitne mahine|how long|loan period"),
+    ("age", r"\bage\b|\bumar|\bumr|उम्र|years old"),
+    ("housing", r"\bhouse|\bghar\b|\brent|kiraya|kiraye|housing|घर|किराय"),
+    ("work", r"\bwork\b|\bjob\b|\bkaam\b|naukri|occupation|business|employment|rozgar|profession|काम|नौकरी"),
+    ("loan_amount", r"loan amount|requested|request|maanga|manga|naya loan|new loan|\bloan\b|लोन|amount|rakam"),
+]
+MENTIONS = [(k, re.compile(p, re.I)) for k, p in MENTIONS]
+
+# ---------- what Saathi says ----------
+
+GREETING = {
+    "hi": "Namaste! Main Loan Saathi hoon. Main kuch aasaan sawaal poochkar bataunga ki aapko kitna loan "
+          "mil sakta hai. Yeh sirf ek pre-screening hai, final approval nahi. ",
+    "en": "Hello! I'm Loan Saathi. I'll ask a few simple questions and tell you how much loan you could get. "
+          "This is only a pre-screening, not a final approval. ",
+}
 CLARIFY = {
     "other_loans_emi": {
         "hi": "Theek hai, maine loan ki rakam note kar li. Ab bataiye, in sab loans ki mahine ki kist, "
@@ -56,18 +210,72 @@ CLARIFY = {
               "on those loans?",
     },
 }
-BY_KEY = {f["key"]: f for f in FIELDS}
-MAX_TRIES = 3
-HOUSING_WORDS = re.compile(
-    r"own|apna|apne|khud|rent|kiray|family|parivaar|parivar|parents|maa|papa|ghar|house|home|flat|"
-    r"quarter|government|sarkari|hostel|\bpg\b|घर|किराय|परिवार|अपन", re.I)
-
-GREETING = {
-    "hi": "Namaste! Main Loan Saathi hoon. Main kuch aasaan sawaal poochkar bataunga ki aapko kitna loan "
-          "mil sakta hai. Yeh sirf ek pre-screening hai, final approval nahi. ",
-    "en": "Hello! I'm Loan Saathi. I'll ask a few simple questions and tell you how much loan you could get. "
-          "This is only a pre-screening, not a final approval. ",
+SAY = {
+    "sorry": {"hi": "Maaf kijiye, main samjha nahi. ", "en": "Sorry, I didn't catch that. "},
+    "again": {"hi": "Theek hai, phir se bataiye. ", "en": "Okay, please tell me again. "},
+    "noted": {"hi": "Theek hai. ", "en": "Okay. "},
+    "updated": {"hi": "Theek hai, maine {label} {value} kar di. ", "en": "Okay, I've changed your {label} to {value}. "},
+    "yes_no": {"hi": " Kripya haan ya nahi boliye.", "en": " Please say yes or no."},
+    "confirm_number": {"hi": "{label} ke liye maine {value} suna. Kya yeh sahi hai?",
+                       "en": "For your {label} I heard {value}. Is that right?"},
+    "confirm_scale": {"hi": "{label} ke liye maine sirf {raw} suna. Kya aapka matlab {value} hai?",
+                      "en": "For your {label} I only heard {raw}. Did you mean {value}?"},
+    "choose_multiple": {"hi": "{label} ke liye maine do rakam suni: {a} aur {b}. Kaunsi sahi hai?",
+                        "en": "I heard two amounts for your {label}: {a} and {b}. Which one should I use?"},
+    "choose_total": {"hi": " Agar dono milakar hai, toh 'total' boliye.", "en": " If it's both together, say 'total'."},
+    "contradiction": {"hi": "Mere paas {label} ki do alag baatein hain: {a} aur {b}. Kaunsi sahi hai?",
+                      "en": "I have two different {label} values: {a} and {b}. Which should I use?"},
+    "loans_conflict": {"hi": "Pehle aapne bataya ki koi aur loan nahi hai, par ab aapne {label} {value} bataayi. "
+                             "Kya abhi koi loan chal raha hai?",
+                       "en": "Earlier you said you have no other loans, but now you mentioned an {label} of "
+                             "{value}. Do you have other loans running right now?"},
+    "summary_intro": {"hi": "Maine yeh samjha: ", "en": "Here's what I understood: "},
+    "summary_ask": {"hi": " Kya yeh sab sahi hai? 'Haan' boliye, ya bataiye kya badalna hai.",
+                    "en": " Is this information correct? Say yes, or tell me what to change."},
+    "verify_unclear": {"hi": "Agar sab sahi hai toh 'haan' boliye, ya bataiye kaunsi jaankari badalni hai.",
+                       "en": "If everything is right, say yes. Otherwise tell me what to change."},
+    "which_field": {"hi": "Kaunsi jaankari galat hai? Jaise loan ki rakam, kamaai, EMI, baaki loan ya chukane ka samay.",
+                    "en": "Which detail is wrong? For example the loan amount, income, EMI, debt or tenure."},
+    "ask_correct": {"hi": "Sahi {label} kya hai?", "en": "What is the correct {label}?"},
+    "emi_over_income": {"hi": "Aapki EMI {emi} aapki kamaai {income} se zyada ho rahi hai. ",
+                        "en": "Your EMI of {emi} is more than your income of {income}. "},
+    "recovery": {"hi": "Maaf kijiye, mujhe theek se samajh nahi aa raha. Aap jawab type bhi kar sakte hain. "
+                       "Kya hum phir se koshish karein, ya main aapko loan officer se jod doon?",
+                 "en": "Sorry, I'm having trouble understanding. You can also type your answer. "
+                       "Shall we try again, or would you like a loan officer to call you?"},
+    "assess_failed": {"hi": "Maaf kijiye, jaanch karte waqt kuch technical dikkat aa gayi. Kya main phir se koshish karoon?",
+                      "en": "Sorry, something went wrong while checking. Shall I try again?"},
+    "handoff": {"hi": "Theek hai, main aapki request hamare loan officer ke liye note kar raha hoon. Woh aapse "
+                      "2 working din mein sampark karenge. Dhanyavaad!",
+                "en": "Okay, I'm noting a request for one of our loan officers to contact you within 2 working "
+                      "days. Thank you!"},
+    "too_many_changes": {"hi": "Lagta hai kaafi baatein badal rahi hain, isliye behtar hoga ki hamare loan officer aapse "
+                               "seedhe baat karein. ",
+                         "en": "Quite a few details have changed, so it's best if one of our loan officers talks to "
+                               "you directly. "},
+    "bye": {"hi": "Koi baat nahi. Jab chahein dobara baat kijiye. Dhanyavaad!",
+            "en": "No problem. Talk to me again any time. Thank you!"},
+    "finished": {"hi": "Aapka pre-screening ho gaya hai. Dhanyavaad!", "en": "Your pre-screening is complete. Thank you!"},
+    "more": {"hi": " Aur kuch poochna ho, ya loan officer se baat karni ho, toh bataiye.",
+             "en": " If you have any other question or want to talk to a loan officer, just say so."},
 }
+PROBLEMS = {
+    "negative": {"hi": "{label} minus mein nahi ho sakti. ", "en": "Your {label} can't be negative. "},
+    "too_small": {"hi": "{label} kam se kam {min} honi chahiye. ", "en": "The {label} needs to be at least {min}. "},
+    "too_large": {"hi": "{value} {label} ke liye bahut zyada lagta hai. ", "en": "{value} looks too large for your {label}. "},
+    "tenure_range": {"hi": "Loan 3 mahine se 10 saal ke beech chukaya ja sakta hai. ",
+                     "en": "The loan can be repaid over 3 months to 10 years. "},
+    "age_range": {"hi": "Is pre-screening ke liye umar 18 se 100 saal ke beech honi chahiye. ",
+                  "en": "This pre-screening is for ages 18 to 100. "},
+}
+RESULT_FOLLOWUP = {
+    "pre_approved": {"hi": " Kya main aage ke steps bataun?", "en": " Shall I tell you the next steps?"},
+    "needs_review": {"hi": " Kya main aage ke steps bataun?", "en": " Shall I tell you the next steps?"},
+    "not_eligible_now": {"hi": " Kya main bataun ki aage kya kar sakte hain?", "en": " Shall I tell you what could help?"},
+    "counter_offer": {"hi": "", "en": ""},  # the result already asks "would that work?"
+}
+
+# ---------- Gemini prompts ----------
 
 SYSTEM_PROMPT = """You are Loan Saathi, a warm, patient voice assistant that pre-screens first-time
 borrowers in India for small loans. Callers speak Hindi, English or Hinglish, often informally,
@@ -76,16 +284,17 @@ and their words come from speech recognition, so expect errors and Devanagari or
 You get the conversation so far, the answers already collected, the field our system wants
 next, and the caller's latest words. Do two things:
 
-1. ANSWERS: list every field the caller states in `caller_said` (this turn only). Callers often
+1. ANSWERS: list every field the caller states in `caller_said` (this turn only), including a new
+   value for a field already collected (the caller may be changing it). Callers often
    give several answers in one sentence: "50 hazaar chahiye, sabzi ki dukaan hai, 25 hazaar kamata
    hoon" gives THREE answers (loan_amount 50000, work, monthly_income 25000). For each answer give
    `quote`: the exact words from `caller_said` that state it, copied character for character.
    If you cannot quote the caller's words for a field, they did not say it: leave it out.
    Never fill a field from guesswork, typical values or the question that was asked.
    Values:
-   loan_amount, monthly_income, other_loans_emi: rupees as plain digits ("pachas hazaar" -> "50000",
-     "dhai lakh" -> "250000", "15k" -> "15000"). monthly_income: convert a yearly or daily figure
-     to monthly (daily x 26).
+   loan_amount, monthly_income, other_loans_emi, other_loans_outstanding: rupees as plain digits
+     ("pachas hazaar" -> "50000", "dhai lakh" -> "250000", "15k" -> "15000"). monthly_income: convert
+     a yearly or daily figure to monthly (daily x 26).
    work: a short English description ("vegetable seller", "salaried driver", "retired",
      "student", "unemployed", "government job", "own kirana shop").
    years_in_work, age: plain number of years.
@@ -95,16 +304,16 @@ next, and the caller's latest words. Do two things:
      loan hai"); if they name several, add them up. Never put a loan's size into other_loans_emi:
      if they gave loan sizes but no monthly installment, other_loans_emi is not answered yet.
    housing: one of "own house", "rented", "with family", "government quarters".
-   tenure_months: months, only if they say how long they want to repay.
+   tenure_months: how long they want to repay, in months ("2 saal" -> "24").
 
 2. REPLY: one or two short spoken sentences. Briefly acknowledge what they said, then ask
    about the NEXT field: the first one in `still_needed` (it is in order) that the caller has not
    just answered, skipping years_in_work if they are retired, a student or unemployed, and
-   skipping other_loans_emi if they have no other loans. Ask it in natural words; the
-   `question_hints` show what each field means. If the caller asked
+   skipping other_loans_emi and other_loans_outstanding if they have no other loans. Ask it in
+   natural words; the `question_hints` show what each field means. If the caller asked
    something, answer it in one sentence first, but never promise approval, quote interest rates,
-   or mention any score or model. If nothing is left to ask, set asking to "done" and do not ask anything: just say
-   "Thank you, let me check." in their language.
+   or mention any score or model. If nothing is left to ask, set asking to "done" and do not ask
+   anything: just say "Thank you." in their language.
    Match the caller's language and script style: Hinglish in Latin script by default; English if
    they speak English; Devanagari only if they clearly prefer pure Hindi. No emojis, no lists.
 
@@ -119,7 +328,7 @@ EXTRACT_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "field": {"type": "string", "enum": KEYS + list(EXTRA)},
+                    "field": {"type": "string", "enum": KEYS},
                     "value": {"type": "string"},
                     "quote": {"type": "string"},
                 },
@@ -133,17 +342,20 @@ EXTRACT_SCHEMA = {
     "required": ["answers", "reply", "asking", "language"],
 }
 
+INTENT_PROMPT = """You classify one reply from a loan pre-screening caller in India (Hindi, English or
+Hinglish, from speech recognition). Saathi just read back the caller's details and asked if they are
+correct. Return:
+intent: "confirm" if the caller says everything is correct; "correct" if they say something is
+  wrong or want to change something; "unclear" otherwise.
+field: the detail they want to change, if they name one, else "none".
+Only classify. Do not invent values."""
 
-def _plain(text):
-    """Lowercase, punctuation-free, single-spaced, for comparing a quote with what was said."""
-    return " ".join(re.sub(r"[^\wऀ-ॿ₹]+", " ", str(text).lower()).split())
-
-
-def quoted(quote, said):
-    """True if Gemini's quote really is in the caller's words (guards against invented answers)."""
-    q = _plain(quote)
-    return bool(q) and q in _plain(said)
-
+INTENT_SCHEMA = {
+    "type": "object",
+    "properties": {"intent": {"type": "string", "enum": ["confirm", "correct", "unclear"]},
+                   "field": {"type": "string", "enum": KEYS + ["none"]}},
+    "required": ["intent", "field"],
+}
 
 RESULT_PROMPT = """You are Loan Saathi, speaking to a caller on a voice call about a loan pre-screening.
 Turn the guidance below into what you say to the caller: 2 to 4 short spoken sentences, warm and clear.
@@ -162,18 +374,33 @@ LANGUAGE_RULES = {
 RESULT_SCHEMA = {"type": "object", "properties": {"reply": {"type": "string"}}, "required": ["reply"]}
 
 
+def _plain(text):
+    """Lowercase, punctuation-free, single-spaced, for comparing a quote with what was said."""
+    return " ".join(re.sub(r"[^\wऀ-ॿ₹]+", " ", str(text).lower()).split())
+
+
+def quoted(quote, said):
+    """True if Gemini's quote really is in the caller's words (guards against invented answers)."""
+    q = _plain(quote)
+    return bool(q) and q in _plain(said)
+
+
 # ---------- validation ----------
 
 def valid(key, value):
-    """The normalised value if our parser understands it, else None."""
+    """The normalised value if our parser understands it and it is in range, else None."""
     if value in (None, ""):
         return None
     v = str(value)
+    if key in MONEY and norm.negative(v):
+        return None
     if key in ("loan_amount", "monthly_income"):
         n = norm.number(v)
         return n if n and n > 0 else None
-    if key == "other_loans_emi":
+    if key in ("other_loans_emi", "other_loans_outstanding"):
         n = norm.number(v)
+        if n is None and norm.boolean(v) is False:
+            n = 0
         return n if n is not None and n >= 0 else None
     if key == "other_loans_count":
         n = norm.number(v)
@@ -191,12 +418,92 @@ def valid(key, value):
         return v if income_type else None
     if key == "housing":
         return v if HOUSING_WORDS.search(v) else None  # norm.housing() defaults on any input
-    if key == "other_loans_outstanding":
-        n = norm.number(v)
-        return n if n is not None and n >= 0 else None
     if key == "tenure_months":
         n = norm.months(v)
         return n if n and 3 <= n <= 120 else None
+    return None
+
+
+def check(s, key, raw, words):
+    """Our verdict on one heard value: ("ok", v), ("confirm", v, how), ("choose", [a, b]) or
+    ("invalid", code, v). `raw` is the value (Gemini's or the caller's text); `words` is what the
+    caller actually said for it."""
+    words = words or str(raw)
+    if key in NUMERIC and (norm.negative(words) or norm.negative(raw)):
+        return ("invalid", "negative", None)
+    if key in MONEY:
+        heard = norm.amounts(words)
+        strong = [a for a in heard if a["digits"] or a["scaled"]] or heard
+        distinct = []
+        for a in strong:
+            if all(abs(a["value"] - d) > 0.5 for d in distinct):
+                distinct.append(a["value"])
+        if len(distinct) > 1:
+            return ("choose", distinct[:2])
+        n = valid(key, raw)
+        if n is None:
+            if norm.number(raw) == 0 and key in ("loan_amount", "monthly_income"):
+                return ("invalid", "too_small", 0)
+            return ("invalid", "unclear", None)
+        lo, soft, hard = LIMITS[key]
+        own = strong[0] if strong else None
+        if own and abs(own["value"] - n) > 0.5:
+            return ("confirm", n, "number")  # Gemini's figure isn't what the caller's words say
+        small = 1000 if key in ("loan_amount", "monthly_income") else 100
+        if own and not own["scaled"] and 0 < n < small and key not in s["literal_ok"]:
+            return ("confirm", n * 1000, "scale")  # "40" for an income almost always means 40 hazaar
+        if n < lo:
+            return ("invalid", "too_small", n)
+        if n > hard:
+            return ("invalid", "too_large", n)
+        if norm.TEEN_TY.search(words) or (soft and n > soft):
+            return ("confirm", n, "number")
+        return ("ok", n)
+    if key == "tenure_months":
+        n = norm.months(raw)
+        if n is None:
+            return ("invalid", "unclear", None)
+        if not 3 <= n <= 120:
+            return ("invalid", "tenure_range", n)
+        own = norm.months(words)
+        if own is not None and own != n:
+            return ("confirm", n, "number")
+        return ("ok", n)
+    if key == "age":
+        n = norm.number(raw)
+        if n is not None and not 18 <= n <= 100:
+            return ("invalid", "age_range", n)
+    n = valid(key, raw)
+    if n is None:
+        return ("invalid", "unclear", None)
+    return ("ok", raw if key in ("work", "housing") else n)
+
+
+def _same(key, a, b):
+    if key in ("work", "housing"):
+        return True  # free text: the latest description wins
+    return abs(float(a) - float(b)) <= max(0.5, 0.01 * abs(float(a)))
+
+
+def fmt(key, v, lang="en"):
+    if key in MONEY:
+        return inr(v)
+    if key == "tenure_months":
+        n = int(v)
+        return f"{n} mahine" if lang == "hi" else f"{n} months"
+    if key in ("age", "years_in_work"):
+        n = round(float(v), 1)
+        n = int(n) if n == int(n) else n
+        return f"{n} saal" if lang == "hi" else f"{n} years"
+    if key == "other_loans_count":
+        return str(int(v))
+    return str(v)
+
+
+def mentioned_field(text):
+    for key, pat in MENTIONS:
+        if pat.search(text or ""):
+            return key
     return None
 
 
@@ -205,7 +512,7 @@ def _skip(key, answers):
     if key == "years_in_work" and answers.get("work"):
         income_type, _ = norm.work(answers["work"])
         return income_type in ("Pensioner", "Unemployed", "Student")
-    if key == "other_loans_emi":
+    if key in ("other_loans_emi", "other_loans_outstanding"):
         return valid("other_loans_count", answers.get("other_loans_count")) == 0
     return False
 
@@ -270,10 +577,13 @@ def _prune():
 def start(language="hi"):
     _prune()
     lang = "en" if language == "en" else "hi"
-    s = {"id": uuid.uuid4().hex[:12], "lang": lang, "answers": {}, "said": {}, "skipped": set(),
-         "tries": {}, "history": [], "done": False, "result": None, "prescreen_id": None,
-         "llm": [], "updated": time.time()}
+    s = {"id": uuid.uuid4().hex[:12], "lang": lang, "state": START, "trail": [],
+         "answers": {}, "status": {}, "said": {}, "skipped": set(), "tries": {}, "history": [],
+         "pending": [], "correcting": None, "corrections": 0, "recoveries": 0, "recover_to": None,
+         "literal_ok": set(), "changed": set(), "clarify": None, "just_corrected": None,
+         "problem_value": None, "result": None, "prescreen_id": None, "llm": [], "updated": time.time()}
     SESSIONS[s["id"]] = s
+    transition(s, COLLECTING, "greeting")
     first = next_field(s)
     reply = GREETING[lang] + BY_KEY[first][lang]
     s["history"].append(("Saathi", reply))
@@ -281,28 +591,348 @@ def start(language="hi"):
     return s, reply
 
 
+def summary(s):
+    """The profile as Saathi understood it, for the 'Here's what I understood' card."""
+    rows = []
+    for k in KEYS:
+        if k in s["answers"]:
+            rows.append({"field": k, "label": TITLES[k], "value": s["answers"][k],
+                         "text": fmt(k, s["answers"][k]), "status": s["status"].get(k, "validated"),
+                         "critical": k in CRITICAL})
+        elif k == "tenure_months" and "loan_amount" in s["answers"] and k in s["skipped"]:
+            rows.append({"field": k, "label": TITLES[k], "value": None, "critical": True,
+                         "text": f"not given ({DEFAULT_TENURE} months will be used)", "status": "default"})
+    return rows
+
+
+def _spoken_summary(s):
+    """A short read-back of the financial profile (the screen shows every field)."""
+    a, lang = s["answers"], s["lang"]
+    hi = lang == "hi"
+    parts = []
+    if "loan_amount" in a:
+        t = ""
+        if "tenure_months" in a:
+            t = f", {fmt('tenure_months', a['tenure_months'], lang)} mein" if hi else \
+                f" over {fmt('tenure_months', a['tenure_months'], lang)}"
+        parts.append(f"loan {inr(a['loan_amount'])}{t}" if hi else f"a loan of {inr(a['loan_amount'])}{t}")
+    if "monthly_income" in a:
+        parts.append(f"kamaai {inr(a['monthly_income'])} mahina" if hi
+                     else f"monthly income {inr(a['monthly_income'])}")
+    n = a.get("other_loans_count")
+    if n == 0:
+        parts.append("koi aur loan nahi" if hi else "no other loans")
+    elif n:
+        bit = f"{n} aur loan" if hi else f"{n} other loan{'s' if n != 1 else ''}"
+        if "other_loans_emi" in a:
+            bit += f", EMI {inr(a['other_loans_emi'])}"
+        if "other_loans_outstanding" in a:
+            bit += (f", baaki {inr(a['other_loans_outstanding'])}" if hi
+                    else f", {inr(a['other_loans_outstanding'])} still owed")
+        parts.append(bit)
+    return SAY["summary_intro"][lang] + "; ".join(parts) + "." + SAY["summary_ask"][lang]
+
+
+def buttons(s):
+    """Tap targets for the call screen. Each sends `action` (and `text`, for the transcript)."""
+    hi = s["lang"] == "hi"
+    if s["state"] in FINISHED:
+        return []
+    if s["pending"]:
+        p = s["pending"][0]
+        if p["kind"] == "choose":
+            out = [{"label": fmt(p["field"], o), "action": f"choose:{i}", "text": fmt(p["field"], o, s["lang"])}
+                   for i, o in enumerate(p["options"])]
+            if p.get("why") == "multiple" and p["field"] in SUMMABLE:
+                out.append({"label": f"Total {fmt(p['field'], sum(p['options']))}", "action": "choose:total",
+                            "text": "Dono milakar" if hi else "Both together"})
+            return out
+        return [{"label": "Yes", "action": "yes", "text": "Haan" if hi else "Yes"},
+                {"label": "No", "action": "no", "text": "Nahi" if hi else "No"}]
+    if s["state"] == VERIFYING:
+        return [{"label": "Confirm", "action": "confirm", "text": "Haan, sab sahi hai" if hi else "Yes, that's correct"},
+                {"label": "Change", "action": "change", "text": "Kuch badalna hai" if hi else "I need to change something"}]
+    if s["state"] == CORRECTION and not s["correcting"]:
+        return [{"label": TITLES[k], "action": f"correct:{k}",
+                 "text": f"{LABELS['hi'][k]} badalni hai" if hi else f"Change my {LABELS['en'][k]}"}
+                for k in KEYS if k in s["answers"] or k == "tenure_months"]
+    if s["state"] == RESULT:
+        return [{"label": "Yes", "action": "yes", "text": "Haan" if hi else "Yes"},
+                {"label": "No, thanks", "action": "no", "text": "Nahi, shukriya" if hi else "No, thanks"},
+                {"label": "Talk to an officer", "action": "handoff",
+                 "text": "Loan officer se baat karni hai" if hi else "I'd like to talk to a loan officer"}]
+    return []
+
+
 def public(s):
     """What the call screen sees: no internal bookkeeping."""
-    return {"session_id": s["id"], "asking": s.get("asking", "done"), "language": s["lang"],
-            "answers": dict(s["answers"]), "skipped": sorted(s["skipped"]), "done": s["done"],
-            "result": s["result"], "prescreen_id": s["prescreen_id"],
+    pending = None
+    if s["pending"]:
+        p = s["pending"][0]
+        pending = {"field": p["field"], "kind": p["kind"], "value": p.get("value"), "options": p.get("options")}
+    return {"session_id": s["id"], "state": s["state"], "asking": s.get("asking", "done"),
+            "language": s["lang"], "answers": dict(s["answers"]),
+            "fields": {k: {"value": v, "status": s["status"].get(k, "validated"), "said": s["said"].get(k, "")}
+                       for k, v in s["answers"].items()},
+            "summary": summary(s), "pending": pending, "correcting": s["correcting"],
+            "buttons": buttons(s), "skipped": sorted(s["skipped"]),
+            "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
+            "trail": [f"{t['from']} -> {t['to']}" for t in s["trail"][-20:]],
             "llm": s["llm"][-1] if s["llm"] else ""}
 
 
-async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini-3.5-flash-lite"):
-    """Handles one caller utterance and returns the reply to speak."""
-    text = (text or "").strip()[:1000]
-    s["updated"] = time.time()
-    if s["done"]:
-        return ("Aapka pre-screening ho gaya hai. Dhanyavaad!" if s["lang"] == "hi"
-                else "Your pre-screening is complete. Thank you!")
-    asked = s.get("asking") or next_field(s)
-    s["history"].append(("Caller", text))
+# ---------- setting values ----------
 
-    extracted, g_reply, g_asking, used = {}, "", "", "fallback"
-    if api_key and text:
+def _set(s, k, v, said, status="validated"):
+    s["answers"][k] = v
+    s["status"][k] = status
+    s["said"][k] = said
+    s["skipped"].discard(k)
+    s["changed"].add(k)
+    if k == "other_loans_count" and v == 0:  # no loans: their EMI and debt are 0 by definition
+        for d in ("other_loans_emi", "other_loans_outstanding"):
+            s["answers"].pop(d, None)
+            s["status"].pop(d, None)
+
+
+def _unset(s, k):
+    s["answers"].pop(k, None)
+    s["status"].pop(k, None)
+
+
+def _queue(s, item):
+    if not any(p["field"] == item["field"] for p in s["pending"]):
+        s["pending"].append({"tries": 0, **item})
+
+
+def _corrected(s, k):
+    if k == s["correcting"]:
+        s["correcting"] = None
+        s["corrections"] += 1
+        s["just_corrected"] = k
+
+
+def _commit(s, k, v, said, mode):
+    """Store a checked value, unless it contradicts what we already have."""
+    old = s["answers"].get(k)
+    if mode == "collect" and old is not None and not _same(k, old, v):
+        _queue(s, {"kind": "choose", "why": "contradiction", "field": k, "options": [old, v], "said": said,
+                   "mode": mode})
+        return
+    if k in ("other_loans_emi", "other_loans_outstanding") and v > 0 and s["answers"].get("other_loans_count") == 0:
+        _queue(s, {"kind": "loans_conflict", "field": k, "value": v, "said": said, "mode": mode})
+        return
+    _set(s, k, v, said)
+    if mode == "correct":
+        _corrected(s, k)
+
+
+def offer(s, k, raw, words, mode="collect"):
+    """Run every check on one heard value and store it, queue a read-back, or return the problem
+    code ("negative", "too_small", "too_large", "tenure_range", "age_range", "unclear")."""
+    verdict = check(s, k, raw, words)
+    kind = verdict[0]
+    if kind == "invalid":
+        s["problem_value"] = verdict[2]
+        return verdict[1]
+    if kind == "choose":
+        _queue(s, {"kind": "choose", "why": "multiple", "field": k, "options": verdict[1], "said": words,
+                   "mode": mode})
+        return None
+    v = verdict[1]
+    # An EMI above the whole monthly income is almost always a loan's size heard as its installment
+    # ("13 lakh ka loan"): keep it as the debt and ask for the EMI again, clearly.
+    income = s["answers"].get("monthly_income")
+    if k == "other_loans_emi" and income and v > income:
+        print(f"[converse {s['id']}] EMI {v} is above income {income}: keeping it as debt", flush=True)
+        if "other_loans_outstanding" not in s["answers"]:
+            _set(s, "other_loans_outstanding", v, words)
+        s["clarify"] = "other_loans_emi"
+        return None
+    if kind == "confirm":
+        _queue(s, {"kind": "confirm", "how": verdict[2], "field": k, "value": v, "said": words,
+                   "raw": norm.number(words) if verdict[2] == "scale" else None, "mode": mode})
+        return None
+    _commit(s, k, v, words, mode)
+    return None
+
+
+def _yes(text, action):
+    return action == "yes" or (not action and bool(YES.search(text)) and not NO.search(text))
+
+
+def _no(text, action):
+    return action == "no" or (not action and bool(NO.search(text)))
+
+
+def _resolve_pending(s, text, action):
+    """The caller's answer to a read-back. Returns (prefix to say, problem code)."""
+    p = s["pending"][0]
+    k, lang, mode = p["field"], s["lang"], p.get("mode", "collect")
+    heard = [a["value"] for a in norm.amounts(text)] if not action else []
+
+    if p["kind"] == "choose":
+        pick = None
+        if action.startswith("choose:"):
+            arg = action.split(":", 1)[1]
+            if arg == "total":
+                pick = sum(p["options"])
+            elif arg.isdigit() and int(arg) < len(p["options"]):
+                pick = p["options"][int(arg)]
+        elif heard and k in NUMERIC:
+            match = [o for o in p["options"] if any(_same(k, o, h) for h in heard)]
+            if match:
+                pick = match[0]
+            else:  # a third value: check it like a fresh answer, replacing the old one
+                s["pending"].pop(0)
+                if p.get("why") == "contradiction":
+                    _unset(s, k)
+                return "", offer(s, k, text, text, mode)
+        elif BOTH.search(text) and p.get("why") == "multiple" and k in SUMMABLE:
+            pick = sum(p["options"])
+        elif FIRST.search(text):
+            pick = p["options"][0]
+        elif SECOND.search(text):
+            pick = p["options"][1]
+        if pick is None:
+            p["tries"] += 1
+            if p["tries"] >= MAX_TRIES:
+                s["pending"].pop(0)
+                _unset(s, k)
+                return SAY["again"][lang], None
+            return SAY["sorry"][lang], None
+        s["pending"].pop(0)
+        _set(s, k, pick, p["said"])
+        if mode == "correct":
+            _corrected(s, k)
+        return SAY["noted"][lang], None
+
+    if p["kind"] == "loans_conflict":
+        if _yes(text, action):
+            s["pending"].pop(0)
+            _unset(s, "other_loans_count")  # ask how many again
+            _set(s, k, p["value"], p["said"])
+            return SAY["noted"][lang], None
+        if _no(text, action):
+            s["pending"].pop(0)
+            return SAY["noted"][lang], None
+        p["tries"] += 1
+        if p["tries"] >= MAX_TRIES:
+            s["pending"].pop(0)
+        return SAY["sorry"][lang], None
+
+    # confirm: "I heard X. Is that right?"
+    same = any(_same(k, p["value"], h) for h in heard) or (
+        p["how"] == "scale" and any(_same(k, p["raw"] or 0, h) for h in heard))
+    if heard and not same:
+        s["pending"].pop(0)  # they said a different number: check that one instead
+        return "", offer(s, k, text, text, mode)
+    if _yes(text, action):
+        s["pending"].pop(0)
+        _commit(s, k, p["value"], p["said"], mode)
+        return SAY["noted"][lang], None
+    if _no(text, action):
+        s["pending"].pop(0)
+        if p["how"] == "scale":
+            s["literal_ok"].add(k)  # next time, take a bare number as said
+        if mode == "correct":
+            s["correcting"] = k
+        return SAY["again"][lang], None
+    p["tries"] += 1
+    if p["tries"] >= MAX_TRIES:
+        s["pending"].pop(0)
+        return SAY["again"][lang], None
+    return "", None
+
+
+def _pending_prompt(s):
+    p, lang = s["pending"][0], s["lang"]
+    k = p["field"]
+    label = LABELS[lang][k]
+    if p["kind"] == "confirm":
+        if p["how"] == "scale":
+            raw = p["raw"]
+            raw = int(raw) if raw is not None and raw == int(raw) else raw
+            text = SAY["confirm_scale"][lang].format(label=label, raw=raw, value=fmt(k, p["value"], lang))
+        else:
+            text = SAY["confirm_number"][lang].format(label=label, value=fmt(k, p["value"], lang))
+        return text + (SAY["yes_no"][lang] if p["tries"] else "")
+    if p["kind"] == "choose":
+        a, b = (fmt(k, o, lang) for o in p["options"][:2])
+        if p.get("why") == "contradiction":
+            return SAY["contradiction"][lang].format(label=label, a=a, b=b)
+        text = SAY["choose_multiple"][lang].format(label=label, a=a, b=b)
+        return text + (SAY["choose_total"][lang] if k in SUMMABLE else "")
+    return SAY["loans_conflict"][lang].format(label=label, value=fmt(k, p["value"], lang))
+
+
+def _problem_text(s, k, code):
+    lang = s["lang"]
+    if code == "unclear" or code not in PROBLEMS:
+        return SAY["sorry"][lang]
+    lo = LIMITS.get(k, (0,))[0]
+    v = s.get("problem_value")
+    return PROBLEMS[code][lang].format(label=LABELS[lang][k], min=inr(lo) if k in MONEY else lo,
+                                       value=fmt(k, v, lang) if v is not None else "")
+
+
+def _cross_checks(s):
+    """Checks between answers. Returns (field to ask again, message) or None."""
+    a, lang = s["answers"], s["lang"]
+    emi, income = a.get("other_loans_emi"), a.get("monthly_income")
+    if emi is not None and income and emi > income and "other_loans_emi" not in s["changed"]:
+        # The income changed to below an EMI we already had: ask for the income again.
+        msg = SAY["emi_over_income"][lang].format(emi=inr(emi), income=inr(income))
+        _unset(s, "monthly_income")
+        return "monthly_income", msg
+    return None
+
+
+# ---------- the turn ----------
+
+async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini-3.5-flash-lite",
+               action="", assess=None):
+    """Handles one caller utterance (or button press) and returns the reply to speak."""
+    text = (text or "").strip()[:1000]
+    action = (action or "").strip()
+    s["updated"] = time.time()
+    s.update(changed=set(), clarify=None, just_corrected=None, problem_value=None)
+    if s["state"] in FINISHED:
+        if s["state"] == HANDOFF:
+            transition(s, COMPLETED, "call over")
+        return SAY["finished"][s["lang"]]
+    s["history"].append(("Caller", text or f"[{action}]"))
+    env = {"decide": decide, "build_applicant": build_applicant, "save": save, "assess": assess,
+           "api_key": api_key, "model": model}
+
+    if action == "handoff" or (not action and text and HUMAN.search(text)):
+        if HANDOFF in TRANSITIONS[s["state"]]:
+            reply = _handoff(s, "caller asked for a person")
+            s["history"].append(("Saathi", reply))
+            return reply
+
+    handler = {COLLECTING: _collecting, VERIFYING: _verifying, CORRECTION: _correcting,
+               RESULT: _after_result, NEXT_STEPS: _after_next_steps, RECOVERY: _recovering,
+               WHAT_IF: _after_next_steps}[s["state"]]
+    reply = await handler(s, env, text, action)
+    s["history"].append(("Saathi", reply))
+    return reply
+
+
+def _handoff(s, why):
+    transition(s, HANDOFF, why)
+    s["asking"] = "done"
+    print(f"[converse {s['id']}] human handoff: {why}", flush=True)
+    return SAY["handoff"][s["lang"]]
+
+
+async def _extract(s, env, text, asked):
+    """Candidate answers [(field, value, caller's words)] and Gemini's reply, if any."""
+    out = []
+    g = {"reply": "", "asking": "", "used": "fallback"}
+    if env["api_key"] and text:
         try:
-            out = await _gemini(api_key, model, SYSTEM_PROMPT, json.dumps({
+            res = await _gemini(env["api_key"], env["model"], SYSTEM_PROMPT, json.dumps({
                 "conversation": _transcript(s),
                 "collected": s["answers"],
                 "field_just_asked": asked,
@@ -311,103 +941,329 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
                                    if k not in s["answers"] and k not in s["skipped"]},
                 "caller_said": text,
             }, ensure_ascii=False), EXTRACT_SCHEMA)
-            for a in out.get("answers") or []:
-                if not isinstance(a, dict):
+            for a in res.get("answers") or []:
+                if not isinstance(a, dict) or a.get("field") not in BY_KEY:
                     continue
                 if quoted(a.get("quote", ""), text):
-                    extracted[a.get("field")] = a.get("value")
+                    out.append((a["field"], a.get("value"), a.get("quote")))
                 else:
                     print(f"[converse {s['id']}] dropped unquoted answer {a.get('field')}={a.get('value')!r}", flush=True)
-            g_reply, g_asking = str(out.get("reply") or "").strip(), str(out.get("asking") or "")
-            s["lang"] = _language(text, out.get("language"), s["lang"])
-            used = "gemini"
+            g = {"reply": str(res.get("reply") or "").strip(), "asking": str(res.get("asking") or ""),
+                 "used": "gemini"}
+            s["lang"] = _language(text, res.get("language"), s["lang"])
         except Exception as e:  # noqa: BLE001
             print(f"[converse {s['id']}] Gemini failed, using fallback: {type(e).__name__}: {e}", flush=True)
-    elif text:
-        extracted = {asked: text}  # our own parser on the raw answer
+    if g["used"] == "fallback" and text:
+        # Our own parser on the raw answer. "Actually I earn 60 hazaar" while we ask about work goes
+        # to the income, so a changed value is caught without Gemini too.
+        other = mentioned_field(text)
+        found = [a for a in norm.amounts(text) if a["scaled"] or a["value"] >= 1000]
+        if other in MONEY and other != asked and asked not in MONEY and len(found) == 1:
+            out.append((other, text, text))
+        else:
+            out.append((asked, text, text))
+    return out, g
 
-    # Keep only values our parsers understand; never overwrite with an unclear value.
-    for k, v in extracted.items():
-        if k in BY_KEY or k in EXTRA:
-            n = valid(k, v)
-            if n is not None:
-                s["answers"][k] = v if k in ("work", "housing") else n
-                s["said"][k] = text
-                s["skipped"].discard(k)
+
+async def _collecting(s, env, text, action):
+    asked = s.get("asking") if s.get("asking") in BY_KEY else next_field(s)
+    if s["pending"]:
+        k = s["pending"][0]["field"]
+        prefix, problem = _resolve_pending(s, text, action)
+        return _advance(s, env, prefix, (k, problem) if problem else None)
+
+    if asked == "tenure_months" and DONT_KNOW.search(text) and not norm.amounts(text):
+        s["skipped"].add("tenure_months")  # the affordability rule picks the tenure
+        return _advance(s, env, SAY["noted"][s["lang"]])
+
+    candidates, g = await _extract(s, env, text, asked)
+    problem = None
+    for k, raw, words in candidates:
+        p = offer(s, k, raw, words, "collect")
+        if p and k == asked:
+            problem = (k, p)
     # Gemini may miss a short direct answer ("do", "nahi"); try our parser on it too.
-    if asked in BY_KEY and asked not in s["answers"]:
-        n = valid(asked, text)
-        if n is not None:
-            s["answers"][asked] = text if asked in ("work", "housing") else n
-            s["said"][asked] = text
+    if g["used"] == "gemini" and asked in BY_KEY and asked not in s["answers"] and not s["pending"] \
+            and not s["clarify"] and text:
+        p = offer(s, asked, text, text, "collect")
+        if p and p != "unclear":
+            problem = (asked, p)
+    s["llm"].append(g["used"])
 
-    # Cross-checks between answers. An EMI above the whole monthly income is almost always a loan's
-    # size heard as its installment ("13 lakh ka loan"): drop it and ask again, clearly.
-    clarify = None
-    emi, income = s["answers"].get("other_loans_emi"), s["answers"].get("monthly_income")
-    if emi is not None and income and emi > income:
-        print(f"[converse {s['id']}] dropped implausible EMI {emi} (income {income})", flush=True)
-        s["answers"].pop("other_loans_emi")
-        s["answers"].setdefault("other_loans_outstanding", emi)
-        clarify = "other_loans_emi"
-
-    if asked in BY_KEY and asked not in s["answers"]:
+    if asked in BY_KEY and asked not in s["answers"] and not s["pending"] and not s["clarify"]:
         s["tries"][asked] = s["tries"].get(asked, 0) + 1
         if s["tries"][asked] >= MAX_TRIES and not BY_KEY[asked].get("need"):
             s["skipped"].add(asked)
+    return _advance(s, env, "", problem, g)
+
+
+def _advance(s, env, prefix="", problem=None, g=None):
+    """Decide what to say next from the state of the profile. Never calls Gemini."""
+    lang = s["lang"]
+    cross = _cross_checks(s)
+    if s["pending"]:
+        s["asking"] = s["pending"][0]["field"]
+        lead = _problem_text(s, problem[0], problem[1]) if problem else prefix
+        return lead + _pending_prompt(s)
+
+    if s["state"] == CORRECTION:
+        if s["corrections"] > MAX_CORRECTIONS:
+            return SAY["too_many_changes"][lang] + _handoff(s, "too many corrections")
+        k = s["correcting"]
+        if k:
+            s["asking"] = k
+            lead = _problem_text(s, k, problem[1]) if problem else (prefix or SAY["noted"][lang])
+            return lead + SAY["ask_correct"][lang].format(label=LABELS[lang][k])
+        if s.get("just_corrected"):
+            k = s["just_corrected"]
+            if k in s["answers"]:
+                prefix = SAY["updated"][lang].format(label=LABELS[lang][k], value=fmt(k, s["answers"][k], lang))
+        elif not cross and next_field(s) == "done":
+            s["asking"] = "correction"
+            return prefix + SAY["which_field"][lang]
 
     nxt = next_field(s)
-    s["llm"].append(used)
-
-    if nxt != "done" and BY_KEY[nxt].get("need") and s["tries"].get(nxt, 0) >= MAX_TRIES:
-        s["done"] = True
-        s["asking"] = "done"
-        reply = ("Maaf kijiye, mujhe aapki baat theek se samajh nahi aayi. Kripya thodi der baad dobara call karein."
-                 if s["lang"] == "hi" else
-                 "Sorry, I couldn't catch that clearly. Please try again a little later.")
-        s["history"].append(("Saathi", reply))
-        return reply
-
     if nxt != "done":
+        if s["state"] == CORRECTION:
+            transition(s, COLLECTING, "correction needs new answers")
+        if BY_KEY[nxt].get("need") and s["tries"].get(nxt, 0) >= MAX_TRIES:
+            return _enter_recovery(s, COLLECTING, f"could not understand {nxt}")
         s["asking"] = nxt
-        if clarify == nxt:
-            reply = CLARIFY[nxt][s["lang"]]
-        elif used == "gemini" and g_asking == nxt and g_reply:
-            reply = g_reply
-        else:
-            again = nxt == asked
-            prefix = ("" if not again else
-                      ("Maaf kijiye, main samjha nahi. " if s["lang"] == "hi" else "Sorry, I didn't catch that. "))
-            reply = prefix + BY_KEY[nxt][s["lang"]]
-        s["history"].append(("Saathi", reply))
-        return reply
+        if cross and cross[0] == nxt:
+            return prefix + cross[1] + BY_KEY[nxt][lang]
+        if s.get("clarify") == nxt:
+            return prefix + CLARIFY[nxt][lang]
+        if problem and problem[0] == nxt:
+            return prefix + _problem_text(s, nxt, problem[1]) + BY_KEY[nxt][lang]
+        if g and g["used"] == "gemini" and g["asking"] == nxt and g["reply"] and not prefix:
+            return g["reply"]
+        return prefix + BY_KEY[nxt][lang]
 
-    # All answers in: our model + affordability rule decide; Gemini only phrases the result.
+    if s["state"] in (COLLECTING, CORRECTION):
+        transition(s, VERIFYING, "profile complete")
+    s["asking"] = "confirm"
+    s["tries"].pop("confirm", None)
+    return prefix + _spoken_summary(s)
+
+
+def _enter_recovery(s, back_to, why):
+    s["recoveries"] += 1
+    if s["recoveries"] > 2 and HANDOFF in TRANSITIONS[s["state"]]:
+        return _handoff(s, f"recovery failed: {why}")
+    transition(s, RECOVERY, why)
+    s["recover_to"] = back_to
+    s["asking"] = "recovery"
+    return SAY["recovery"][s["lang"]]
+
+
+async def _recovering(s, env, text, action):
+    back = s["recover_to"] or COLLECTING
+    if _no(text, action) and not _yes(text, action):
+        transition(s, COMPLETED, "caller stopped")
+        s["asking"] = "done"
+        return SAY["bye"][s["lang"]]
+    if back == COLLECTING:
+        transition(s, COLLECTING, "retry")
+        k = next_field(s)
+        s["tries"].pop(k, None)
+        if _yes(text, action) or not text:
+            return _advance(s, env)
+        s["asking"] = k
+        return await _collecting(s, env, text, action)  # they may have just answered
+    transition(s, VERIFYING, "retry")
+    return _advance(s, env)
+
+
+async def _intent(s, env, text, action):
+    """("confirm" | "correct" | None, field or None) for a reply to the summary."""
+    if action == "confirm":
+        return "confirm", None
+    if action == "change":
+        return "correct", None
+    if action.startswith("correct:"):
+        k = action.split(":", 1)[1]
+        return "correct", k if k in BY_KEY else None
+    field = mentioned_field(text)
+    no, yes = NO.search(text), YES.search(text)
+    if no and (not yes or field or re.search(r"\b(sahi|theek|thik|correct|right)\s+(nahi|nahin|not)\b|"
+                                             r"\bnot\s+(correct|right)\b", text, re.I)):
+        return "correct", field
+    if field and norm.amounts(text):
+        return "correct", field
+    if yes and not no:
+        return "confirm", None
+    if env["api_key"] and text:
+        try:
+            out = await _gemini(env["api_key"], env["model"], INTENT_PROMPT,
+                                json.dumps({"caller_said": text}, ensure_ascii=False), INTENT_SCHEMA)
+            s["llm"].append("gemini")
+            intent, k = out.get("intent"), out.get("field")
+            if intent in ("confirm", "correct"):
+                return intent, k if k in BY_KEY else None
+        except Exception as e:  # noqa: BLE001
+            print(f"[converse {s['id']}] Gemini intent failed: {type(e).__name__}: {e}", flush=True)
+    return None, field
+
+
+def _apply_correction_value(s, k, text):
+    """In the same breath as naming the field ("income 60 hazaar hai"), take the value too."""
+    if k in NUMERIC and norm.amounts(text):
+        return offer(s, k, text, text, "correct")
+    return None
+
+
+async def _verifying(s, env, text, action):
+    intent, field = await _intent(s, env, text, action)
+    if intent == "confirm":
+        transition(s, CONFIRMED, "caller confirmed")
+        for k in s["answers"]:
+            s["status"][k] = "confirmed"
+        return await _assess(s, env)
+    if intent == "correct":
+        transition(s, CORRECTION, f"caller wants to change {field or 'something'}")
+        s["correcting"] = field
+        problem = _apply_correction_value(s, field, text) if field and not action else None
+        return _advance(s, env, "", (field, problem) if problem else None)
+    s["tries"]["confirm"] = s["tries"].get("confirm", 0) + 1
+    if s["tries"]["confirm"] >= MAX_TRIES:
+        return _enter_recovery(s, VERIFYING, "no clear yes or no to the summary")
+    return SAY["verify_unclear"][s["lang"]]
+
+
+async def _correcting(s, env, text, action):
+    if s["pending"]:
+        k = s["pending"][0]["field"]
+        prefix, problem = _resolve_pending(s, text, action)
+        return _advance(s, env, prefix, (k, problem) if problem else None)
+
+    k = s["correcting"]
+    if action.startswith("correct:"):
+        k = action.split(":", 1)[1]
+        s["correcting"] = k if k in BY_KEY else None
+        return _advance(s, env)
+    if action == "confirm":
+        transition(s, VERIFYING, "nothing to change")
+        return _advance(s, env)
+    mentioned = mentioned_field(text)
+
+    if k is None:
+        if mentioned:
+            s["correcting"] = mentioned
+            problem = _apply_correction_value(s, mentioned, text)
+            return _advance(s, env, "", (mentioned, problem) if problem else None)
+        if YES.search(text) and not NO.search(text):
+            transition(s, VERIFYING, "nothing to change")
+            return _advance(s, env)
+        _, field = await _intent(s, env, text, "")
+        if field:
+            s["correcting"] = field
+            return _advance(s, env)
+        s["tries"]["correction"] = s["tries"].get("correction", 0) + 1
+        if s["tries"]["correction"] >= MAX_TRIES:
+            transition(s, VERIFYING, "could not tell which field")
+            return _advance(s, env)
+        return SAY["which_field"][s["lang"]]
+
+    # Free-text fields would swallow "no, the income is wrong": switch field first.
+    if mentioned and mentioned not in (k, "loan_amount") and (k not in NUMERIC or not norm.amounts(text)):
+        s["correcting"] = k = mentioned
+        problem = _apply_correction_value(s, k, text)
+        return _advance(s, env, "", (k, problem) if problem else None)
+    problem = offer(s, k, text, text, "correct")
+    if problem == "unclear" and env["api_key"] and text:
+        candidates, _ = await _extract(s, env, text, k)
+        for f, raw, words in candidates:
+            if f == k:
+                problem = offer(s, k, raw, words, "correct")
+    return _advance(s, env, "", (k, problem) if problem else None)
+
+
+def require_confirmed(s):
+    """The gate before any assessment: confirmed state, required fields, every answer confirmed."""
+    if s["state"] != CONFIRMED:
+        raise NotConfirmed(f"assessment needs state {CONFIRMED}, call is in {s['state']}")
+    missing = [k for k in REQUIRED if k not in s["answers"]]
+    unconfirmed = [k for k in s["answers"] if s["status"].get(k) != "confirmed"]
+    if missing or unconfirmed or s["pending"]:
+        raise NotConfirmed(f"missing {missing}, unconfirmed {unconfirmed}, pending {len(s['pending'])}")
+
+
+async def _assess(s, env):
+    """CONFIRMED -> ASSESSING_RISK (model) -> CHECKING_AFFORDABILITY (rules) -> SHOWING_RESULT."""
+    require_confirmed(s)
     s["asking"] = "done"
     body = {k: str(v) for k, v in s["answers"].items()}
-    applicant = build_applicant(body)
-    result, details = decide(applicant)
+    try:
+        applicant = env["build_applicant"](body)
+        transition(s, ASSESSING, "profile confirmed")
+        risk = env["assess"](applicant) if env["assess"] else None
+        transition(s, AFFORDABILITY, "risk scored")
+        result, details = env["decide"](applicant, risk) if risk is not None else env["decide"](applicant)
+        if result.get("decision") == "need_more_info":
+            raise ValueError(f"decision needs more info: {result.get('missing_fields')}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[converse {s['id']}] assessment failed: {type(e).__name__}: {e}", flush=True)
+        reply = _enter_recovery(s, VERIFYING, "assessment failed")
+        return SAY["assess_failed"][s["lang"]] if s["state"] == RECOVERY else reply
     pid = uuid.uuid4().hex[:12]
     result["prescreen_id"] = pid
-    save(pid, {**body, "source": "web-call", "session_id": s["id"]}, applicant, result, details)
-    s.update(done=True, result=result, prescreen_id=pid)
+    env["save"](pid, {**body, "source": "web-call", "session_id": s["id"]}, applicant, result, details)
+    s.update(result=result, prescreen_id=pid)
+    transition(s, RESULT, result["decision"])
 
     reply = ""
-    if api_key:
+    if env["api_key"]:
         try:
-            out = await _gemini(api_key, model, RESULT_PROMPT.format(language_rule=LANGUAGE_RULES[s["lang"]]),
+            out = await _gemini(env["api_key"], env["model"],
+                                RESULT_PROMPT.format(language_rule=LANGUAGE_RULES[s["lang"]]),
                                 f"Guidance:\n{result['reply_hint']}", RESULT_SCHEMA)
             reply = str(out.get("reply") or "").strip()
             if reply and not _amounts_ok(reply, result):
                 print(f"[converse {s['id']}] Gemini result reply changed an amount; using fallback", flush=True)
                 reply = ""
-            s["llm"][-1] = "gemini" if reply else "fallback"
         except Exception as e:  # noqa: BLE001
             print(f"[converse {s['id']}] Gemini result phrasing failed: {type(e).__name__}: {e}", flush=True)
+    s["llm"].append("gemini" if reply else "fallback")
     if not reply:
         reply = _fallback_result(result, s["lang"])
-    s["history"].append(("Saathi", reply))
-    return reply
+    return reply + RESULT_FOLLOWUP.get(result["decision"], {}).get(s["lang"], "")
+
+
+async def _after_result(s, env, text, action):
+    lang = s["lang"]
+    if _no(text, action) and not _yes(text, action):
+        transition(s, COMPLETED, "caller declined next steps")
+        s["asking"] = "done"
+        return SAY["bye"][lang]
+    transition(s, NEXT_STEPS, "caller wants next steps")
+    return _next_steps(s["result"], lang) + SAY["more"][lang]
+
+
+async def _after_next_steps(s, env, text, action):
+    if s["state"] == WHAT_IF:  # reserved: nothing enters WHAT_IF yet
+        transition(s, NEXT_STEPS, "what-if not available")
+    transition(s, COMPLETED, "call finished")
+    s["asking"] = "done"
+    return SAY["finished"][s["lang"]]
+
+
+def _next_steps(r, lang):
+    """Deterministic next steps for each decision."""
+    d = r["decision"]
+    tips = r.get("tips", "")
+    if lang == "hi":
+        if d in ("pre_approved", "needs_review", "counter_offer"):
+            return ("Aage ke steps: Aadhaar card, PAN card aur pichhle 3 mahine ka bank statement taiyaar rakhiye. "
+                    "Hamare loan officer 2 working din mein call karke documents check karenge. "
+                    "Final approval documents ki jaanch ke baad hi hoga.")
+        return ((f"Isme madad karega: {tips}. " if tips else "")
+                + "3 se 6 mahine baad, jab EMI ya baaki loan kam ho jaaye, dobara check kijiye.")
+    if d in ("pre_approved", "needs_review", "counter_offer"):
+        return ("Next steps: keep your Aadhaar card, PAN card and the last 3 months of bank statements ready. "
+                "A loan officer will call you within 2 working days to check the documents. "
+                "Final approval happens only after that verification.")
+    return ((f"What would help: {tips}. " if tips else "")
+            + "Check again in 3 to 6 months, once your EMIs or existing loans have come down.")
 
 
 def _digits(text):
@@ -449,8 +1305,7 @@ def _fallback_result(r, lang):
     if lang == "hi":
         if d == "pre_approved":
             return (f"Achhi khabar! Aap {amt} ke loan ke liye pre-approved hain, {n} mahine ke liye, "
-                    f"EMI lagbhag {emi} mahina. Aadhaar, PAN aur 3 mahine ka bank statement taiyaar rakhiye. "
-                    "Yeh sirf pre-screening hai, final approval nahi.")
+                    f"EMI lagbhag {emi} mahina. Yeh sirf pre-screening hai, final approval nahi.")
         if d == "needs_review":
             return (f"Aapki {amt} ki request, {n} mahine mein, EMI lagbhag {emi}, mumkin lagti hai. "
                     "Hamare loan officer ise dekhkar 2 working din mein call karenge.")
@@ -458,10 +1313,10 @@ def _fallback_result(r, lang):
             return (f"Aapki maangi hui rakam se EMI aapki kamaai ke aadhe se zyada ho jaati. "
                     f"Hum {amt} {n} mahine ke liye de sakte hain, EMI lagbhag {emi} mahina. Kya yeh theek rahega?")
         return ("Abhi aapki batayi jaankari ke hisaab se hum yeh loan nahi de paayenge. "
-                + (f"Isme madad karega: {tips}. " if tips else "") + "Kuch samay baad dobara try zaroor kijiye. Dhanyavaad!")
+                + (f"Isme madad karega: {tips}. " if tips else "") + "Kuch samay baad dobara try zaroor kijiye.")
     if d == "pre_approved":
         return (f"Good news! You're pre-approved for {amt} over {n} months, with an EMI of about {emi} a month. "
-                "Keep your Aadhaar, PAN and 3 months of bank statements ready. This is a pre-screening, not a final approval.")
+                "This is a pre-screening, not a final approval.")
     if d == "needs_review":
         return (f"Your request for {amt} over {n} months, EMI about {emi}, looks possible. "
                 "A loan officer will review it and call you within 2 working days.")
@@ -469,4 +1324,4 @@ def _fallback_result(r, lang):
         return (f"The amount you asked for would take more than half your income in EMIs. "
                 f"We could offer {amt} over {n} months instead, EMI about {emi} a month. Would that work?")
     return ("Based on what you shared, we can't offer this loan right now. "
-            + (f"What would help: {tips}. " if tips else "") + "Please do try again later. Thank you!")
+            + (f"What would help: {tips}. " if tips else "") + "Please do try again later.")
