@@ -507,7 +507,11 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             <section className="call-result">
               <div className="detail-head">
                 <h3>Result</h3>
-                <DecisionBadge decision={result.decision} />
+                {result.assessment?.outcome ? (
+                  <span className={`badge ${result.assessment.outcome.tone}`}>{result.assessment.outcome.title}</span>
+                ) : (
+                  <DecisionBadge decision={result.decision} />
+                )}
               </div>
               {result.assessment && (
                 <button className="btn" onClick={() => assessmentRef.current?.scrollIntoView({ block: "start" })}>

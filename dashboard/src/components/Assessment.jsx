@@ -37,23 +37,34 @@ function Figure({ label, figure, tone = "", wide = false }) {
   );
 }
 
+// The estimated pre-screening result, in the server's own careful words (assessment.outcome).
+function Outcome({ outcome, fallback, tone }) {
+  const t = outcome?.tone || tone;
+  return (
+    <div className={`outcome ${t}`} role="status">
+      <strong>{outcome?.title || fallback}</strong>
+      {outcome?.detail ? <span>{outcome.detail}</span> : null}
+    </div>
+  );
+}
+
 function Why({ why }) {
   if (!why) return null;
   const none = !why.helping?.length && !why.risk?.length;
   return (
     <section className="as-section">
-      <h3>Why this result?</h3>
+      <h3>Why did I get this result?</h3>
       {none ? <p className="muted">No strong factors either way.</p> : null}
       <div className="why-grid">
         {why.helping?.length ? (
           <div>
-            <h4>Helping factors</h4>
+            <h4>Working in your favour</h4>
             <ul className="why-list good">
               {why.helping.map((f, i) => (
                 <li key={i}>
                   <span className="mark" aria-hidden="true">✓</span>
                   <span>
-                    {f.text} <small className="muted">{SOURCE_TAGS[f.source]}</small>
+                    {f.text} <Source source={f.source} text={SOURCE_TAGS[f.source]} />
                   </span>
                 </li>
               ))}
@@ -62,13 +73,13 @@ function Why({ why }) {
         ) : null}
         {why.risk?.length ? (
           <div>
-            <h4>Risk factors</h4>
+            <h4>Holding it back</h4>
             <ul className="why-list warn">
               {why.risk.map((f, i) => (
                 <li key={i}>
                   <span className="mark" aria-hidden="true">⚠</span>
                   <span>
-                    {f.text} <small className="muted">{SOURCE_TAGS[f.source]}</small>
+                    {f.text} <Source source={f.source} text={SOURCE_TAGS[f.source]} />
                   </span>
                 </li>
               ))}
@@ -150,21 +161,15 @@ export default function Assessment({
     <article className="assessment" aria-labelledby="assessment-title">
       <header className="as-head">
         <div>
-          <h2 id="assessment-title">Your Loan-Saathi Assessment</h2>
-          <p className="muted small">A pre-screening estimate from what you shared. Not a lending decision.</p>
+          <h2 id="assessment-title">Your Loan-Saathi assessment</h2>
+          <p className="muted small">An estimate from what you shared. Not a lender&rsquo;s decision.</p>
         </div>
-        <span className={`badge ${tone}`}>{a.decision_label}</span>
-      </header>
-
-      <div className="as-lead">
-        <p className={`as-status ${tone}`} role="status">
-          {a.status_text}
-        </p>
         <ListenButton apiKey={apiKey} text={spokenText} onUnauthorized={onUnauthorized} />
-      </div>
+      </header>
 
       {a.status === "paused" ? (
         <>
+          <Outcome outcome={a.outcome} fallback={a.status_text} tone={tone} />
           <section className="as-section">
             <h3>What&rsquo;s needed</h3>
             <ul className="checklist">
@@ -181,31 +186,17 @@ export default function Assessment({
       ) : (
         <>
           <ul className="source-key" aria-label="Where each number comes from">
-            <li className="source source-you"><i aria-hidden="true" />What you said</li>
-            <li className="source source-rules"><i aria-hidden="true" />Calculated by Loan-Saathi</li>
-            <li className="source source-model"><i aria-hidden="true" />Estimated by the risk model</li>
+            <li className="source source-you"><i aria-hidden="true" />You told us</li>
+            <li className="source source-math"><i aria-hidden="true" />Calculated by Loan-Saathi</li>
+            <li className="source source-rules"><i aria-hidden="true" />Based on affordability rules</li>
+            <li className="source source-model"><i aria-hidden="true" />Estimated by model</li>
           </ul>
-          <div className="figures">
-            <Figure label="Estimated risk" figure={a.risk} tone={BAND_TONE[a.risk?.band]} />
-            <Figure label="Estimated affordability" figure={a.affordability} />
-            <Figure label="Requested loan" figure={a.requested_loan} />
-            <Figure label="Requested EMI" figure={a.requested_emi} />
-            {a.suggested_range ? (
-              <Figure label="Suggested range" figure={a.suggested_range} wide />
-            ) : (
-              <div className="figure wide">
-                <span className="figure-label">Suggested range</span>
-                <strong className="muted">Not available right now</strong>
-              </div>
-            )}
-          </div>
 
-          <section className="as-section">
-            <h3>Your financial picture</h3>
-            <IncomeBar shares={a.picture?.shares} />
-            <dl className="picture">
+          <section className="as-section borrowing" aria-labelledby="picture-title">
+            <h3 id="picture-title">Your borrowing picture</h3>
+            <dl className="ledger">
               {pictureRows(a.picture).map((r) => (
-                <div key={r.key}>
+                <div key={r.key} className={r.total ? "total" : ""}>
                   <dt>{r.label}</dt>
                   <dd>
                     <strong className={r.negative ? "tone-bad" : ""}>{r.text}</strong>
@@ -214,6 +205,28 @@ export default function Assessment({
                 </div>
               ))}
             </dl>
+            {a.picture?.burden ? (
+              <div className={`burden burden-${a.picture.burden.level}`}>
+                <p className="burden-line">
+                  <strong>{a.picture.burden.text}</strong>
+                  <span>{a.picture.burden.detail}</span>
+                </p>
+                <IncomeBar shares={a.picture?.shares} />
+                <Source source={a.picture.burden.source} text={a.picture.burden.source_text} />
+              </div>
+            ) : (
+              <IncomeBar shares={a.picture?.shares} />
+            )}
+          </section>
+
+          <section className="as-section" aria-labelledby="result-title">
+            <h3 id="result-title">Estimated pre-screening result</h3>
+            <Outcome outcome={a.outcome} fallback={a.status_text} tone={tone} />
+            <div className="figures three">
+              <Figure label="Room for a new EMI" figure={a.affordability} />
+              {a.suggested_range ? <Figure label="Suggested loan range" figure={a.suggested_range} /> : null}
+              <Figure label="Estimated repayment risk" figure={a.risk} tone={BAND_TONE[a.risk?.band]} />
+            </div>
           </section>
 
           <Why why={a.why} />
@@ -226,10 +239,13 @@ export default function Assessment({
               onSimulationChange={setCurrentSim}
             />
           ) : null}
-          <div className="as-two">
-            <Completeness items={a.completeness} />
-            <Safety safety={a.safety} />
-          </div>
+          <details className="as-details">
+            <summary>What this estimate did and didn&rsquo;t check</summary>
+            <div className="as-two">
+              <Completeness items={a.completeness} />
+              <Safety safety={a.safety} />
+            </div>
+          </details>
         </>
       )}
 

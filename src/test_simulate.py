@@ -54,7 +54,7 @@ assert orig["loan_amount"]["value"] == 300000 and orig["tenure"]["value"] == 36
 assert orig["emi"]["value"] == round(scoring.estimate_emi(300000, 36))
 assert orig["total_repayment"]["value"] == round(scoring.estimate_emi(300000, 36) * 36)
 assert orig["affordability"]["value"] == 12000 and orig["label"] == "Simulation — not a lender offer."
-assert orig["affordability"]["source_text"] == "Calculated by Loan-Saathi affordability rules"
+assert orig["affordability"]["source_text"] == "Based on affordability rules"
 print("ok - original request through the real decision path")
 
 # ---- the three scenarios ----

@@ -18,10 +18,11 @@ import scoring
 from scoring import inr
 
 SOURCES = {
-    "you": "Provided by you",
-    "rules": "Calculated by Loan-Saathi affordability rules",
-    "model": "Estimated by Loan-Saathi risk model",
+    "you": "You told us",
+    "rules": "Based on affordability rules",
+    "model": "Estimated by model",
     "calc": "Calculated by Loan-Saathi at an assumed 18% yearly interest",
+    "math": "Calculated by Loan-Saathi",
     "estimate": "Estimated from your existing debt (EMI not given)",
     "default": "Not given: Loan-Saathi's default used",
 }
@@ -32,6 +33,22 @@ DECISION_LABELS = {
     "counter_offer": "Smaller amount suggested",
     "not_eligible_now": "Not eligible right now",
     "need_more_info": "More information needed",
+}
+# What the borrower sees as the estimated pre-screening result. Plain and careful: there is no
+# lender behind this, so nothing here claims an approval or a guarantee.
+OUTCOME_TITLES = {
+    "pre_approved": "Further review recommended",
+    "needs_review": "Further review recommended",
+    "counter_offer": "Lower-burden option recommended",
+    "not_eligible_now": "Not right now",
+    "need_more_info": "More information needed",
+}
+OUTCOME_TONE = {"pre_approved": "good", "needs_review": "good", "counter_offer": "warn",
+                "not_eligible_now": "bad", "need_more_info": "info"}
+BURDEN_TEXT = {
+    "comfortable": "Within the comfortable range (up to {comfort}% of income).",
+    "stretched": "Within the {limit}% limit, but above the comfortable {comfort}%.",
+    "over": "Above the {limit}% limit the affordability rules allow.",
 }
 STATUS_TEXT = {
     "within": "Within your estimated repayment capacity.",
@@ -167,6 +184,8 @@ def paused(checks):
     """The assessment shown when a safety check fails: what's needed, nothing else."""
     needed = [c["detail"] for c in failed(checks)]
     return {"status": "paused", "status_text": STATUS_TEXT["paused"],
+            "outcome": {"tone": "info", "title": OUTCOME_TITLES["need_more_info"],
+                        "detail": "Saathi needs a few details cleared up before it can estimate anything."},
             "decision_label": DECISION_LABELS["need_more_info"], "needed": needed,
             "safety": {"passed": False, "checks": checks}, "spoken": spoken("paused", needed=needed)}
 
@@ -192,6 +211,41 @@ def safety_post(applicant, afford, owed_limit_months, req_emi):
 def _sentence(text):
     text = text.strip()
     return text[:1].upper() + text[1:] + ("" if text.endswith(".") else ".")
+
+
+def outcome(decision, band, afford, policy, debt_limit_months):
+    """The borrower-facing result: the existing decision, said carefully. Only explains causes the
+    decision logic (server.decide) actually used: the risk band, the affordability rule, the debt rule."""
+    if decision in ("pre_approved", "needs_review"):
+        detail = "The loan you asked for fits within the affordability rules"
+        detail += (", and the model's estimated risk is low." if band == "low" else
+                   ". The model's estimated risk is medium, so a loan advisor should look at it with you.")
+        detail += " A lender would still check your documents before any decision."
+    elif decision == "counter_offer":
+        detail = ("The full amount would put too much pressure on your monthly income. A smaller loan "
+                  "keeps all your EMIs within the affordability rules.")
+    elif policy == "debt_over_limit":
+        detail = (f"Your existing loans add up to more than {debt_limit_months // 12} years of income. "
+                  "Paying some of them down first would help.")
+    elif not (afford and afford["loan_amount"] > 0):
+        detail = ("With your current income and EMIs, there isn't room for a new EMI within the "
+                  "affordability rules.")
+    else:
+        detail = "Based on what you shared, the model's estimated risk is high, so a new loan isn't advised now."
+    return {"tone": OUTCOME_TONE[decision], "title": OUTCOME_TITLES[decision], "detail": detail}
+
+
+def burden(existing_emi, new_emi, income):
+    """All EMIs as a share of income against the same 40% / 50% lines the suggested range uses."""
+    if not income:
+        return None
+    pct = (existing_emi + new_emi) / income * 100
+    limit, comfort = round(scoring.MAX_FOIR * 100), round(COMFORT_FOIR * 100)
+    level = "comfortable" if pct <= comfort else "stretched" if pct <= limit else "over"
+    return {"percent": round(pct), "limit": limit, "comfort": comfort, "level": level,
+            "text": f"{round(pct)}% of your monthly income would go to EMIs",
+            "detail": BURDEN_TEXT[level].format(limit=limit, comfort=comfort),
+            "source": "rules", "source_text": SOURCES["rules"]}
 
 
 def build(applicant, risk, afford, decision, policy, model_up, model_down, checks, debt_limit_months):
@@ -273,6 +327,7 @@ def build(applicant, risk, afford, decision, policy, model_up, model_down, check
         "status": status,
         "status_text": STATUS_TEXT[status],
         "decision_label": DECISION_LABELS[decision],
+        "outcome": outcome(decision, risk["band"], afford, policy, debt_limit_months),
         "risk": {"band": risk["band"], "text": risk["band"].upper(), "source": "model",
                  "source_text": SOURCES["model"], "help": HELP["risk"]},
         "affordability": {**_num(max_new_emi, "rules", suffix="/month"), "help": HELP["affordability"]},
@@ -285,7 +340,9 @@ def build(applicant, risk, afford, decision, policy, model_up, model_down, check
             "existing_emi": _num(existing_emi, emi_source),
             "existing_debt": _num(owed or 0, "you") if owed is not None or no_loans else None,
             "new_emi": _num(req_emi, "calc"),
-            "remaining_income": _num(remaining, "rules"),
+            "total_obligations": _num(existing_emi + req_emi, "math"),
+            "remaining_income": _num(remaining, "math"),
+            "burden": burden(existing_emi, req_emi, income),
             "requested_loan": _num(requested, "you"),
             "tenure": _num(tenure, "you" if a.get("tenure_months") is not None else "default", kind="months"),
             "emi_limit": _num(scoring.MAX_FOIR * income, "rules"),

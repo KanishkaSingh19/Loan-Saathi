@@ -80,8 +80,8 @@ the end of a web call and at the top of each live-feed entry:
   model's speakable what-if reasons. Gender and marital status are never used; age is never a reason;
   a model reason that runs against the applicant's own number (e.g. "little is owed" for someone
   who owes more than typical) is dropped.
-- **Number provenance**: every figure carries its source ("Provided by you", "Calculated by
-  Loan-Saathi affordability rules", "Estimated by Loan-Saathi risk model"...) in the data itself.
+- **Number provenance**: every figure carries its source ("You told us", "Calculated by
+  Loan-Saathi", "Based on affordability rules", "Estimated by model"...) in the data itself.
 - **Assessment completeness**: what is known, and what a pre-screening can't know (credit history,
   income proof, employment verification). No made-up "AI score".
 - **Safety check**: before the model runs, deterministic checks (required information, valid values,

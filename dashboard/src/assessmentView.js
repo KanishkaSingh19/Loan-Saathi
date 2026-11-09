@@ -2,12 +2,14 @@
 // The server sends every number with its `source`; these only shape it for display.
 // Tested with `npm test` (node --test, no browser needed).
 
-// Short tag shown next to a number; the full wording comes from the server's `source_text`.
+// Short tag shown next to an explanation in "Why did I get this result?" (numbers use the
+// server's own `source_text`).
 export const SOURCE_TAGS = {
-  you: "You",
-  rules: "Rules",
-  model: "Risk model",
-  calc: "Calculated",
+  you: "You told us",
+  rules: "Affordability rule",
+  model: "Risk model factor",
+  calc: "Calculated by Loan-Saathi",
+  math: "Calculated by Loan-Saathi",
   estimate: "Estimated",
   default: "Default",
 };
@@ -57,15 +59,18 @@ export function barSummary(bar) {
 
 const PICTURE_ROWS = [
   ["monthly_income", "Monthly income"],
-  ["existing_emi", "Existing EMI"],
-  ["existing_debt", "Existing obligations (still owed)"],
-  ["new_emi", "New EMI (requested loan)"],
-  ["remaining_income", "Remaining income after EMIs"],
+  ["existing_emi", "Existing monthly obligations"],
   ["requested_loan", "Requested loan"],
-  ["tenure", "Tenure"],
+  ["tenure", "Repayment period"],
+  ["new_emi", "Estimated new EMI"],
+  ["total_obligations", "Total monthly obligations"],
+  ["remaining_income", "Remaining monthly income"],
+  ["existing_debt", "Still owed on other loans"],
 ];
+// Rows that close the sum: income - all EMIs = what is left.
+export const TOTAL_ROWS = new Set(["total_obligations", "remaining_income"]);
 
-/** Rows for "Your financial picture", skipping anything the server didn't send. */
+/** Rows for "Your borrowing picture", in reading order, skipping anything the server didn't send. */
 export function pictureRows(picture) {
   if (!picture) return [];
   return PICTURE_ROWS.filter(([key]) => picture[key]).map(([key, label]) => ({
@@ -73,6 +78,7 @@ export function pictureRows(picture) {
     label,
     ...picture[key],
     negative: key === "remaining_income" && picture[key].value < 0,
+    total: TOTAL_ROWS.has(key),
   }));
 }
 

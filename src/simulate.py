@@ -21,8 +21,8 @@ COMFORT_FOIR = 0.4      # the "safer option": all EMIs within 40% of income
 HIGHER_FACTOR = 1.5     # the "higher burden" example: half as much again as the request
 SOURCE = {"simulation": "Your simulation",
           "calc": "Calculated by Loan-Saathi at an assumed 18% yearly interest",
-          "rules": "Calculated by Loan-Saathi affordability rules",
-          "model": "Estimated by Loan-Saathi risk model"}
+          "rules": "Based on affordability rules",
+          "model": "Estimated by model"}
 BAND_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 

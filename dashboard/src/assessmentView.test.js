@@ -75,3 +75,18 @@ test("every server source and status has a display mapping", () => {
   for (const s of ["you", "rules", "model", "calc", "estimate", "default"]) assert.ok(SOURCE_TAGS[s]);
   for (const s of ["within", "pressure", "not_now", "paused"]) assert.ok(STATUS_TONE[s]);
 });
+
+test("borrowing picture reads income, obligations, loan, then the totals", () => {
+  const n = (value, source) => ({ value, text: String(value), source, source_text: source });
+  const rows = pictureRows({
+    remaining_income: n(17000, "math"),
+    total_obligations: n(23000, "math"),
+    new_emi: n(15000, "calc"),
+    requested_loan: n(300000, "you"),
+    existing_emi: n(8000, "you"),
+    monthly_income: n(40000, "you"),
+  });
+  assert.deepEqual(rows.map((r) => r.key),
+    ["monthly_income", "existing_emi", "requested_loan", "new_emi", "total_obligations", "remaining_income"]);
+  assert.deepEqual(rows.filter((r) => r.total).map((r) => r.key), ["total_obligations", "remaining_income"]);
+});

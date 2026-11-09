@@ -55,9 +55,9 @@ for body in (KIRANA, TOO_MUCH, HUGE_DEBT):
     _, _, a = run(body)
     for f in all_figures(a):
         assert f["source"] in asm.SOURCES and f["source_text"], f
-assert run(KIRANA)[2]["picture"]["monthly_income"]["source_text"] == "Provided by you"
-assert run(KIRANA)[2]["affordability"]["source_text"] == "Calculated by Loan-Saathi affordability rules"
-assert run(KIRANA)[2]["risk"]["source_text"] == "Estimated by Loan-Saathi risk model"
+assert run(KIRANA)[2]["picture"]["monthly_income"]["source_text"] == "You told us"
+assert run(KIRANA)[2]["affordability"]["source_text"] == "Based on affordability rules"
+assert run(KIRANA)[2]["risk"]["source_text"] == "Estimated by model"
 no_tenure = {k: v for k, v in KIRANA.items() if k != "tenure_months"}
 a = run(no_tenure)[2]
 assert a["picture"]["tenure"]["source"] == "default" and a["picture"]["tenure"]["value"] == 24, a["picture"]["tenure"]
@@ -89,7 +89,27 @@ for body in (KIRANA, TOO_MUCH, HUGE_DEBT):
 assert run(KIRANA)[2]["decision_label"] == "Eligible for further review"
 assert cv._fallback_result({"decision": "pre_approved", "offer_amount_text": "₹50,000", "offer_emi_text": "₹4,584",
                             "tenure_months": 12}, "en").count("pre-approved") == 0
+# The borrower-facing result: the existing decision in careful words, never an approval.
+FORBIDDEN = re.compile(r"approved|approval|guarantee|sanction", re.I)
+for body, title in ((KIRANA, "Further review recommended"), (HUGE_DEBT, "Not right now")):
+    o = run(body)[2]["outcome"]
+    assert o["title"] == title and not FORBIDDEN.search(o["title"] + " " + o["detail"].replace(
+        "before any decision", "")), o
+assert "2 years of income" in run(HUGE_DEBT)[2]["outcome"]["detail"]
+assert run(TOO_MUCH)[2]["outcome"]["title"] in ("Lower-burden option recommended", "Not right now")
 print("ok - no approval claims")
+
+# ---- borrowing picture: totals and burden come from the same numbers as the rules ----
+for body in (KIRANA, TOO_MUCH, HUGE_DEBT):
+    p = run(body)[2]["picture"]
+    total = p["existing_emi"]["value"] + p["new_emi"]["value"]
+    assert abs(p["total_obligations"]["value"] - total) <= 1, p
+    assert abs(p["remaining_income"]["value"] - (p["monthly_income"]["value"] - total)) <= 1, p
+    b = p["burden"]
+    assert b["percent"] == round(total / p["monthly_income"]["value"] * 100) and b["limit"] == 50
+    assert b["level"] == ("comfortable" if b["percent"] <= 40 else "stretched" if b["percent"] <= 50 else "over")
+    assert p["total_obligations"]["source"] == "math" and b["source"] == "rules"
+print("ok - borrowing picture totals and burden")
 
 # ---- why: existing explanations, no protected traits, direction-checked ----
 for body in (KIRANA, TOO_MUCH, HUGE_DEBT):

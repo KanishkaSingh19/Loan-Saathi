@@ -281,3 +281,54 @@ h1, h2, h3, h4 { font-family: var(--font); }
   .confirm-card { padding: 16px; }
   .confirm-actions .btn { flex: 1 1 100%; }
 }
+
+/* =====================================================================================
+   Assessment after confirmation: borrowing picture (a ledger), the estimated result, why.
+   ===================================================================================== */
+.assessment { gap: 26px; }
+.as-head { align-items: center; }
+.as-head h2 { font-size: 26px; }
+.source-math i { background: #64748b; border-radius: 2px; }
+.source-rules i { background: #fff; border-radius: 2px; box-shadow: inset 0 0 0 2px #64748b; }
+.source-calc i { background: #64748b; border-radius: 2px; }
+.ledger { margin: 0; display: grid; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.ledger > div { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 12px 16px;
+  border-top: 1px solid var(--line); }
+.ledger > div:first-child { border-top: none; }
+.ledger dt { color: var(--muted); font-size: 14.5px; }
+.ledger dd { margin: 0; display: grid; justify-items: end; gap: 2px; text-align: right; }
+.ledger dd strong { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ledger .total { background: var(--panel-2); }
+.ledger .total dt { color: var(--text); font-weight: 700; }
+.ledger .total dd strong { font-weight: 800; }
+.burden { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; }
+.burden-line { margin: 0; display: grid; gap: 2px; }
+.burden-line strong { font-size: 16px; }
+.burden-line span { color: var(--muted); font-size: 14px; }
+.burden-stretched .burden-line strong { color: var(--warn); }
+.burden-over .burden-line strong { color: var(--bad); }
+.burden .income-bar { margin: 4px 0 0; }
+.burden .bar-summary { display: none; }
+.outcome { display: grid; gap: 4px; padding: 16px 18px; border-radius: 14px; border: 1px solid var(--line);
+  border-left-width: 4px; background: #fff; }
+.outcome strong { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; color: var(--text); }
+.outcome span { color: var(--muted); font-size: 14.5px; line-height: 1.5; }
+.outcome.good { border-left-color: var(--good); }
+.outcome.warn { border-left-color: var(--warn); }
+.outcome.bad { border-left-color: var(--bad); }
+.outcome.info { border-left-color: var(--violet-500); }
+.figures.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.why-list .source { display: inline-flex; margin-left: 6px; vertical-align: baseline; }
+.as-details { border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; }
+.as-details summary { cursor: pointer; padding: 10px 0; font-weight: 700; font-size: 14.5px; color: var(--violet-700); }
+.as-details[open] summary { margin-bottom: 8px; }
+.as-details .as-two { padding-bottom: 14px; }
+@media (max-width: 900px) { .figures.three { grid-template-columns: 1fr; } }
+@media (max-width: 560px) {
+  .as-head h2 { font-size: 22px; }
+  .ledger > div { padding: 11px 12px; align-items: flex-start; }
+  .ledger dd .source { font-size: 11.5px; }
+}
+.ledger dt { flex: 1 1 auto; min-width: 0; }
+.ledger dd { flex: 0 1 auto; }
+.ledger .source-you, .ledger .source-math, .ledger .source-default { white-space: nowrap; }
