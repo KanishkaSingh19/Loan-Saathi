@@ -274,9 +274,9 @@ data/kaggle/           default location for the Kaggle Home Credit CSVs (not in 
 ## Run it
 
 Python 3.10+ and Node.js 20.19+ are required. The trained LightGBM models are included, so the API
-can run before retraining. The Home Credit CSVs already found on this machine are in
-`C:\Users\ks608\Desktop\Loan-Saathi\data\kaggle`; `.env.example` points to that folder without
-copying the multi-gigabyte dataset into this project.
+runs without the dataset. To retrain, download the
+[Home Credit CSVs](https://www.kaggle.com/c/home-credit-default-risk/data) into `data/kaggle/` (or set
+`HOME_CREDIT_DATA_DIR` to wherever you unzipped them); they are gitignored.
 
 In PowerShell:
 ```powershell
@@ -321,8 +321,8 @@ curl.exe -X POST http://127.0.0.1:8000/v1/tts `
 
 ### Train or retrain the model
 
-`HOME_CREDIT_DATA_DIR` in `.env` selects the folder containing the Kaggle CSV files. The supplied
-configuration uses the dataset already found on the Desktop; change it if you move the files.
+`HOME_CREDIT_DATA_DIR` in `.env` selects the folder containing the Kaggle CSV files (empty means
+`data/kaggle/`). After retraining, run `python -I -X utf8 src/validate_model.py --strict`.
 
 ```powershell
 python -I -X utf8 src/train.py

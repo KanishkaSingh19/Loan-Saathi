@@ -13,6 +13,7 @@ Run:  python -I -X utf8 src/server.py      (port 8000; set WEBHOOK_KEY in .env t
 The response is deliberately flat with simple keys so it works whether Agent Builder maps
 response keys into "After API Call Variables" or hands the raw JSON to the LLM.
 """
+import hmac
 import json
 import os
 import sqlite3
@@ -140,28 +141,41 @@ _SCHEMA = [
 _schema_ready = False
 
 
-def _db():
-    """Returns (connection, placeholder style). Callers go through _run, which commits and closes."""
-    global _schema_ready
-    if DATABASE_URL:
-        import psycopg
-        con, ph, real = psycopg.connect(DATABASE_URL, connect_timeout=5), "%s", "DOUBLE PRECISION"
-    else:
-        DB_PATH.parent.mkdir(exist_ok=True)
-        con, ph, real = sqlite3.connect(DB_PATH), "?", "REAL"
-    if not _schema_ready or not DATABASE_URL:
-        for stmt in _SCHEMA:
-            con.execute(stmt.format(real=real))
-        con.commit()
-        _schema_ready = True
-    return con, ph
+_pool = None
+
+
+def _pg_pool():
+    """One small Postgres connection pool per process (opening a Neon connection per request is slow).
+    `check` re-tests a connection before lending it: Neon's free tier closes idle ones."""
+    global _pool
+    if _pool is None:
+        from psycopg_pool import ConnectionPool
+        _pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=5, timeout=10, max_idle=120,
+                               kwargs={"connect_timeout": 5}, check=ConnectionPool.check_connection, open=True)
+    return _pool
+
+
+def _sqlite():
+    DB_PATH.parent.mkdir(exist_ok=True)
+    return sqlite3.connect(DB_PATH)
 
 
 def _run(sql, params=(), fetch=False):
     """Runs one statement; write `?` for placeholders and it's adapted per database."""
-    con, ph = _db()
+    global _schema_ready
+    if DATABASE_URL:
+        with _pg_pool().connection() as con:  # commits on success, rolls back on error, returns to the pool
+            if not _schema_ready:
+                for stmt in _SCHEMA:
+                    con.execute(stmt.format(real="DOUBLE PRECISION"))
+                _schema_ready = True
+            cur = con.execute(sql.replace("?", "%s"), params)
+            return cur.fetchall() if fetch else None
+    con = _sqlite()
     try:
-        cur = con.execute(sql.replace("?", ph), params)
+        for stmt in _SCHEMA:  # cheap on SQLite, and DB_PATH can change between test runs
+            con.execute(stmt.format(real="REAL"))
+        cur = con.execute(sql, params)
         rows = cur.fetchall() if fetch else None
         con.commit()
         return rows
@@ -179,7 +193,11 @@ def _save(sql, params):
 
 
 def _check_key(key):
-    if WEBHOOK_KEY and key != WEBHOOK_KEY:
+    # Closed by default: without a WEBHOOK_KEY nothing is served (callers' income, debts and age are
+    # behind these routes). A placeholder from .env.example counts as missing.
+    if not WEBHOOK_KEY or WEBHOOK_KEY.startswith("replace-with"):
+        raise HTTPException(status_code=503, detail="server not configured: set WEBHOOK_KEY")
+    if not hmac.compare_digest(str(key or ""), WEBHOOK_KEY):
         raise HTTPException(status_code=401, detail="bad webhook key")
 
 
@@ -860,5 +878,7 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
+    if not WEBHOOK_KEY or WEBHOOK_KEY.startswith("replace-with"):
+        sys.exit("Refusing to start: set WEBHOOK_KEY in .env to a long random secret (every /v1 route needs it).")
     # HOST=0.0.0.0 inside a container; the default keeps a local run off the network.
     uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", 8000)))

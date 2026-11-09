@@ -19,6 +19,8 @@ Builder configuration.
 
 ## Commands
 ```bash
+python -m pytest                             # everything: spoken-number table (tests/) + every src/test_*.py suite
+python -m ruff check src tests               # lint (CI runs both, plus the dashboard checks: .github/workflows/ci.yml)
 python -I -X utf8 src/train.py               # both models, ~4 min (needs the Kaggle CSVs, see below)
 python -I -X utf8 src/train.py --voice-only  # voice model only, ~1 min
 python -I -X utf8 src/test_webhook.py        # end-to-end webhook tests with Hinglish inputs
@@ -50,7 +52,8 @@ Env (from `.env`, see `.env.example`): `WEBHOOK_KEY` (required, protects every `
 `GNANI_STT_API_KEY` / `GNANI_TTS_API_KEY` (or shared `GNANI_API_KEY`), `PORT`, `DB_PATH`, and
 `HOME_CREDIT_DATA_DIR` (Kaggle CSVs; empty or unset means `data/kaggle/`). Use a separate
 `DB_PATH` and `PORT` for test instances so the live dashboard stays clean. Never expose the server
-on a tunnel without a `WEBHOOK_KEY`.
+on a tunnel without a `WEBHOOK_KEY`. The server refuses to start without one, and every `/v1` route returns 503
+if it's missing (closed by default).
 
 Free deployment (`deploy/DEPLOY.md`): the API runs as a Hugging Face Docker Space (`Dockerfile`,
 port 7860), stores data in Neon Postgres via `DATABASE_URL` (the Space's disk is wiped on restart),

@@ -31,7 +31,12 @@ _WORDS = {
     "चालीस": 40, "पचास": 50, "डेढ़": 1.5, "ढाई": 2.5,
 }
 # Words that add to the next number: "saadhe teen lakh" = 3.5 lakh, "sawa lakh" = 1.25 lakh.
-_PLUS = {"saadhe": 0.5, "sadhe": 0.5, "saade": 0.5, "साढ़े": 0.5, "sawa": 0.25, "savva": 0.25, "सवा": 0.25}
+_PLUS = {"saadhe": 0.5, "sadhe": 0.5, "saade": 0.5, "साढ़े": 0.5, "sawa": 0.25, "sava": 0.25, "savva": 0.25,
+         "सवा": 0.25, "paune": -0.25, "pone": -0.25, "पौने": -0.25}
+# "do" is 2, but also the verb "give/do": "loan de do", "bata do", "how much do you earn".
+_DO_VERB_BEFORE = {"de", "dedo", "kar", "karo", "bata", "batao", "dila", "dilwa", "le", "dikha", "chala", "rakh",
+                   "bhej", "samjha", "sun", "bol", "likh", "ho", "kara", "i", "you", "we", "they", "what", "how",
+                   "to", "please", "pls", "much", "many"}
 _JOIN = {"aur", "and", "or"}          # "1 lakh aur 50 hazaar" is one amount
 _RANGE = {"-", "/", "ya", "or", "to", "se", "या"}  # "40-50 hazaar": both get the scale
 # English -teen/-ty words are easily misheard ("fourteen" / "forty"), so callers confirm them.
@@ -99,6 +104,8 @@ def amounts(v):
         nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
         is_digit = tok[0].isdigit()
         val = float(tok) if is_digit else _WORDS.get(tok)
+        if tok == "do" and i > 0 and tokens[i - 1] in _DO_VERB_BEFORE and nxt not in _SCALES:
+            val = None  # the verb, not the number: "loan de do", "how much do you earn"
         if val is not None:
             val += cur["plus"]
             cur["plus"] = 0.0
@@ -113,6 +120,8 @@ def amounts(v):
             cur["digits"] = cur["digits"] or is_digit
         elif tok in _SCALES:
             scale = _SCALES[tok]
+            if cur["num"] is None and cur["plus"]:
+                cur["num"], cur["plus"] = 1 + cur["plus"], 0.0  # "sawa lakh" = 1.25 lakh, "paune lakh" = 0.75
             if cur["num"] is None:
                 continue
             if scale >= cur["last"]:  # "5 hazaar 3 hazaar": a new amount starts
@@ -261,6 +270,7 @@ def housing(v):
     s = str(v).lower()
     # Gnani Prisma returns Hindi in Devanagari ("किराए पे"), so both scripts are listed.
     if any(k in s for k in ("parent", "maa", "papa", "mata", "pita", "family ke saath", "with family", "joint",
+                            "parivaar", "parivar", "ghar walon", "gharwalon",
                             "परिवार", "माता", "पिता", "माँ")):
         return "With parents", None
     if any(k in s for k in ("rent", "kiraya", "kiraye", "kirae", "pg", "hostel", "किराय", "किराए", "किराये",

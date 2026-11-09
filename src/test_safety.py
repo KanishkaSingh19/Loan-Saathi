@@ -177,4 +177,18 @@ res, _ = server.decide(server.build_applicant({"monthly_income": "20000", "loan_
 assert res["decision"] == "need_more_info"
 print("ok 9 - contradictions are asked about (web call) or pause the assessment (phone)")
 
+# 10. closed by default: no WEBHOOK_KEY (or the .env.example placeholder) means nothing is served
+real_key = server.WEBHOOK_KEY
+for missing in ("", "replace-with-a-long-random-secret"):
+    server.WEBHOOK_KEY = missing
+    for method, path in (("get", "/v1/applications"), ("get", "/v1/advisor-cases"), ("post", "/v1/converse"),
+                         ("post", "/v1/prescreen"), ("get", "/v1/study/report")):
+        r = (c.post(path, headers={"X-Webhook-Key": ""}, json={}) if method == "post"
+             else c.get(path, headers={"X-Webhook-Key": ""}))
+        assert r.status_code == 503, (missing, path, r.status_code)
+server.WEBHOOK_KEY = real_key
+assert c.get("/v1/applications", headers={"X-Webhook-Key": "wrong"}).status_code == 401
+assert c.get("/health").status_code == 200
+print("ok 10 - closed by default: without WEBHOOK_KEY every /v1 route refuses (503), wrong key 401")
+
 print("All safety boundary checks passed.")

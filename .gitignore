@@ -1,6 +1,5 @@
 # Kaggle data (large, and covered by the competition rules): download it yourself
 *.csv
-!submission.csv
 *.zip
 
 # Secrets and local state

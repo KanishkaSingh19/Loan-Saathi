@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-os.environ["WEBHOOK_KEY"] = ""  # test without auth
+os.environ["WEBHOOK_KEY"] = "webhook-test-key"  # the server refuses to run without one
 # Never write test callers into the live dashboard's database.
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""  # never write test callers into the real (Neon) database
@@ -14,8 +14,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 import normalize as norm  # noqa: E402
 import server  # noqa: E402
 
-server.WEBHOOK_KEY = ""
-client = TestClient(server.app)
+server.WEBHOOK_KEY = "webhook-test-key"
+client = TestClient(server.app, headers={"X-Webhook-Key": "webhook-test-key"})
 
 CASES = {
     "Kirana owner, small loan (Hinglish strings)": {
@@ -48,6 +48,7 @@ if __name__ == "__main__":
     assert norm.years("6 mahine") == 0.5 and norm.months("2 saal") == 24 and norm.months("18") == 18
     assert server.inr(150000) == "₹1,50,000" and server.inr(12345678) == "₹1,23,45,678"
     assert client.get("/health").json() == {"ok": True}
+    assert TestClient(server.app).post("/v1/prescreen", json=CASES["Kirana owner, small loan (Hinglish strings)"]).status_code == 401
     for name, body in CASES.items():
         r = client.post("/v1/prescreen", json=body)
         assert r.status_code == 200, r.text
