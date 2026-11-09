@@ -98,6 +98,35 @@ def _load():
     return _model, _meta
 
 
+DEBT_FLOOR_FRACTIONS = (0.0, 0.25, 0.5, 0.75)
+
+
+def _debt_floor(applicant, model):
+    """Interim guard until the model is retrained monotone in debt (features.VOICE_MONOTONE_UP):
+    the risk with your actual debt is never reported lower than with less of the same debt. Without
+    it, the current model rates bigger debts as safer (in synthetic tests the final decision got
+    *better* as debt rose in 38 of 240 profiles). Returns the highest risk over lower debt levels."""
+    owed = applicant.get("active_loans_outstanding") or 0
+    if owed <= 0:
+        return 0.0
+    rows = []
+    for f in DEBT_FLOOR_FRACTIONS:
+        a = dict(applicant)
+        a["active_loans_outstanding"] = owed * f
+        if f == 0.0:
+            a["active_loans"] = applicant.get("active_loans") or 1  # same loans, nothing owed
+        rows.append(_to_row(a)[0])
+    return float(np.max(_calibrate(model.predict(pd.concat(rows, ignore_index=True)))))
+
+
+def _calibrate(p):
+    """Isotonic calibration from training (meta["calibration"]); identity for older models."""
+    cal = (_meta or {}).get("calibration")
+    if not cal:
+        return p
+    return np.interp(p, cal["x"], cal["y"])
+
+
 def allowed_values():
     """Category values the extractor must map the caller's words onto."""
     _, meta = _load()
@@ -200,7 +229,8 @@ def score(applicant, n_reasons=3, min_impact=0.003):
     """
     model, meta = _load()
     X, warnings = _to_row(applicant)
-    p = float(model.predict(X)[0])
+    p = float(_calibrate(model.predict(X))[0])
+    p_debt_floor = _debt_floor(applicant, model) if "BUREAU_ACTIVE_DEBT" not in meta.get("monotone_up", []) else p
 
     typical = {**meta["medians"], **meta["modes"]}
     variants = pd.concat([X] * len(VOICE_FEATURES), ignore_index=True)
@@ -210,7 +240,7 @@ def score(applicant, n_reasons=3, min_impact=0.003):
         variants.loc[i, col] = typical[col]
     for col in VOICE_CATEGORICAL:
         variants[col] = pd.Categorical(variants[col], categories=meta["categorical"][col])
-    p_typical = model.predict(variants[VOICE_FEATURES])
+    p_typical = _calibrate(model.predict(variants[VOICE_FEATURES]))
 
     row = X.iloc[0]
     items = []
@@ -231,8 +261,9 @@ def score(applicant, n_reasons=3, min_impact=0.003):
     items.sort(key=lambda d: d["impact"])
     spoken = [i for i in items if i["feature"] in SPOKEN]
     return {
-        "default_probability": round(p, 4),
-        "band": band_of(p),
+        "default_probability": round(max(p, p_debt_floor), 4),
+        "band": band_of(max(p, p_debt_floor)),
+        "debt_floor_applied": p_debt_floor > p + 1e-9,
         "raises_risk": [i for i in reversed(spoken) if i["impact"] > min_impact][:n_reasons],
         "lowers_risk": [i for i in spoken if i["impact"] < -min_impact][:n_reasons],
         "all_factors": list(reversed(items)),

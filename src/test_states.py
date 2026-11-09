@@ -412,6 +412,21 @@ for _ in range(cv.MAX_TRIES):
     say(sid, "pata nahi")
 t = say(sid, "yes, try again")
 assert t["state"] == cv.COLLECTING and not t["reply"].startswith("Sorry"), t["reply"]
+# Synthetic study dry run (real Prisma output in Devanagari): "no other loans" must not erase the loan
+# amount, and Devanagari housing / yes-no answers must be understood by the scripted parser.
+sid = new("hi")
+say(sid, "50 hazaar")
+say(sid, "1 saal")
+say(sid, "30 hazaar")
+say(sid, "kirana ki dukaan")
+say(sid, "15 saal")
+t = say(sid, "कोई लोन नहीं।")
+assert t["answers"]["loan_amount"] == 50000 and t["answers"]["other_loans_count"] == 0, t
+assert t["asking"] == "housing", t
+t = say(sid, "किराए पे")
+assert t["asking"] == "age" and norm.housing(t["answers"]["housing"])[0] == "Rented apartment", t
+assert norm.housing("किराए का कमरा")[0] == "Rented apartment" and norm.housing("परिवार के साथ")[0] == "With parents"
+assert norm.housing("अपना घर")[1] is True and norm.boolean("नहीं") is False and norm.boolean("हाँ") is True
 ok("live-run regressions: spoken halves, tenure numbers, language drift, wide quotes, early corrections, "
    "multi-field fallback, what-if at the summary, plain retry")
 

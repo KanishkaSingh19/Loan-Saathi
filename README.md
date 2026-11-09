@@ -107,6 +107,18 @@ maximum EMI I can afford?", "EMI kam rakhni hai".
   anywhere an applicant can see or hear, no protected attributes, the LLM never decides, numbers are
   validated, confirmation is required, affordability and the debt rule hold, contradictions are asked.
 
+## Operations: persistent calls, advisor notifications, user study
+- **Calls survive restarts:** every web-call turn is stored (`sessions` table, SQLite or Neon) and a
+  call resumes where it was for 2 hours.
+- **Advisors are notified for real** when `ADVISOR_WEBHOOK_URL` is set (Slack/Teams incoming webhook or
+  any JSON endpoint; only the headline, question and case id are sent). Saathi says "notified" only
+  when the webhook confirms delivery. Advisors **Pick up** and **Close** cases (with name, note and
+  history) in **Advisor cases**.
+- **User study kit** (`STUDY.md`): open the dashboard with `?study=1` for consent, persona cards and a
+  3-question survey; the **Study** tab shows extraction accuracy, time to result, read-backs,
+  corrections and survey results, with CSV export. `src/study_dryrun.py` plays every persona through
+  real speech as a synthetic dry run (reported separately; not user results).
+
 ## Live dashboard (React + Vite)
 Open `https://<tunnel>/dashboard` (or `http://127.0.0.1:8000/dashboard`) and paste your
 `WEBHOOK_KEY`. It has a live feed on the left and the selected caller's full breakdown on the
@@ -135,17 +147,22 @@ npm run typecheck   # TypeScript over the JS/JSX (checkJs)
 | Model | Features | Validation AUC |
 |---|---|---|
 | Full benchmark (credit bureau, payment history…) | 170 | **0.789** |
-| **Voice model** (only what a caller can say) | 22 | **0.690** |
+| **Voice model** (only what a caller can say) | 22 | **0.687** |
 
 The gap is the real cost of asking questions instead of pulling bureau data. The voice model still
-separates people well. On held-out data the low band defaults ~3% of the time, medium ~8% and high ~19%.
+separates people well. On held-out data the low band defaults 3.6% of the time, medium 8.0% and high 17.0%.
 
 Decisions made along the way:
 - **Fairness:** gender and marital status are never used. Age is used by the model but never
   spoken as a reason.
 - **Removed a misleading signal:** loan size ÷ EMI looked very predictive, but it mostly reflects
   the interest rate the lender itself charged (its own risk view). A voice agent can't know that.
-- **Monotone constraints:** risk can only go up as EMI-to-income and debt-to-income go up.
+- **Monotone constraints:** risk can only go up as EMI-to-income, debt-to-income and the amount still
+  owed go up. The debt constraint was added after live testing (see below); it cost 0.0025 AUC
+  (0.6895 → 0.6870) and the risk bands are unchanged.
+- **Calibration is checked, not assumed:** training fits an isotonic map on a separate calibration
+  slice and keeps it only if it improves held-out Brier and calibration error. For this model it
+  didn't (ECE 0.0023 raw vs 0.0034 calibrated), so predicted risks are used as they are.
 - **Explanations are what-if effects** (swap in a typical applicant's value and see the change),
   and the agent only speaks factors that are fair and meaningful to a borrower.
 - **Loan amounts come from a lending rule, not the model:** all EMIs must stay within 50% of income
@@ -156,9 +173,15 @@ Decisions made along the way:
 ### A hard rule where the model is wrong
 Live testing found a caller owing ₹36.5 lakh on a ₹40,000 income scored as *lower* risk (6.1%) than the
 same caller with no debt (8.2%). In the Home Credit data, large bureau debts went with wealthier
-borrowers, so the model learned "more debt, safer". Saathi therefore applies a plain rule on top:
-**owing more than 24 months of income on other loans means "not right now"**, with that reason and
-"pay down existing loans first" spoken to the caller.
+borrowers, so the model learned "more debt, safer". Two fixes:
+- **The model is now trained monotone in debt.** On 240 synthetic Indian applicants
+  (`src/validate_model.py`), risk fell as debt rose in 520 of 1,680 checks with the old model and the
+  final decision *improved* with more debt in 38 cases; with the retrained model both are 0.
+- **A plain rule stays on top:** owing more than 24 months of income on other loans means "not right
+  now", with that reason and "pay down existing loans first" spoken to the caller (the model's risk
+  levels off at high debt, so the rule still matters).
+The synthetic check tests behaviour only: there is no labelled Indian outcome data to measure
+accuracy or calibration on Indian borrowers.
 
 ## Why LightGBM? Comparing LightGBM, XGBoost and CatBoost
 All three were trained on the same 80/20 split and features, with matched settings (learning rate

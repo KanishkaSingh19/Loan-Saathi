@@ -5,6 +5,7 @@ import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
 import Journey from "./Journey";
+import { StudySetup, StudySurvey } from "./Study";
 import DecisionBadge from "./DecisionBadge";
 
 // Browser web call: mic -> Gnani Prisma (/v1/stt) -> Gemini + our model (/v1/converse)
@@ -52,7 +53,7 @@ const BUSY_TEXT = {
   speaking: "Saathi is speaking…",
 };
 
-export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) {
+export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, studyMode = false }) {
   const [lang, setLang] = useState("hi");
   const [call, setCall] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -75,6 +76,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
   }, []);
 
   const [retry, setRetry] = useState(null); // { text, action } of a turn the server never answered
+  const [studyInfo, setStudyInfo] = useState(null); // { participant, persona, language } in study mode
+  const [sttFailures, setSttFailures] = useState(0);
 
   // Applicants never see technical errors; details go to the console for whoever runs the demo.
   const fail = (err, friendly) => {
@@ -119,7 +122,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
     setVoiceNote("");
     setBusy("starting");
     try {
-      const r = await converse(apiKey, "", "", lang);
+      const callLang = studyInfo?.language || lang;
+      if (studyMode) {
+        setLang(callLang);
+        setSttFailures(0);
+      }
+      const r = await converse(apiKey, "", "", callLang, "",
+        studyMode && studyInfo ? { participant: studyInfo.participant, persona: studyInfo.persona } : {});
       await handle(r.reply, r);
     } catch (err) {
       setBusy(null);
@@ -166,11 +175,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           heard = await transcribe(apiKey, wav, lang);
         } catch (err) {
           setBusy(null);
+          setSttFailures((n) => n + 1);
           fail(err, "I couldn't hear that clearly. Please tap the mic and try again, or type your answer.");
           return;
         }
         if (!heard.trim()) {
           setBusy(null);
+          setSttFailures((n) => n + 1);
           setError("I couldn't hear anything. Please try again, or type your answer.");
           return;
         }
@@ -221,7 +232,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
               <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
               Speak replies
             </label>
-            <button className="btn primary" onClick={begin} disabled={busy !== null && busy !== "speaking"}>
+            <button className="btn primary" onClick={begin}
+              disabled={(busy !== null && busy !== "speaking") || (studyMode && !studyInfo)}>
               {call ? "New call" : "Start call"}
             </button>
           </div>
@@ -376,6 +388,18 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           </p>
         </div>
       </aside>
+
+      {studyMode && (!call || call.done) && !(call?.result || call?.advisor_case) ? (
+        <section className="panel span-all advisor-only">
+          <StudySetup apiKey={apiKey} onReady={setStudyInfo} onUnauthorized={onUnauthorized} disabled={!!active} />
+        </section>
+      ) : null}
+      {studyMode && call && (call.result || call.done) ? (
+        <section className="panel span-all advisor-only">
+          <StudySurvey key={call.session_id} apiKey={apiKey} sessionId={call.session_id} sttFailures={sttFailures}
+            onUnauthorized={onUnauthorized} />
+        </section>
+      ) : null}
 
       {call && !result?.assessment && (call.advisor_case || call.state === "COLLECTING_PROFILE"
         || call.state === "VERIFYING_INFORMATION" || call.state === "ERROR_RECOVERY") ? (

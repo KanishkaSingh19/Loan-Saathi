@@ -61,8 +61,12 @@ async function errorText(res) {
 
 // `action` is a button press (confirm, change, correct:<field>, yes, no, choose:<n>, handoff);
 // `text` is still sent so the transcript reads naturally.
-export async function converse(key, sessionId, text, language = "hi", action = "") {
-  const res = await postJson(key, "/v1/converse", { session_id: sessionId || "", text, language, action });
+/**
+ * @param {string} key @param {string} sessionId @param {string} text @param {string} [language]
+ * @param {string} [action] @param {{participant?: string, persona?: string}} [study] only when starting a study call
+ */
+export async function converse(key, sessionId, text, language = "hi", action = "", study = {}) {
+  const res = await postJson(key, "/v1/converse", { session_id: sessionId || "", text, language, action, ...study });
   if (!res.ok) throw new ApiError(await errorText(res), res.status);
   return res.json();
 }
@@ -130,5 +134,49 @@ export async function fetchAdvisorCases(key) {
   const res = await fetch(`${API_BASE}/v1/advisor-cases`, { headers: { "X-Webhook-Key": key } });
   if (res.status === 401) throw new Unauthorized();
   if (!res.ok) throw new ApiError("Couldn't load advisor cases. Please try again.");
+  return res.json();
+}
+
+/**
+ * An advisor picks up, closes or reopens a case.
+ * @param {string} key @param {string} caseId
+ * @param {{status: "open"|"in_review"|"closed", advisor?: string, note?: string}} change
+ */
+export async function updateAdvisorCase(key, caseId, change) {
+  const res = await fetch(`${API_BASE}/v1/advisor-cases/${encodeURIComponent(caseId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", "X-Webhook-Key": key },
+    body: JSON.stringify(change),
+  });
+  if (res.status === 401) throw new Unauthorized();
+  if (!res.ok) throw new ApiError(await errorText(res), res.status);
+  return res.json();
+}
+
+// ---------- user study (STUDY.md) ----------
+
+async function getJson(key, path) {
+  const res = await fetch(`${API_BASE}${path}`, { headers: { "X-Webhook-Key": key } });
+  if (res.status === 401) throw new Unauthorized();
+  if (!res.ok) throw new ApiError(await errorText(res), res.status);
+  return res;
+}
+
+export async function studyPersonas(key) {
+  return (await (await getJson(key, "/v1/study/personas")).json()).personas;
+}
+
+export async function studyReport(key) {
+  return (await getJson(key, "/v1/study/report")).json();
+}
+
+export async function studyCsv(key) {
+  return (await getJson(key, "/v1/study/report.csv")).blob();
+}
+
+/** @param {string} key @param {object} survey */
+export async function submitSurvey(key, survey) {
+  const res = await postJson(key, "/v1/study/survey", survey);
+  if (!res.ok) throw new ApiError(await errorText(res), res.status);
   return res.json();
 }

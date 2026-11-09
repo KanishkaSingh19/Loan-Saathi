@@ -61,7 +61,12 @@ export default function AdvisorPanel({
         <p className="as-status info" role="status">
           Your summary is saved as advisor case <b>#{caseId}</b>
           {saved?.simulation ? ` (including your simulation: ${saved.simulation.loan} over ${saved.simulation.tenure})` : ""}.
-          {" "}Prototype: a loan advisor sees it in the Loan-Saathi dashboard; no one is notified automatically.
+          {" "}
+          {saved?.notification?.delivered
+            ? "A loan advisor has been notified and will review it."
+            : saved?.notification?.configured
+              ? "We couldn't notify an advisor just now, but your case is saved for them to pick up."
+              : "A loan advisor can pick it up in the Loan-Saathi dashboard; no one is notified automatically yet."}
         </p>
       )}
 

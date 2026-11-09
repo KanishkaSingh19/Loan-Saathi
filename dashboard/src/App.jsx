@@ -9,6 +9,10 @@ import PrescreenDetail from "./components/PrescreenDetail";
 import CallDetail from "./components/CallDetail";
 import CallScreen from "./components/CallScreen";
 import AdvisorCases from "./components/AdvisorCases";
+import { StudyReport } from "./components/Study";
+
+// ?study=1 turns on the user-study kit (consent, persona cards, survey, Study tab). See STUDY.md.
+const STUDY_MODE = new URLSearchParams(window.location.search).has("study");
 
 const FRESH_MS = 4000;
 
@@ -124,6 +128,10 @@ export default function App() {
             onClick={() => setView("feed")}>Pre-screens</button>
           <button role="tab" aria-selected={view === "cases"} className={`chip${view === "cases" ? " active" : ""}`}
             onClick={() => setView("cases")}>Advisor cases</button>
+          {STUDY_MODE && (
+            <button role="tab" aria-selected={view === "study"} className={`chip${view === "study" ? " active" : ""}`}
+              onClick={() => setView("study")}>Study</button>
+          )}
         </nav>
         {view !== "call" && (
           <div className={`status ${status}`} role="status">
@@ -133,10 +141,12 @@ export default function App() {
         )}
       </header>
 
-      {view === "cases" ? (
+      {view === "study" ? (
+        <StudyReport apiKey={key} onUnauthorized={logout} />
+      ) : view === "cases" ? (
         <AdvisorCases apiKey={key} onUnauthorized={logout} />
       ) : view === "call" ? (
-        <CallScreen apiKey={key} onUnauthorized={logout} onOpenPrescreen={openPrescreen} />
+        <CallScreen apiKey={key} onUnauthorized={logout} onOpenPrescreen={openPrescreen} studyMode={STUDY_MODE} />
       ) : (
       <>
       <StatTiles prescreens={prescreens} calls={calls} />

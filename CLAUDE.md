@@ -28,6 +28,10 @@ python -I -X utf8 src/test_states.py         # web-call state machine: confirm, 
 python -I -X utf8 src/test_assessment.py     # applicant assessment: provenance, wording, why, safety check
 python -I -X utf8 src/test_simulate.py       # what-if simulator: boundaries, scenarios, voice what-ifs, no bypass
 python -I -X utf8 src/test_advisor.py        # advisor cases, listen summary, code-mixed speech, recovery
+python -I -X utf8 src/test_operations.py     # persistent calls, advisor notifications + case workflow, study kit
+python -I -X utf8 src/test_model.py          # debt monotonicity, interim debt floor, calibration plumbing
+python -I -X utf8 src/validate_model.py      # behavioural validation on synthetic Indian profiles (~2 min)
+python -I -X utf8 src/study_dryrun.py --base http://127.0.0.1:8000 --key <KEY> --speech  # study dry run
 python -I -X utf8 src/test_safety.py         # product safety boundaries (wording scan, LLM can't decide...)
 python -I -m ruff check src                  # Python lint (requirements-dev.txt)
 cd dashboard; npm test; npm run lint; npm run typecheck; npm run build   # frontend checks
@@ -51,8 +55,10 @@ and allows the dashboard's origin through `ALLOWED_ORIGINS`. The dashboard deplo
 `VERCEL` is set. SQL in `server.py` goes through `_run()` with `?` placeholders, which are
 adapted for Postgres, so keep queries portable between SQLite and Postgres.
 
-The Kaggle CSVs are not on this machine at the moment. Running the agent doesn't need them (the
-trained models are in `models/`); only retraining or the model comparison does.
+The Kaggle CSVs are in `home-credit-default-risk/` in the project (gitignored; `.env` points
+`HOME_CREDIT_DATA_DIR` at it). Running the agent doesn't need them; only retraining does.
+After any retrain run `python -I -X utf8 -W ignore src/validate_model.py --strict` (behavioural gates on
+240 synthetic Indian profiles: risk never falls as debt rises, decisions never improve with debt).
 
 ## Layout
 - `src/features.py`: feature engineering and `VOICE_FEATURES` / `VOICE_MONOTONE_UP` / `EXCLUDED`.
@@ -96,6 +102,12 @@ trained models are in `models/`); only retraining or the model comparison does.
   utterance into clauses and fills several fields; `normalize.amounts()` reads Prisma's
   "one and a 1/2 lakh"; a tenure phrase's number is never a second amount. Python heredocs in
   bash turn `\b` into backspace characters: edit regexes with the Edit tool and grep for `\x08`.
+- Web calls are stored after every turn (table `sessions`) and resumed after a restart for 2 hours
+  (`server.get_session`); always look sessions up through it, not `converse.SESSIONS` directly.
+- Advisor cases: `ADVISOR_WEBHOOK_URL` gets a summary-only POST; replies say "notified" only when it
+  returned 2xx. Cases move open -> in_review -> closed (`PATCH /v1/advisor-cases/{id}`, name required).
+- User study (`STUDY.md`, `src/study.py`): dashboard `?study=1`; persona cards give ground truth;
+  `/v1/study/*` routes; synthetic dry runs are reported separately and never mixed with participants.
 - `DEMO.md`: the 2-minute demo path and what to do if something fails on stage.
 - `src/advisor.py`: advisor cases (`POST/GET /v1/advisor-cases`, table `advisor_cases`), built only
   from session/prescreen data; voice handoff in `converse._handoff` saves one. Prototype: nobody is

@@ -419,3 +419,19 @@ pre { margin: 10px 0 0; padding: 12px; background: var(--panel-2); border: 1px s
 @media (max-width: 760px) { .case-grid { grid-template-columns: 1fr; } }
 .case-grid h4 { font-size: 13px; color: var(--muted); margin: 6px 0 4px; }
 .case-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+
+.case-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.case-actions input { font: inherit; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); min-width: 0; flex: 1 1 160px; }
+
+/* ---------- user study ---------- */
+.study-setup, .study-survey { display: grid; gap: 10px; }
+.study-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 640px) { .study-row { grid-template-columns: 1fr; } }
+.study-row label, .study-comment { display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+.study-row input, .study-row select, .study-comment textarea { font: inherit; font-weight: 400; padding: 8px 10px;
+  border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+.persona-card { font-size: 15px; }
+.scale { display: flex; flex-wrap: wrap; gap: 6px; }
+.scale input { position: absolute; opacity: 0; pointer-events: none; }
+.scale label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }

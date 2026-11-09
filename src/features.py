@@ -55,7 +55,10 @@ VOICE_NUMERIC = [
 ]
 VOICE_FEATURES = VOICE_NUMERIC + VOICE_CATEGORICAL
 # Risk may only go up as these go up (keeps explanations and loan suggestions sane).
-VOICE_MONOTONE_UP = ["ANNUITY_TO_INCOME", "DEBT_TO_INCOME"]
+# BUREAU_ACTIVE_DEBT was added after live testing: unconstrained, the model rated ₹36L owed on a
+# ₹40k income as *safer* than no debt (large bureau debts went with wealthier borrowers in the data).
+# BUREAU_ACTIVE_LOANS stays free on purpose: no loan history at all is a genuine risk signal.
+VOICE_MONOTONE_UP = ["ANNUITY_TO_INCOME", "DEBT_TO_INCOME", "BUREAU_ACTIVE_DEBT"]
 
 
 def _downcast(df):

@@ -179,11 +179,11 @@ def boolean(v):
     s = str(v).strip().lower()
     if s in ("1", "true", "yes", "y", "haan", "han", "ha", "haa", "ji", "ji haan", "hai", "hoon", "own", "owned"):
         return True
-    if s in ("0", "false", "no", "n", "nahi", "nahin", "na", "nai", "illa", "none"):
+    if s in ("0", "false", "no", "n", "nahi", "nahin", "na", "nai", "illa", "none", "नहीं", "नही", "ना"):
         return False
-    if any(w in s for w in ("nahi", "nahin", "no ", "not", "don't", "dont")):
+    if any(w in s for w in ("nahi", "nahin", "no ", "not", "don't", "dont", "नहीं", "नही")):
         return False
-    if any(w in s for w in ("haan", "yes", "hai", "own")):
+    if any(w in s for w in ("haan", "yes", "hai", "own", "हाँ", "हां", "है")):
         return True
     return None
 
@@ -259,12 +259,15 @@ def housing(v):
     if _blank(v):
         return None, None
     s = str(v).lower()
-    if any(k in s for k in ("parent", "maa", "papa", "mata", "pita", "family ke saath", "with family", "joint")):
+    # Gnani Prisma returns Hindi in Devanagari ("किराए पे"), so both scripts are listed.
+    if any(k in s for k in ("parent", "maa", "papa", "mata", "pita", "family ke saath", "with family", "joint",
+                            "परिवार", "माता", "पिता", "माँ")):
         return "With parents", None
-    if any(k in s for k in ("rent", "kiraya", "kiraye", "kirae", "pg", "hostel")):
+    if any(k in s for k in ("rent", "kiraya", "kiraye", "kirae", "pg", "hostel", "किराय", "किराए", "किराये",
+                            "किरा")):
         return "Rented apartment", False
-    if any(k in s for k in ("quarter", "company", "staff")):
+    if any(k in s for k in ("quarter", "company", "staff", "क्वार्टर", "सरकारी")):
         return "Office apartment", False
-    if any(k in s for k in ("own", "apna", "khud", "mera ghar", "my house", "self")):
+    if any(k in s for k in ("own", "apna", "khud", "mera ghar", "my house", "self", "अपना", "अपने", "खुद")):
         return "House / apartment", True
     return "House / apartment", None

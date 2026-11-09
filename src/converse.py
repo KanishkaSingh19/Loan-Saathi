@@ -160,7 +160,9 @@ TITLES = {"loan_amount": "Requested loan", "tenure_months": "Tenure", "monthly_i
 
 HOUSING_WORDS = re.compile(
     r"own|apna|apne|khud|rent|kiray|family|parivaar|parivar|parents|maa|papa|ghar|house|home|flat|"
-    r"quarter|government|sarkari|hostel|\bpg\b|घर|किराय|परिवार|अपन", re.I)
+    r"quarter|government|sarkari|hostel|\bpg\b|घर|किराय|किराए|किराये|कमरा|परिवार|माता|पिता|अपन|क्वार्टर", re.I)
+WRONG_WORDS = re.compile(r"\b(galat|wrong|incorrect|mistake|change|badal\w*|sahi nahi|theek nahi)\b|"
+                         r"गलत|ग़लत|बदल|सही नहीं", re.I)
 DONT_KNOW = re.compile(
     r"pata nahi|nahi pata|maloom nahi|aap (bataiye|batao|batayein|decide|dekh)|you decide|"
     r"not sure|don'?t know|koi bhi|kuch bhi|jo (theek|sahi) (ho|lage)|whatever|any tenure|पता नहीं", re.I)
@@ -298,6 +300,11 @@ SAY = {
                       "diya hai. Yeh prototype hai, isliye kisi advisor ko apne aap suchna nahi jaati. Dhanyavaad!",
                 "en": "Okay. I've saved a summary of our conversation for a loan advisor as case {case}. This is a "
                       "prototype, so no advisor is notified automatically. Thank you!"},
+    "handoff_notified": {"hi": "Theek hai. Maine aapki baatcheet ka summary case {case} mein save karke loan advisor ko "
+                               "suchna bhej di hai. Yeh sirf pre-screening hai; advisor aapka case dekhenge. Dhanyavaad!",
+                         "en": "Okay. I've saved a summary of our conversation as case {case} and notified a loan "
+                               "advisor. This is still only a pre-screening; the advisor will review your case. "
+                               "Thank you!"},
     "handoff_failed": {"hi": "Maaf kijiye, abhi advisor ke liye summary save nahi ho paaya. Thodi der baad phir "
                              "koshish kijiye.",
                        "en": "Sorry, I couldn't save the summary for an advisor just now. Please try again in a "
@@ -638,14 +645,39 @@ def _prune():
         SESSIONS.pop(min(SESSIONS, key=lambda k: SESSIONS[k]["updated"]))
 
 
-def start(language="hi"):
+_SET_KEYS = ("skipped", "literal_ok", "changed")
+
+
+def export_session(s):
+    """A JSON-safe copy of a call for storage (sets become lists; callbacks are dropped)."""
+    out = {k: v for k, v in s.items() if not k.startswith("_")}
+    for k in _SET_KEYS:
+        out[k] = sorted(out.get(k) or [])
+    out["history"] = [list(h) for h in s.get("history", [])]
+    return out
+
+
+def restore_session(d):
+    """Back into memory from storage: the call continues exactly where it was."""
+    s = dict(d)
+    for k in _SET_KEYS:
+        s[k] = set(s.get(k) or [])
+    s["history"] = [tuple(h) for h in s.get("history", [])]
+    s["updated"] = time.time()
+    _prune()
+    SESSIONS[s["id"]] = s
+    return s
+
+
+def start(language="hi", study=None):
     _prune()
     lang = "en" if language == "en" else "hi"
     s = {"id": uuid.uuid4().hex[:12], "lang": lang, "state": START, "trail": [],
          "answers": {}, "status": {}, "said": {}, "skipped": set(), "tries": {}, "history": [],
          "pending": [], "correcting": None, "corrections": 0, "recoveries": 0, "recover_to": None,
          "literal_ok": set(), "changed": set(), "clarify": None, "just_corrected": None,
-         "problem_value": None, "result": None, "prescreen_id": None, "llm": [], "updated": time.time()}
+         "problem_value": None, "result": None, "prescreen_id": None, "llm": [], "updated": time.time(),
+         "study": study, "first_values": {}, "readbacks": 0}
     SESSIONS[s["id"]] = s
     transition(s, COLLECTING, "greeting")
     first = next_field(s)
@@ -749,6 +781,7 @@ def public(s):
 # ---------- setting values ----------
 
 def _set(s, k, v, said, status="validated"):
+    s.setdefault("first_values", {}).setdefault(k, v)  # what we first understood (study: first-pass accuracy)
     s["answers"][k] = v
     s["status"][k] = status
     s["said"][k] = said
@@ -768,6 +801,7 @@ def _unset(s, k):
 def _queue(s, item):
     if not any(p["field"] == item["field"] for p in s["pending"]):
         s["pending"].append({"tries": 0, **item})
+        s["readbacks"] = s.get("readbacks", 0) + 1
 
 
 def _corrected(s, k):
@@ -990,10 +1024,12 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
 def _handoff(s, why, question=""):
     """Save an advisor case (when the server provides one) and tell the caller honestly."""
     lang = s["lang"]
-    case_id = ""
+    case_id, notified = "", None
     if s.get("_advisor"):
         try:
-            case_id = s["_advisor"](s, question)["id"]
+            case = s["_advisor"](s, question)
+            case_id = case["id"]
+            notified = (case.get("notification") or {}).get("delivered")
         except Exception as e:  # noqa: BLE001
             print(f"[converse {s['id']}] advisor case failed: {type(e).__name__}: {e}", flush=True)
             return SAY["handoff_failed"][lang]
@@ -1004,6 +1040,8 @@ def _handoff(s, why, question=""):
     if not case_id:
         return ("Theek hai, aap loan advisor se baat karna chahte hain. Dhanyavaad!" if lang == "hi"
                 else "Okay, you'd like to talk to a loan advisor. Thank you!")
+    if notified:  # only when the advisor channel confirmed delivery
+        return SAY["handoff_notified"][lang].format(case=case_id)
     return SAY["handoff"][lang].format(case=case_id)
 
 
@@ -1109,7 +1147,9 @@ async def _collecting(s, env, text, action):
 
     # "My income is wrong" before the summary: forget that answer and ask for it again.
     wrong = mentioned_field(text)
-    if wrong in s["answers"] and NO.search(text) and not norm.amounts(text) and not action:
+    # Only an explicit "wrong / galat / change": "koi loan nahi" (no other loans) mentions "loan" and
+    # "nahi" but is an answer, not a correction (a synthetic dry run caught it erasing the loan amount).
+    if wrong in s["answers"] and WRONG_WORDS.search(text) and not norm.amounts(text) and not action:
         _unset(s, wrong)
         s["tries"].pop(wrong, None)
         if next_field(s) == wrong:

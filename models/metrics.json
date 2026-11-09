@@ -1,40 +1,156 @@
 {
-  "n_train": 246008,
+  "n_train": 215257,
   "n_valid": 61503,
   "default_rate": 0.0807,
   "voice": {
-    "auc": 0.6895,
-    "trees": 698,
+    "auc": 0.687,
+    "trees": 744,
+    "monotone_up": [
+      "ANNUITY_TO_INCOME",
+      "DEBT_TO_INCOME",
+      "BUREAU_ACTIVE_DEBT"
+    ],
+    "calibration_raw": {
+      "brier": 0.07129,
+      "ece": 0.00225,
+      "deciles": [
+        {
+          "predicted": 0.0225,
+          "actual": 0.0234
+        },
+        {
+          "predicted": 0.0334,
+          "actual": 0.033
+        },
+        {
+          "predicted": 0.0414,
+          "actual": 0.0439
+        },
+        {
+          "predicted": 0.0495,
+          "actual": 0.0519
+        },
+        {
+          "predicted": 0.0589,
+          "actual": 0.0603
+        },
+        {
+          "predicted": 0.0698,
+          "actual": 0.0693
+        },
+        {
+          "predicted": 0.0839,
+          "actual": 0.0842
+        },
+        {
+          "predicted": 0.1031,
+          "actual": 0.1078
+        },
+        {
+          "predicted": 0.1329,
+          "actual": 0.1285
+        },
+        {
+          "predicted": 0.2099,
+          "actual": 0.205
+        }
+      ]
+    },
+    "calibration_kept": false,
+    "calibration": {
+      "brier": 0.07129,
+      "ece": 0.00225,
+      "deciles": [
+        {
+          "predicted": 0.0225,
+          "actual": 0.0234
+        },
+        {
+          "predicted": 0.0334,
+          "actual": 0.033
+        },
+        {
+          "predicted": 0.0414,
+          "actual": 0.0439
+        },
+        {
+          "predicted": 0.0495,
+          "actual": 0.0519
+        },
+        {
+          "predicted": 0.0589,
+          "actual": 0.0603
+        },
+        {
+          "predicted": 0.0698,
+          "actual": 0.0693
+        },
+        {
+          "predicted": 0.0839,
+          "actual": 0.0842
+        },
+        {
+          "predicted": 0.1031,
+          "actual": 0.1078
+        },
+        {
+          "predicted": 0.1329,
+          "actual": 0.1285
+        },
+        {
+          "predicted": 0.2099,
+          "actual": 0.205
+        }
+      ]
+    },
     "bands": {
       "low": {
-        "share": 0.35,
-        "default_rate": 0.034
+        "share": 0.356,
+        "default_rate": 0.036
       },
       "medium": {
-        "share": 0.467,
+        "share": 0.46,
         "default_rate": 0.08
       },
       "high": {
-        "share": 0.183,
-        "default_rate": 0.171
+        "share": 0.184,
+        "default_rate": 0.17
       }
     },
     "top_features": {
-      "YEARS_EMPLOYED": 31552.8,
-      "AGE_YEARS": 23051.1,
-      "CREDIT_TO_GOODS": 22352.5,
-      "OCCUPATION_TYPE": 20348.2,
-      "AMT_GOODS_PRICE": 18424.6,
-      "AMT_CREDIT": 15399.3,
-      "BUREAU_ACTIVE_LOANS": 13171.1,
-      "CREDIT_TO_INCOME": 12624.6,
-      "BUREAU_ACTIVE_DEBT": 12055.2,
-      "ANNUITY_TO_INCOME": 11430.7,
-      "NAME_EDUCATION_TYPE": 11219.7,
-      "INCOME_PER_PERSON": 7950.7,
-      "AMT_INCOME_TOTAL": 7438.7,
-      "DEBT_TO_INCOME": 5229.6,
-      "NAME_INCOME_TYPE": 4111.9
+      "YEARS_EMPLOYED": 30220.0,
+      "AGE_YEARS": 23076.2,
+      "CREDIT_TO_GOODS": 21843.5,
+      "OCCUPATION_TYPE": 19017.2,
+      "AMT_GOODS_PRICE": 17912.5,
+      "AMT_CREDIT": 14481.4,
+      "CREDIT_TO_INCOME": 12892.0,
+      "BUREAU_ACTIVE_LOANS": 12649.2,
+      "ANNUITY_TO_INCOME": 10781.6,
+      "NAME_EDUCATION_TYPE": 9822.8,
+      "INCOME_PER_PERSON": 8741.6,
+      "AMT_INCOME_TOTAL": 7542.9,
+      "BUREAU_ACTIVE_DEBT": 5353.6,
+      "NAME_INCOME_TYPE": 3741.0,
+      "DEBT_TO_INCOME": 3689.6
+    },
+    "previous_model": {
+      "auc": 0.6895,
+      "trees": 698,
+      "bands": {
+        "low": {
+          "share": 0.35,
+          "default_rate": 0.034
+        },
+        "medium": {
+          "share": 0.467,
+          "default_rate": 0.08
+        },
+        "high": {
+          "share": 0.183,
+          "default_rate": 0.171
+        }
+      }
     }
   },
   "full": {
@@ -72,5 +188,6 @@
       "BUREAU_DAYS_CREDIT_MAX": 10398.1,
       "EXT_SOURCE_1": 10181.5
     }
-  }
+  },
+  "n_calibration": 30751
 }

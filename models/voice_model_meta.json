@@ -78,7 +78,13 @@
     "low": 0.05,
     "medium": 0.12
   },
-  "validation_auc": 0.6895,
+  "validation_auc": 0.687,
+  "monotone_up": [
+    "ANNUITY_TO_INCOME",
+    "DEBT_TO_INCOME",
+    "BUREAU_ACTIVE_DEBT"
+  ],
+  "calibration": null,
   "medians": {
     "AMT_INCOME_TOTAL": 147150.0,
     "AMT_CREDIT": 513531.0,

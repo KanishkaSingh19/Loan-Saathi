@@ -35,6 +35,7 @@ import converse  # noqa: E402
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
+import study  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -60,6 +61,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
 # Comma-separated origins allowed to call the API from a browser, e.g. the Vercel dashboard.
 ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+# Where new advisor cases are announced: any URL that accepts a JSON POST, e.g. a Slack or Microsoft
+# Teams incoming webhook ({"text": ...}). Empty = no notification, and applicants are told so.
+ADVISOR_WEBHOOK_URL = os.environ.get("ADVISOR_WEBHOOK_URL", "").strip()
+SESSION_RESUME_HOURS = 2  # a stored call can be resumed (e.g. after a restart) for this long
 
 app = FastAPI(title="Loan pre-screening webhook")
 if ALLOWED_ORIGINS:
@@ -77,6 +82,10 @@ class ConverseRequest(BaseModel):
     language: str = "hi"
     # A button press on the call screen: confirm, change, correct:<field>, yes, no, choose:<n>, handoff.
     action: str = Field(default="", max_length=40)
+    # User study (STUDY.md): set when a participant starts a call from a persona card.
+    participant: str = Field(default="", max_length=20, pattern=r"^[A-Za-z0-9_-]*$")
+    persona: str = Field(default="", max_length=8)
+    synthetic: bool = False
 
 
 class SimulateRequest(BaseModel):
@@ -92,6 +101,21 @@ class AdvisorRequest(BaseModel):
     question: str = Field(default="", max_length=500)
     loan_amount: float | None = None   # the applicant's current simulation, recomputed here
     tenure_months: float | None = None
+
+
+class SurveyRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=40)
+    ease: int = Field(ge=1, le=5)
+    understood: str = Field(pattern="^(yes|partly|no)$")
+    trust: int = Field(ge=1, le=5)
+    comment: str = Field(default="", max_length=1000)
+    stt_failures: int = Field(default=0, ge=0, le=100)
+
+
+class CaseUpdate(BaseModel):
+    status: str = Field(pattern="^(open|in_review|closed)$")
+    advisor: str = Field(default="", max_length=80)
+    note: str = Field(default="", max_length=1000)
 
 
 class SpeechRequest(BaseModel):
@@ -110,6 +134,8 @@ _SCHEMA = [
     "CREATE TABLE IF NOT EXISTS prescreens (id TEXT PRIMARY KEY, ts {real}, raw TEXT, applicant TEXT, result TEXT)",
     "CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
     "CREATE TABLE IF NOT EXISTS advisor_cases (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
+    "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
+    "CREATE TABLE IF NOT EXISTS study_results (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
 ]
 _schema_ready = False
 
@@ -486,10 +512,68 @@ def simulate_route(body: SimulateRequest, x_webhook_key: str = Header(default=""
 
 # ---------- advisor cases ----------
 
+def notify_advisor(case):
+    """Announce a new case on ADVISOR_WEBHOOK_URL. Sends only the headline, the question and the case
+    id (the full profile stays in the dashboard). Returns what happened, for the case and the reply."""
+    if not ADVISOR_WEBHOOK_URL:
+        return {"channel": "none", "configured": False, "delivered": False}
+    text = (f"New Loan-Saathi advisor case #{case['id']}: {case['headline']}. "
+            f"Question: {case['question']} Open the dashboard's Advisor cases view to review it.")
+    try:
+        r = httpx.post(ADVISOR_WEBHOOK_URL, json={"text": text, "case_id": case["id"], "headline": case["headline"]},
+                       timeout=5.0)
+        ok = r.is_success
+        status = r.status_code
+    except httpx.HTTPError as e:
+        ok, status = False, type(e).__name__
+    print(f"[advisor case {case['id']}] notification {'delivered' if ok else 'FAILED'} ({status})", flush=True)
+    return {"channel": "webhook", "configured": True, "delivered": ok, "status": status, "ts": time.time()}
+
+
 def save_case(case):
+    case["notification"] = notify_advisor(case)
+    if case["notification"]["delivered"]:
+        case["prototype_note"] = "A loan advisor was notified about this case."
+    elif case["notification"]["configured"]:
+        case["prototype_note"] = ("The advisor notification didn't go through; the case is saved in the "
+                                  "Loan-Saathi dashboard for an advisor to pick up.")
+    case.setdefault("events", []).append({"ts": case["ts"], "status": "open", "by": "applicant",
+                                          "note": "Case created"})
     _run("INSERT INTO advisor_cases VALUES (?,?,?)", (case["id"], case["ts"], json.dumps(case, ensure_ascii=False)))
     print(f"[advisor case {case['id']}] {case['headline']}", flush=True)
     return case
+
+
+# ---------- web-call sessions (survive restarts and run across instances) ----------
+
+def _store_session(s):
+    """Upsert the call after each turn (background task). Works on SQLite and Postgres."""
+    _save("INSERT INTO sessions VALUES (?,?,?) ON CONFLICT (id) DO UPDATE SET ts = excluded.ts, "
+          "payload = excluded.payload WHERE excluded.ts >= sessions.ts",
+          (s["id"], time.time(), json.dumps(converse.export_session(s), ensure_ascii=False, default=str)))
+
+
+def _save_study_quietly(s):
+    try:
+        _store_study(s)
+    except Exception as e:  # noqa: BLE001
+        print(f"[study] save failed: {type(e).__name__}: {e}", flush=True)
+
+
+def get_session(sid):
+    """The call from memory, or from the database (e.g. after a restart) if it's recent enough."""
+    s = converse.SESSIONS.get(sid)
+    if s is not None or not sid:
+        return s
+    try:
+        rows = _run("SELECT ts, payload FROM sessions WHERE id = ?", (sid,), fetch=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[sessions] load failed: {type(e).__name__}: {e}", flush=True)
+        return None
+    if not rows or time.time() - rows[0][0] > SESSION_RESUME_HOURS * 3600:
+        return None
+    print(f"[web-call {sid}] resumed from storage", flush=True)
+    return converse.restore_session(json.loads(rows[0][1]))
 
 
 def case_from_session(s, question="", loan=None, tenure=None):
@@ -511,7 +595,7 @@ def case_from_session(s, question="", loan=None, tenure=None):
 def create_advisor_case(body: AdvisorRequest, x_webhook_key: str = Header(default="")):
     """Save a structured summary for a human loan advisor (prototype: nobody is notified)."""
     _check_key(x_webhook_key)
-    s = converse.SESSIONS.get(body.session_id) if body.session_id else None
+    s = get_session(body.session_id) if body.session_id else None
     if s is not None:
         case = case_from_session(s, body.question, body.loan_amount, body.tenure_months)
         s["advisor_case"] = case["id"]
@@ -534,6 +618,85 @@ def create_advisor_case(body: AdvisorRequest, x_webhook_key: str = Header(defaul
     return save_case(case)
 
 
+@app.patch("/v1/advisor-cases/{case_id}")
+def update_advisor_case(case_id: str, body: CaseUpdate, x_webhook_key: str = Header(default="")):
+    """An advisor picks up (in_review) or closes a case, with a note. Every change is kept in `events`."""
+    _check_key(x_webhook_key)
+    rows = _run("SELECT payload FROM advisor_cases WHERE id = ?", (case_id,), fetch=True)
+    if not rows:
+        raise HTTPException(status_code=404, detail="Case not found.")
+    case = json.loads(rows[0][0])
+    if case.get("status") == "closed" and body.status != "open":
+        raise HTTPException(status_code=409, detail="This case is closed. Reopen it first.")
+    if body.status in ("in_review", "closed") and not body.advisor.strip():
+        raise HTTPException(status_code=422, detail="Please give the advisor's name.")
+    case["status"] = body.status
+    if body.advisor.strip():
+        case["advisor"] = body.advisor.strip()
+    case.setdefault("events", []).append({"ts": time.time(), "status": body.status,
+                                          "by": body.advisor.strip() or "advisor", "note": body.note.strip()})
+    _run("UPDATE advisor_cases SET payload = ? WHERE id = ?", (json.dumps(case, ensure_ascii=False), case_id))
+    return case
+
+
+# ---------- user study (STUDY.md) ----------
+
+def _store_study(s, survey=None):
+    """Save (or update) one study call's metrics; called after each turn of a study call and with the survey."""
+    row = {"metrics": study.metrics(s), "survey": survey}
+    old = _run("SELECT payload FROM study_results WHERE id = ?", (s["id"],), fetch=True)
+    if old and survey is None:
+        row["survey"] = json.loads(old[0][0]).get("survey")
+    payload = json.dumps(row, ensure_ascii=False)
+    if old:
+        _run("UPDATE study_results SET ts = ?, payload = ? WHERE id = ?", (time.time(), payload, s["id"]))
+    else:
+        _run("INSERT INTO study_results VALUES (?,?,?)", (s["id"], time.time(), payload))
+    return row
+
+
+@app.get("/v1/study/personas")
+def study_personas(x_webhook_key: str = Header(default="")):
+    _check_key(x_webhook_key)
+    return {"personas": study.public_personas()}
+
+
+@app.post("/v1/study/survey")
+def study_survey(body: SurveyRequest, x_webhook_key: str = Header(default="")):
+    _check_key(x_webhook_key)
+    s = get_session(body.session_id)
+    if s is None or not s.get("study"):
+        raise HTTPException(status_code=404, detail="Study call not found.")
+    return _store_study(s, body.model_dump(exclude={"session_id"}))
+
+
+def _study_rows():
+    return [json.loads(p) for (p,) in _run("SELECT payload FROM study_results ORDER BY ts", fetch=True)]
+
+
+@app.get("/v1/study/report")
+def study_report(x_webhook_key: str = Header(default="")):
+    _check_key(x_webhook_key)
+    rows = _study_rows()
+    return {**study.report(rows), "calls": rows}
+
+
+@app.get("/v1/study/report.csv")
+def study_report_csv(x_webhook_key: str = Header(default="")):
+    _check_key(x_webhook_key)
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=study.CSV_FIELDS, extrasaction="ignore")
+    w.writeheader()
+    for r in _study_rows():
+        w.writerow({**r["metrics"], **(r.get("survey") or {}),
+                    "wrong_first_pass": " ".join(r["metrics"]["wrong_first_pass"]),
+                    "wrong_final": " ".join(r["metrics"]["wrong_final"])})
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=loan-saathi-study.csv"})
+
+
 @app.get("/v1/advisor-cases")
 def list_advisor_cases(limit: int = 50, x_webhook_key: str = Header(default="")):
     _check_key(x_webhook_key)
@@ -548,9 +711,16 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
     An empty session_id starts a new call and returns the greeting."""
     _check_key(x_webhook_key)
     if not body.session_id:
-        s, reply = converse.start(body.language)
+        info = None
+        if body.persona:
+            if body.persona not in study.BY_ID:
+                raise HTTPException(status_code=422, detail="Unknown persona card.")
+            info = {"participant": body.participant or "anon", "persona": body.persona,
+                    "synthetic": body.synthetic}
+        s, reply = converse.start(body.language, study=info)
+        tasks.add_task(_store_session, s)
         return {**converse.public(s), "reply": reply}
-    s = converse.SESSIONS.get(body.session_id)
+    s = get_session(body.session_id)
     if s is None:
         raise HTTPException(status_code=404, detail="call not found or expired; start a new one")
 
@@ -570,6 +740,9 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
         print(f"[web-call {s['id']}] turn failed: {type(e).__name__}: {e}", flush=True)
         reply = converse.SAY["glitch"][s["lang"]]
         s["history"].append(("Saathi", reply))
+    tasks.add_task(_store_session, s)
+    if s.get("study"):
+        tasks.add_task(_save_study_quietly, s)
     return {**converse.public(s), "reply": reply}
 
 
