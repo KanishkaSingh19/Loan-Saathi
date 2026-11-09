@@ -15,6 +15,9 @@ os.environ["GEMINI_API_KEY"] = ""
 
 import converse as cv  # noqa: E402
 import server  # noqa: E402
+cv_switch = __import__("converse")
+cv_switch.ASK_HISTORY = False  # this suite's fixed answer sequences predate the history questions;
+                               # src/test_history.py tests them
 from fastapi.testclient import TestClient  # noqa: E402
 
 c = TestClient(server.app)
@@ -65,7 +68,7 @@ convo = " ".join(case["conversation"])
 assert "confirmed the profile" in convo and "monthly income" in convo and "Tried a simulation" in convo, convo
 assert any("Caller:" in line for line in case["recent"])
 assert "No advisor is notified automatically" in case["prototype_note"]
-assert {i["label"] for i in case["completeness"]} >= {"Monthly income", "Credit history unavailable"}
+assert {i["label"] for i in case["completeness"]} >= {"Monthly income", "Credit bureau report unavailable"}
 print("ok - voice handoff saves a full advisor case (profile, request, risk, affordability, simulation, question)")
 
 # ---- from the dashboard button, for a saved pre-screen, with the on-screen simulation ----

@@ -65,7 +65,9 @@ if __name__ == "__main__":
 import server  # noqa: E402
 
 base = {"loan_amount": "1 lakh", "monthly_income": "40 hazaar", "work": "bus driver", "years_in_work": "2",
-        "other_loans_count": "4", "other_loans_emi": "15000", "housing": "rented", "age": "42"}
+        "other_loans_count": "4", "other_loans_emi": "15000", "housing": "rented", "age": "42",
+        # a complete, clean repayment history (the model is cautious about unanswered history)
+        "past_loans": "5", "ever_refused": "no", "ever_late": "no", "overdue_now": "no"}
 r, _ = server.decide(server.build_applicant({**base, "other_loans_outstanding": "36,51,000"}))
 assert r["decision"] == "not_eligible_now" and r["policy_rule"] == "debt_over_limit", r
 assert "more than 2 years of income" in r["reply_hint"] and "paying down existing loans" in r["tips"], r

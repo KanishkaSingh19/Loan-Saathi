@@ -17,6 +17,12 @@
     "BUREAU_ACTIVE_LOANS",
     "BUREAU_ACTIVE_DEBT",
     "DEBT_TO_INCOME",
+    "PAST_LOANS",
+    "EVER_REFUSED",
+    "EVER_LATE",
+    "LATE_LAST_YEAR",
+    "LATE_OVER_MONTH",
+    "OVERDUE_NOW",
     "NAME_CONTRACT_TYPE",
     "NAME_INCOME_TYPE",
     "NAME_EDUCATION_TYPE",
@@ -78,11 +84,16 @@
     "low": 0.05,
     "medium": 0.12
   },
-  "validation_auc": 0.687,
+  "validation_auc": 0.7113,
   "monotone_up": [
     "ANNUITY_TO_INCOME",
     "DEBT_TO_INCOME",
-    "BUREAU_ACTIVE_DEBT"
+    "BUREAU_ACTIVE_DEBT",
+    "EVER_REFUSED",
+    "EVER_LATE",
+    "LATE_LAST_YEAR",
+    "LATE_OVER_MONTH",
+    "OVERDUE_NOW"
   ],
   "calibration": null,
   "medians": {
@@ -102,7 +113,13 @@
     "INCOME_PER_PERSON": 75000.0,
     "BUREAU_ACTIVE_LOANS": 1.0,
     "BUREAU_ACTIVE_DEBT": 83128.5,
-    "DEBT_TO_INCOME": 0.5748999714851379
+    "DEBT_TO_INCOME": 0.5748999714851379,
+    "PAST_LOANS": 7.0,
+    "EVER_REFUSED": 0.0,
+    "EVER_LATE": 1.0,
+    "LATE_LAST_YEAR": 0.0,
+    "LATE_OVER_MONTH": 0.0,
+    "OVERDUE_NOW": 0.0
   },
   "modes": {
     "NAME_CONTRACT_TYPE": "Cash loans",

@@ -1,11 +1,16 @@
 {
   "model": {
-    "validation_auc": 0.687,
+    "validation_auc": 0.7113,
     "calibrated": false,
     "monotone_up": [
       "ANNUITY_TO_INCOME",
       "DEBT_TO_INCOME",
-      "BUREAU_ACTIVE_DEBT"
+      "BUREAU_ACTIVE_DEBT",
+      "EVER_REFUSED",
+      "EVER_LATE",
+      "LATE_LAST_YEAR",
+      "LATE_OVER_MONTH",
+      "OVERDUE_NOW"
     ]
   },
   "synthetic_profiles": 240,
@@ -16,22 +21,27 @@
     "end_to_end_violations": 0,
     "worst_examples": []
   },
-  "band_flip_rate_income_5pct": 0.0417,
+  "band_flip_rate_income_5pct": 0.0604,
+  "history_monotonicity": {
+    "violations": 0,
+    "checks": 960
+  },
   "band_spread": {
-    "low": 0.621,
-    "medium": 0.362,
-    "high": 0.017
+    "low": 0.533,
+    "medium": 0.438,
+    "high": 0.029
   },
   "decision_spread": {
     "counter_offer": 0.104,
-    "needs_review": 0.283,
-    "not_eligible_now": 0.017,
-    "pre_approved": 0.596
+    "needs_review": 0.35,
+    "not_eligible_now": 0.029,
+    "pre_approved": 0.517
   },
   "gates": {
     "model_debt_violation_rate": 0.02,
     "end_to_end_debt_violations": 0,
-    "band_flip_rate": 0.15
+    "band_flip_rate": 0.15,
+    "history_violations": 0
   },
   "not_measured": "Accuracy and calibration on Indian borrowers: no labelled Indian outcome data is available.",
   "gates_failed": []

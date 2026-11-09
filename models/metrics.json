@@ -3,152 +3,157 @@
   "n_valid": 61503,
   "default_rate": 0.0807,
   "voice": {
-    "auc": 0.687,
-    "trees": 744,
+    "auc": 0.7113,
+    "trees": 855,
     "monotone_up": [
       "ANNUITY_TO_INCOME",
       "DEBT_TO_INCOME",
-      "BUREAU_ACTIVE_DEBT"
+      "BUREAU_ACTIVE_DEBT",
+      "EVER_REFUSED",
+      "EVER_LATE",
+      "LATE_LAST_YEAR",
+      "LATE_OVER_MONTH",
+      "OVERDUE_NOW"
     ],
     "calibration_raw": {
-      "brier": 0.07129,
-      "ece": 0.00225,
+      "brier": 0.07027,
+      "ece": 0.00245,
       "deciles": [
         {
-          "predicted": 0.0225,
-          "actual": 0.0234
+          "predicted": 0.0176,
+          "actual": 0.019
         },
         {
-          "predicted": 0.0334,
-          "actual": 0.033
+          "predicted": 0.0279,
+          "actual": 0.0276
         },
         {
-          "predicted": 0.0414,
-          "actual": 0.0439
+          "predicted": 0.0363,
+          "actual": 0.0372
         },
         {
-          "predicted": 0.0495,
-          "actual": 0.0519
+          "predicted": 0.045,
+          "actual": 0.0446
         },
         {
-          "predicted": 0.0589,
-          "actual": 0.0603
+          "predicted": 0.0546,
+          "actual": 0.0629
         },
         {
-          "predicted": 0.0698,
-          "actual": 0.0693
+          "predicted": 0.0665,
+          "actual": 0.0688
         },
         {
-          "predicted": 0.0839,
-          "actual": 0.0842
+          "predicted": 0.0813,
+          "actual": 0.0837
         },
         {
-          "predicted": 0.1031,
-          "actual": 0.1078
+          "predicted": 0.1019,
+          "actual": 0.0966
         },
         {
-          "predicted": 0.1329,
-          "actual": 0.1285
+          "predicted": 0.135,
+          "actual": 0.1363
         },
         {
-          "predicted": 0.2099,
-          "actual": 0.205
+          "predicted": 0.2288,
+          "actual": 0.2306
         }
       ]
     },
     "calibration_kept": false,
     "calibration": {
-      "brier": 0.07129,
-      "ece": 0.00225,
+      "brier": 0.07027,
+      "ece": 0.00245,
       "deciles": [
         {
-          "predicted": 0.0225,
-          "actual": 0.0234
+          "predicted": 0.0176,
+          "actual": 0.019
         },
         {
-          "predicted": 0.0334,
-          "actual": 0.033
+          "predicted": 0.0279,
+          "actual": 0.0276
         },
         {
-          "predicted": 0.0414,
-          "actual": 0.0439
+          "predicted": 0.0363,
+          "actual": 0.0372
         },
         {
-          "predicted": 0.0495,
-          "actual": 0.0519
+          "predicted": 0.045,
+          "actual": 0.0446
         },
         {
-          "predicted": 0.0589,
-          "actual": 0.0603
+          "predicted": 0.0546,
+          "actual": 0.0629
         },
         {
-          "predicted": 0.0698,
-          "actual": 0.0693
+          "predicted": 0.0665,
+          "actual": 0.0688
         },
         {
-          "predicted": 0.0839,
-          "actual": 0.0842
+          "predicted": 0.0813,
+          "actual": 0.0837
         },
         {
-          "predicted": 0.1031,
-          "actual": 0.1078
+          "predicted": 0.1019,
+          "actual": 0.0966
         },
         {
-          "predicted": 0.1329,
-          "actual": 0.1285
+          "predicted": 0.135,
+          "actual": 0.1363
         },
         {
-          "predicted": 0.2099,
-          "actual": 0.205
+          "predicted": 0.2288,
+          "actual": 0.2306
         }
       ]
     },
     "bands": {
       "low": {
-        "share": 0.356,
-        "default_rate": 0.036
+        "share": 0.405,
+        "default_rate": 0.032
       },
       "medium": {
-        "share": 0.46,
+        "share": 0.411,
         "default_rate": 0.08
       },
       "high": {
-        "share": 0.184,
-        "default_rate": 0.17
+        "share": 0.185,
+        "default_rate": 0.188
       }
     },
     "top_features": {
-      "YEARS_EMPLOYED": 30220.0,
-      "AGE_YEARS": 23076.2,
-      "CREDIT_TO_GOODS": 21843.5,
-      "OCCUPATION_TYPE": 19017.2,
-      "AMT_GOODS_PRICE": 17912.5,
-      "AMT_CREDIT": 14481.4,
-      "CREDIT_TO_INCOME": 12892.0,
-      "BUREAU_ACTIVE_LOANS": 12649.2,
-      "ANNUITY_TO_INCOME": 10781.6,
-      "NAME_EDUCATION_TYPE": 9822.8,
-      "INCOME_PER_PERSON": 8741.6,
-      "AMT_INCOME_TOTAL": 7542.9,
-      "BUREAU_ACTIVE_DEBT": 5353.6,
-      "NAME_INCOME_TYPE": 3741.0,
-      "DEBT_TO_INCOME": 3689.6
+      "YEARS_EMPLOYED": 28165.1,
+      "AGE_YEARS": 25233.6,
+      "CREDIT_TO_GOODS": 21200.6,
+      "OCCUPATION_TYPE": 20157.2,
+      "PAST_LOANS": 18778.9,
+      "AMT_GOODS_PRICE": 17510.2,
+      "BUREAU_ACTIVE_LOANS": 14323.7,
+      "CREDIT_TO_INCOME": 12898.4,
+      "AMT_CREDIT": 12754.8,
+      "ANNUITY_TO_INCOME": 10307.8,
+      "NAME_EDUCATION_TYPE": 9534.0,
+      "LATE_LAST_YEAR": 9003.2,
+      "INCOME_PER_PERSON": 8932.3,
+      "AMT_INCOME_TOTAL": 8059.0,
+      "EVER_REFUSED": 7091.8
     },
     "previous_model": {
-      "auc": 0.6895,
-      "trees": 698,
+      "auc": 0.687,
+      "trees": 744,
       "bands": {
         "low": {
-          "share": 0.35,
-          "default_rate": 0.034
+          "share": 0.356,
+          "default_rate": 0.036
         },
         "medium": {
-          "share": 0.467,
+          "share": 0.46,
           "default_rate": 0.08
         },
         "high": {
-          "share": 0.183,
-          "default_rate": 0.171
+          "share": 0.184,
+          "default_rate": 0.17
         }
       }
     }

@@ -13,78 +13,79 @@ PERSONAS = [
     {"id": "P01", "title": "Kirana shop owner", "language": "hi",
      "card": "You run a kirana shop in Lucknow. You want ₹50,000 for 1 year to stock up before Diwali. "
              "You earn about ₹30,000 a month. You've run the shop for 15 years. No other loans. "
-             "You live in your own house. You are 45.",
+             "You live in your own house. You are 45. You've never taken a loan before.",
      "truth": {"loan_amount": 50000, "tenure_months": 12, "monthly_income": 30000, "years_in_work": 15,
-               "other_loans_count": 0, "housing": "own", "age": 45}},
+               "other_loans_count": 0, "housing": "own", "age": 45, "past_loans": 0, "ever_refused": 0}},
     {"id": "P02", "title": "Auto driver", "language": "hi",
      "card": "You drive an auto in Pune. You want ₹1.5 lakh over 2 years for a new auto. You earn about "
              "₹25,000 a month. Driving for 6 years. One running loan: EMI ₹3,000, ₹40,000 still owed. "
-             "You live on rent. You are 32.",
+             "You live on rent. You are 32. You've taken 2 loans in all (one is running). Never refused, never late.",
      "truth": {"loan_amount": 150000, "tenure_months": 24, "monthly_income": 25000, "years_in_work": 6,
                "other_loans_count": 1, "other_loans_emi": 3000, "other_loans_outstanding": 40000,
-               "housing": "rent", "age": 32}},
+               "housing": "rent", "age": 32, "past_loans": 2, "ever_refused": 0, "ever_late": 0, "overdue_now": 0}},
     {"id": "P03", "title": "Salaried clerk", "language": "en",
      "card": "You work as an office clerk. You want ₹3 lakh over 3 years for your sister's wedding. Salary "
              "₹40,000 a month. 8 years in the job. One loan: EMI ₹8,000, ₹1.5 lakh still owed. "
-             "You live with family. You are 29.",
+             "You live with family. You are 29. You've taken 3 loans in all. Never refused. You paid one EMI late two years ago, not in the last year, never more than a month late. Nothing overdue now.",
      "truth": {"loan_amount": 300000, "tenure_months": 36, "monthly_income": 40000, "years_in_work": 8,
                "other_loans_count": 1, "other_loans_emi": 8000, "other_loans_outstanding": 150000,
-               "housing": "family", "age": 29}},
+               "housing": "family", "age": 29, "past_loans": 3, "ever_refused": 0, "ever_late": 1, "late_last_year": 0, "late_over_month": 0, "overdue_now": 0}},
     {"id": "P04", "title": "Daily-wage worker", "language": "hi",
      "card": "You work on construction sites, about ₹700 a day, 26 days a month (about ₹18,000). You want "
              "₹30,000 for a medical bill; you don't know the tenure, let Saathi decide. 3 years of work. "
-             "No other loans. You live on rent. You are 38.",
+             "No other loans. You live on rent. You are 38. Never taken a loan.",
      "truth": {"loan_amount": 30000, "monthly_income": 18200, "years_in_work": 3, "other_loans_count": 0,
-               "housing": "rent", "age": 38}},
+               "housing": "rent", "age": 38, "past_loans": 0, "ever_refused": 0}},
     {"id": "P05", "title": "Heavy borrower", "language": "en",
      "card": "You run a small tailoring business. You want ₹1 lakh over 2 years. You earn ₹35,000 a month. "
              "10 years in business. You have 3 loans: total EMI ₹12,000, about ₹9 lakh still owed. "
-             "Own house. You are 41.",
+             "Own house. You are 41. You've taken 6 loans. One application was refused. You paid EMIs late in the last year, once over a month late, and one EMI is overdue now.",
      "truth": {"loan_amount": 100000, "tenure_months": 24, "monthly_income": 35000, "years_in_work": 10,
                "other_loans_count": 3, "other_loans_emi": 12000, "other_loans_outstanding": 900000,
-               "housing": "own", "age": 41}},
+               "housing": "own", "age": 41, "past_loans": 6, "ever_refused": 1, "ever_late": 1, "late_last_year": 1, "late_over_month": 1, "overdue_now": 1}},
     {"id": "P06", "title": "Asks too much", "language": "hi",
      "card": "You sell vegetables. You want ₹4 lakh over 2 years to buy a small shop. You earn ₹22,000 a "
-             "month. 12 years selling. No other loans. Live with family. You are 36.",
+             "month. 12 years selling. No other loans. Live with family. You are 36. Never taken a loan.",
      "truth": {"loan_amount": 400000, "tenure_months": 24, "monthly_income": 22000, "years_in_work": 12,
-               "other_loans_count": 0, "housing": "family", "age": 36}},
+               "other_loans_count": 0, "housing": "family", "age": 36, "past_loans": 0, "ever_refused": 0}},
     {"id": "P07", "title": "Nurse", "language": "en",
      "card": "You are a nurse at a private hospital. You want ₹2 lakh over 4 years for a scooter and "
-             "savings. Salary ₹45,000. 5 years in the job. No other loans. On rent. You are 27.",
+             "savings. Salary ₹45,000. 5 years in the job. No other loans. On rent. You are 27. One loan before, closed, always paid on time. Never refused.",
      "truth": {"loan_amount": 200000, "tenure_months": 48, "monthly_income": 45000, "years_in_work": 5,
-               "other_loans_count": 0, "housing": "rent", "age": 27}},
+               "other_loans_count": 0, "housing": "rent", "age": 27, "past_loans": 1, "ever_refused": 0, "ever_late": 0}},
     {"id": "P08", "title": "Retired teacher", "language": "hi",
      "card": "You are a retired school teacher with a pension of ₹28,000 a month. You want ₹75,000 over "
-             "18 months for home repairs. No other loans. Own house. You are 63.",
+             "18 months for home repairs. No other loans. Own house. You are 63. Two loans before, both closed, always on time.",
      "truth": {"loan_amount": 75000, "tenure_months": 18, "monthly_income": 28000, "other_loans_count": 0,
-               "housing": "own", "age": 63}},
+               "housing": "own", "age": 63, "past_loans": 2, "ever_refused": 0, "ever_late": 0}},
     {"id": "P09", "title": "Changes their mind (correction)", "language": "en",
      "card": "You are a delivery rider. FIRST say you earn ₹20,000 a month; when Saathi reads your details "
              "back, say your income is wrong: it's really ₹24,000. You want ₹60,000 over 1 year. 2 years "
-             "of work. No other loans. Live with family. You are 24.",
+             "of work. No other loans. Live with family. You are 24. Never taken a loan.",
      "truth": {"loan_amount": 60000, "tenure_months": 12, "monthly_income": 24000, "years_in_work": 2,
-               "other_loans_count": 0, "housing": "family", "age": 24}},
+               "other_loans_count": 0, "housing": "family", "age": 24, "past_loans": 0, "ever_refused": 0}},
     {"id": "P10", "title": "Hindi speaker (Devanagari)", "language": "hi",
      "card": "Speak in Hindi. आप सिलाई का काम करती हैं। आपको 80 हज़ार का लोन 2 साल के लिए चाहिए। "
-             "महीने की कमाई 26 हज़ार। 9 साल से काम। कोई और लोन नहीं। किराये के घर में। उम्र 34.",
+             "महीने की कमाई 26 हज़ार। 9 साल से काम। कोई और लोन नहीं। किराये के घर में। उम्र 34. पहले कभी लोन नहीं लिया।",
      "truth": {"loan_amount": 80000, "tenure_months": 24, "monthly_income": 26000, "years_in_work": 9,
-               "other_loans_count": 0, "housing": "rent", "age": 34}},
+               "other_loans_count": 0, "housing": "rent", "age": 34, "past_loans": 0, "ever_refused": 0}},
     {"id": "P11", "title": "Government peon", "language": "hi",
      "card": "You are a peon in a government office. You want dedh lakh (₹1.5 lakh) over 3 years. Salary "
              "₹32,000. 11 years in the job. One loan: EMI ₹5,000, ₹60,000 still owed. Government "
-             "quarters. You are 48.",
+             "quarters. You are 48. You've taken 2 loans (one running). Never refused, never late.",
      "truth": {"loan_amount": 150000, "tenure_months": 36, "monthly_income": 32000, "years_in_work": 11,
                "other_loans_count": 1, "other_loans_emi": 5000, "other_loans_outstanding": 60000,
-               "housing": "quarters", "age": 48}},
+               "housing": "quarters", "age": 48, "past_loans": 2, "ever_refused": 0, "ever_late": 0, "overdue_now": 0}},
     {"id": "P12", "title": "Student with part-time job", "language": "en",
      "card": "You are a college student with a part-time job earning ₹12,000 a month. You want ₹25,000 "
-             "over 1 year for a laptop. No other loans. Live with parents. You are 20.",
+             "over 1 year for a laptop. No other loans. Live with parents. You are 20. Never taken a loan; one application was refused last year.",
      "truth": {"loan_amount": 25000, "tenure_months": 12, "monthly_income": 12000, "other_loans_count": 0,
-               "housing": "family", "age": 20}},
+               "housing": "family", "age": 20, "past_loans": 0, "ever_refused": 1}},
 ]
 BY_ID = {p["id"]: p for p in PERSONAS}
 NUMERIC_TRUTH = ("loan_amount", "tenure_months", "monthly_income", "years_in_work", "other_loans_count",
-                 "other_loans_emi", "other_loans_outstanding", "age")
+                 "other_loans_emi", "other_loans_outstanding", "age", "past_loans", "ever_refused", "ever_late",
+                 "late_last_year", "late_over_month", "overdue_now")
 HOUSING_KEYS = {"own": ("own", "apna", "apne", "khud"), "rent": ("rent", "kiray", "किराय", "pg"),
                 "family": ("family", "parivaar", "parivar", "parents", "maa", "papa", "परिवार"),
                 "quarters": ("quarter", "sarkari", "government")}

@@ -1,0 +1,132 @@
+{
+  "features": [
+    "AMT_INCOME_TOTAL",
+    "AMT_CREDIT",
+    "AMT_GOODS_PRICE",
+    "CNT_CHILDREN",
+    "CNT_FAM_MEMBERS",
+    "OWNS_CAR",
+    "OWNS_REALTY",
+    "AGE_YEARS",
+    "YEARS_EMPLOYED",
+    "NOT_EMPLOYED",
+    "CREDIT_TO_INCOME",
+    "ANNUITY_TO_INCOME",
+    "CREDIT_TO_GOODS",
+    "INCOME_PER_PERSON",
+    "BUREAU_ACTIVE_LOANS",
+    "BUREAU_ACTIVE_DEBT",
+    "DEBT_TO_INCOME",
+    "PAST_LOANS",
+    "EVER_REFUSED",
+    "EVER_LATE",
+    "LATE_LAST_YEAR",
+    "LATE_OVER_MONTH",
+    "OVERDUE_NOW",
+    "NAME_CONTRACT_TYPE",
+    "NAME_INCOME_TYPE",
+    "NAME_EDUCATION_TYPE",
+    "NAME_HOUSING_TYPE",
+    "OCCUPATION_TYPE"
+  ],
+  "results": [
+    {
+      "num_leaves": 16,
+      "min_child_samples": 100,
+      "feature_fraction": 0.5,
+      "tune_auc": 0.7102,
+      "trees": 798
+    },
+    {
+      "num_leaves": 16,
+      "min_child_samples": 100,
+      "feature_fraction": 0.8,
+      "tune_auc": 0.7105,
+      "trees": 772
+    },
+    {
+      "num_leaves": 16,
+      "min_child_samples": 300,
+      "feature_fraction": 0.5,
+      "tune_auc": 0.7105,
+      "trees": 753
+    },
+    {
+      "num_leaves": 16,
+      "min_child_samples": 300,
+      "feature_fraction": 0.8,
+      "tune_auc": 0.7098,
+      "trees": 775
+    },
+    {
+      "num_leaves": 32,
+      "min_child_samples": 100,
+      "feature_fraction": 0.5,
+      "tune_auc": 0.7107,
+      "trees": 685
+    },
+    {
+      "num_leaves": 32,
+      "min_child_samples": 100,
+      "feature_fraction": 0.8,
+      "tune_auc": 0.7102,
+      "trees": 644
+    },
+    {
+      "num_leaves": 32,
+      "min_child_samples": 300,
+      "feature_fraction": 0.5,
+      "tune_auc": 0.7106,
+      "trees": 690
+    },
+    {
+      "num_leaves": 32,
+      "min_child_samples": 300,
+      "feature_fraction": 0.8,
+      "tune_auc": 0.7097,
+      "trees": 541
+    },
+    {
+      "num_leaves": 64,
+      "min_child_samples": 100,
+      "feature_fraction": 0.5,
+      "tune_auc": 0.71,
+      "trees": 535
+    },
+    {
+      "num_leaves": 64,
+      "min_child_samples": 100,
+      "feature_fraction": 0.8,
+      "tune_auc": 0.7094,
+      "trees": 534
+    },
+    {
+      "num_leaves": 64,
+      "min_child_samples": 300,
+      "feature_fraction": 0.5,
+      "tune_auc": 0.7102,
+      "trees": 320
+    },
+    {
+      "num_leaves": 64,
+      "min_child_samples": 300,
+      "feature_fraction": 0.8,
+      "tune_auc": 0.7093,
+      "trees": 373
+    }
+  ],
+  "best": {
+    "num_leaves": 32,
+    "min_child_samples": 100,
+    "feature_fraction": 0.5,
+    "tune_auc": 0.7107,
+    "trees": 685
+  },
+  "current": {
+    "num_leaves": 32,
+    "min_child_samples": 100,
+    "feature_fraction": 0.5,
+    "tune_auc": 0.7107,
+    "trees": 685
+  }
+}

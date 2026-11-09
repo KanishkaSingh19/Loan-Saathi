@@ -17,6 +17,9 @@ os.environ["GEMINI_API_KEY"] = ""
 import converse as cv  # noqa: E402
 import scoring  # noqa: E402
 import server  # noqa: E402
+cv_switch = __import__("converse")
+cv_switch.ASK_HISTORY = False  # this suite's fixed answer sequences predate the history questions;
+                               # src/test_history.py tests them
 import simulate  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 

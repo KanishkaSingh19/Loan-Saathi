@@ -16,6 +16,9 @@ os.environ["ADVISOR_WEBHOOK_URL"] = ""
 
 import converse as cv  # noqa: E402
 import server  # noqa: E402
+cv_switch = __import__("converse")
+cv_switch.ASK_HISTORY = False  # this suite's fixed answer sequences predate the history questions;
+                               # src/test_history.py tests them
 import study  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -133,9 +136,11 @@ assert c.post("/v1/converse", headers=H, json={"language": "en", "persona": "P99
 assert c.post("/v1/converse", headers=H, json={"language": "en", "persona": "P03",
                                                "participant": "bad name!"}).status_code == 422
 
+cv.ASK_HISTORY = True  # a study call asks everything on the persona card, history included
 sid = start(persona="P03", participant="T01")
 t = say(sid, "I want 3 lakh for 3 years, my salary is 40,000")
-for text in ("office clerk", "8 years", "one loan", "8,000", "1.5 lakh", "with family", "29"):
+for text in ("office clerk", "8 years", "one loan", "8,000", "1.5 lakh", "3", "no", "yes", "no", "no", "no",
+             "with family", "29"):
     t = say(sid, text)
 t = say(sid, "yes", "confirm")
 r = c.post("/v1/study/survey", headers=H, json={"session_id": sid, "ease": 4, "understood": "yes", "trust": 4,
@@ -145,10 +150,10 @@ m = r.json()["metrics"]
 assert m["persona"] == "P03" and m["participant"] == "T01" and m["reached_result"]
 assert m["final_accuracy"] == 1.0 and m["first_pass_accuracy"] == 1.0, m
 assert m["seconds_to_result"] is not None and m["seconds_to_summary"] <= m["seconds_to_result"]
-assert m["caller_turns"] == 9 and m["corrections"] == 0
+assert m["caller_turns"] == 15 and m["corrections"] == 0
 
 sid = start(persona="P09", participant="T02")                                # the correction persona
-for text in ("60,000 for 1 year", "20,000", "delivery rider", "2 years", "no", "with family", "24"):
+for text in ("60,000 for 1 year", "20,000", "delivery rider", "2 years", "no", "none", "no", "with family", "24"):
     t = say(sid, text)
 say(sid, "my income is wrong")
 t = say(sid, "24,000")

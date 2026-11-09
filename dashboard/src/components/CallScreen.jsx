@@ -12,7 +12,9 @@ import DecisionBadge from "./DecisionBadge";
 // -> Gnani Timbre (/v1/tts) -> speaker. Typing works too, for testing without speech keys.
 
 const ORDER = ["loan_amount", "tenure_months", "monthly_income", "work", "years_in_work", "other_loans_count",
-  "other_loans_emi", "other_loans_outstanding", "housing", "age"];
+  "other_loans_emi", "other_loans_outstanding", "past_loans", "ever_refused", "ever_late", "late_last_year",
+  "late_over_month", "overdue_now", "housing", "age"];
+const YES_NO = new Set(["ever_refused", "ever_late", "late_last_year", "late_over_month", "overdue_now"]);
 
 // Readable names for the server's conversation states (converse.py).
 const STATE_LABELS = {
@@ -35,12 +37,18 @@ function show(field, value) {
   if (MONEY.has(field)) return rupees.format(value);
   if (field === "years_in_work" || field === "age") return `${value} yrs`;
   if (field === "tenure_months") return `${value} months`;
+  if (YES_NO.has(field)) return value ? "Yes" : "No";
   return String(value);
 }
 
 // Mirrors converse._skip(): questions that don't apply given earlier answers.
 function notNeeded(field, answers) {
   if (field === "other_loans_emi" || field === "other_loans_outstanding") return answers.other_loans_count === 0;
+  // Mirrors the history funnel in converse._skip().
+  const neverBorrowed = answers.past_loans === 0 && !answers.other_loans_count;
+  if (field === "ever_late") return neverBorrowed;
+  if (field === "late_last_year" || field === "late_over_month") return neverBorrowed || answers.ever_late === 0;
+  if (field === "overdue_now") return answers.other_loans_count === 0 || neverBorrowed;
   if (field === "years_in_work") return /retir|student|unemploy|pension/i.test(answers.work || "");
   return false;
 }

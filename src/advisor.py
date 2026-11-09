@@ -21,6 +21,11 @@ PROFILE = [
     ("existing_emi", "other_loans_emi", "Existing EMI", "money_month"),
     ("active_loans_outstanding", "other_loans_outstanding", "Existing debt", "money"),
     ("active_loans", "other_loans_count", "Other loans running", "count"),
+    ("past_loans", "past_loans", "Loans taken before", "count"),
+    ("ever_refused", "ever_refused", "Ever refused", "yesno"),
+    ("ever_late", "ever_late", "Ever paid an EMI late", "yesno"),
+    ("late_last_year", "late_last_year", "Late in the last 12 months", "yesno"),
+    ("overdue_now", "overdue_now", "EMI overdue now", "yesno"),
 ]
 APPLICANT = [("work", "Work"), ("years_in_work", "Years in work"), ("housing", "Housing"), ("age", "Age")]
 STATE_NAMES = {
@@ -44,6 +49,8 @@ def _fmt(kind, v):
         return f"{int(n) if n == int(n) else n} years"
     if kind == "count":
         return str(int(v))
+    if kind == "yesno":
+        return "Yes" if v else "No"
     return str(v)
 
 
@@ -96,7 +103,7 @@ def build(applicant, answers=None, statuses=None, result=None, simulation=None, 
     else:
         completeness = [{"label": label, "state": "known" if answer_key in answers or a.get(akey) is not None
                          else "missing"} for akey, answer_key, label, _ in PROFILE]
-        completeness.append({"label": "Credit history unavailable", "state": "unavailable"})
+        completeness.append({"label": "Credit bureau report unavailable", "state": "unavailable"})
 
     sim = None
     if simulation and simulation.get("status") != "paused":

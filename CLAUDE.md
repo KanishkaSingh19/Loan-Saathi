@@ -30,6 +30,9 @@ python -I -X utf8 src/test_simulate.py       # what-if simulator: boundaries, sc
 python -I -X utf8 src/test_advisor.py        # advisor cases, listen summary, code-mixed speech, recovery
 python -I -X utf8 src/test_operations.py     # persistent calls, advisor notifications + case workflow, study kit
 python -I -X utf8 src/test_model.py          # debt monotonicity, interim debt floor, calibration plumbing
+python -I -X utf8 src/test_history.py        # repayment-history questions: funnel, parsing, unknowns, model effect
+python -I -X utf8 src/experiment_features.py # which askable questions add accuracy (~5 min)
+python -I -X utf8 src/tune.py                # small hyperparameter search on a tuning slice (~5 min)
 python -I -X utf8 src/validate_model.py      # behavioural validation on synthetic Indian profiles (~2 min)
 python -I -X utf8 src/study_dryrun.py --base http://127.0.0.1:8000 --key <KEY> --speech  # study dry run
 python -I -X utf8 src/test_safety.py         # product safety boundaries (wording scan, LLM can't decide...)
@@ -108,6 +111,13 @@ After any retrain run `python -I -X utf8 -W ignore src/validate_model.py --stric
   returned 2xx. Cases move open -> in_review -> closed (`PATCH /v1/advisor-cases/{id}`, name required).
 - User study (`STUDY.md`, `src/study.py`): dashboard `?study=1`; persona cards give ground truth;
   `/v1/study/*` routes; synthetic dry runs are reported separately and never mixed with participants.
+- Repayment history (`features.HISTORY_FEATURES`, +0.02 AUC): six short questions asked as a funnel
+  (`converse._skip`): first-time borrowers hear only "how many loans before?" and "ever refused?".
+  "Don't know" is skipped and stays None/NaN (training blanks 10% of answers so the model has a
+  learned unknown branch): never turn an unknown into "no". The flags are monotone (a "yes" never
+  lowers risk). `scoring` uses the trained model's own `meta["features"]`, so older models keep working.
+  Older suites set `converse.ASK_HISTORY = False` to keep their fixed answer sequences; `test_history.py`
+  covers the questions.
 - `DEMO.md`: the 2-minute demo path and what to do if something fails on stage.
 - `src/advisor.py`: advisor cases (`POST/GET /v1/advisor-cases`, table `advisor_cases`), built only
   from session/prescreen data; voice handoff in `converse._handoff` saves one. Prototype: nobody is

@@ -111,6 +111,15 @@ def main():
                     t = say(sid, hear(answers[p["field"]], persona["language"]))
             else:
                 line = answers.get(t["asking"])
+                truth = persona["truth"].get(t["asking"])
+                hi = persona["language"] == "hi"
+                if line is None and truth is not None and t["asking"] in ("ever_refused", "ever_late", "late_last_year",
+                                                                          "late_over_month", "overdue_now"):
+                    line = ("haan" if truth else "nahi") if hi else ("yes" if truth else "no")
+                elif line is None and t["asking"] == "past_loans" and truth == 0:
+                    line = "koi nahi, pehli baar hai" if hi else "none, this is my first loan"
+                elif line is None and truth is not None:  # asked again: a person repeats the number on their card
+                    line = f"{truth:,}" if t["asking"] != "tenure_months" else f"{truth} months"
                 if line is None:  # the persona card doesn't cover it: an honest "don't know"
                     line = "pata nahi" if persona["language"] == "hi" else "I don't know"
                 t = say(sid, hear(line, persona["language"]))

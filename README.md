@@ -147,10 +147,30 @@ npm run typecheck   # TypeScript over the JS/JSX (checkJs)
 | Model | Features | Validation AUC |
 |---|---|---|
 | Full benchmark (credit bureau, payment history…) | 170 | **0.789** |
-| **Voice model** (only what a caller can say) | 22 | **0.687** |
+| **Voice model** (only what a caller can say) | 28 | **0.711** |
 
 The gap is the real cost of asking questions instead of pulling bureau data. The voice model still
-separates people well. On held-out data the low band defaults 3.6% of the time, medium 8.0% and high 17.0%.
+separates people well. On held-out data the low band defaults 3.2% of the time, medium 8.0% and high 18.8%.
+
+### Better questions, not a bigger algorithm
+The voice model's ceiling is what a caller can tell us, so accuracy came from asking about **repayment
+history** in six short questions (`src/experiment_features.py` measured each on the same split):
+
+| Question | AUC gain alone |
+|---|---|
+| In the last 12 months, did you pay any EMI late? | +0.0086 |
+| How many loans have you taken, closed ones included? | +0.0078 |
+| Have you ever paid an EMI late? | +0.0043 |
+| Has a loan application of yours ever been refused? | +0.0042 |
+| Ever more than a month late? / Is an EMI overdue now? | about +0.001 each |
+| **All six together** | **+0.0204** |
+
+The retrained model went from AUC **0.6870 to 0.7113**. A small hyperparameter search (`src/tune.py`, 12
+settings) moved AUC by at most 0.0014 and confirmed the existing settings. On the call they're a funnel:
+a first-time borrower hears only two of them. "Don't know" stays unknown (training blanks 10% of answers
+so the model learns that case) and is scored a little more cautiously than a clean history, never as "no".
+Every "yes" can only raise risk (monotone constraints; 0 of 960 synthetic checks failed). Answers are
+self-reported, so real-world gains will be smaller than these dataset gains.
 
 Decisions made along the way:
 - **Fairness:** gender and marital status are never used. Age is used by the model but never

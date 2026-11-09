@@ -16,7 +16,11 @@ from sklearn.metrics import brier_score_loss, roc_auc_score
 from sklearn.model_selection import train_test_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from features import ROOT, VOICE_CATEGORICAL, VOICE_FEATURES, VOICE_MONOTONE_UP, build_dataset  # noqa: E402
+from features import (  # noqa: E402
+    HISTORY_FEATURES, ROOT, VOICE_CATEGORICAL, VOICE_FEATURES, VOICE_MONOTONE_UP, build_dataset,
+)
+
+MISSING_RATE = 0.10  # share of history answers blanked in training, so "didn't answer" is learned
 
 MODEL_DIR = ROOT / "models"
 SEED = 42
@@ -116,7 +120,14 @@ def main(voice_only=False):
                "default_rate": round(float(y.mean()), 4)}
 
     # ---- Voice-only model: what the live agent uses ----
-    Xv = train[VOICE_FEATURES]
+    Xv = train[VOICE_FEATURES].copy()
+    # Callers can skip or not know a history answer. Blank a random 10% in the rows the model learns
+    # from (fit + calibration) so it has a learned "not answered" branch; validation stays as recorded.
+    rng = np.random.default_rng(SEED)
+    learn_rows = np.concatenate([idx_fit, idx_cal])
+    for c in HISTORY_FEATURES:
+        blank = learn_rows[rng.random(len(learn_rows)) < MISSING_RATE]
+        Xv.iloc[blank, Xv.columns.get_loc(c)] = np.nan
     voice_params = {
         **PARAMS,
         "monotone_constraints": [1 if c in VOICE_MONOTONE_UP else 0 for c in VOICE_FEATURES],
@@ -133,7 +144,7 @@ def main(voice_only=False):
         log(f"Calibration not kept: ECE {raw_rep['ece']} raw vs {cal_rep['ece']} calibrated")
         calibration, pv = None, pv_raw
     auc_v = roc_auc_score(y[idx_va], pv)
-    log(f"voice-only: held-out AUC {auc_v:.4f} (calibrated), Brier {brier_score_loss(y[idx_va], pv):.5f}")
+    log(f"voice-only: held-out AUC {auc_v:.4f} ({'calibrated' if calibration else 'raw'}), Brier {brier_score_loss(y[idx_va], pv):.5f}")
     voice.save_model(str(MODEL_DIR / "voice_model.txt"), num_iteration=voice.best_iteration)
     meta = {
         "features": VOICE_FEATURES,

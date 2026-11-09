@@ -18,6 +18,9 @@ os.environ["GEMINI_API_KEY"] = ""
 import converse as cv  # noqa: E402
 import normalize as norm  # noqa: E402
 import server  # noqa: E402
+cv_switch = __import__("converse")
+cv_switch.ASK_HISTORY = False  # this suite's fixed answer sequences predate the history questions;
+                               # src/test_history.py tests them
 from fastapi.testclient import TestClient  # noqa: E402
 
 c = TestClient(server.app)
@@ -427,6 +430,15 @@ t = say(sid, "किराए पे")
 assert t["asking"] == "age" and norm.housing(t["answers"]["housing"])[0] == "Rented apartment", t
 assert norm.housing("किराए का कमरा")[0] == "Rented apartment" and norm.housing("परिवार के साथ")[0] == "With parents"
 assert norm.housing("अपना घर")[1] is True and norm.boolean("नहीं") is False and norm.boolean("हाँ") is True
+# Second dry run: Prisma drops all punctuation in Hindi; each amount must go to the field named next to it,
+# and "salary" is not a tenure ("sal").
+cands = dict((k, v) for k, v, _ in cv.fallback_candidates(
+    "मुझे डेढ़ लाख चाहिए 2 साल के लिए नई ऑटो के लिए कमाई 25,000 महीना", "loan_amount"))
+assert norm.number(cands["loan_amount"]) == 150000 and norm.number(cands["monthly_income"]) == 25000, cands
+assert norm.months(cands["tenure_months"]) == 24
+cands = dict((k, v) for k, v, _ in cv.fallback_candidates("2 lakh loan 40,000 salary", "loan_amount"))
+assert norm.number(cands["monthly_income"]) == 40000, cands
+assert not cv.TENURE_PHRASE.search("my salary is 40,000")
 ok("live-run regressions: spoken halves, tenure numbers, language drift, wide quotes, early corrections, "
    "multi-field fallback, what-if at the summary, plain retry")
 

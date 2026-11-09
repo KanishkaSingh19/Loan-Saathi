@@ -42,7 +42,10 @@ WORK = [("Commercial associate", None, "kirana shop"), ("Working", "Drivers", "a
         ("Pensioner", None, "retired")]
 HOUSING = ["House / apartment", "Rented apartment", "With parents"]
 INCOMES = [8000, 12000, 15000, 20000, 25000, 30000, 40000, 60000, 100000, 150000]
-GATES = {"model_debt_violation_rate": 0.02, "end_to_end_debt_violations": 0, "band_flip_rate": 0.15}
+GATES = {"model_debt_violation_rate": 0.02, "end_to_end_debt_violations": 0, "band_flip_rate": 0.15,
+         "history_violations": 0}
+BAD_HISTORY = {"ever_refused": {"ever_refused": 1}, "late_last_year": {"ever_late": 1, "late_last_year": 1},
+               "late_over_month": {"ever_late": 1, "late_over_month": 1}, "overdue_now": {"overdue_now": 1}}
 
 
 def profiles(n=240, seed=SEED):
@@ -123,7 +126,20 @@ def main(strict=False):
             total += 1
             flips += scoring.score(b, n_reasons=0)["band"] != r["band"]
 
+    # 6. A "yes" to a bad-history question must never lower the risk (only for models that use history).
     _, meta = scoring._load()
+    hist_viol = hist_checks = 0
+    if "EVER_LATE" in meta["features"]:
+        for p in people:
+            a = {**clean(p), "past_loans": max(2, p.get("active_loans") or 0), "ever_refused": 0, "ever_late": 0,
+                 "late_last_year": 0, "late_over_month": 0, "overdue_now": 0}
+            if not a.get("active_loans"):
+                a["active_loans"] = 1
+            base_p = scoring.score(a, n_reasons=0)["default_probability"]
+            for change in BAD_HISTORY.values():
+                hist_checks += 1
+                hist_viol += scoring.score({**a, **change}, n_reasons=0)["default_probability"] < base_p - 1e-6
+
     report = {
         "model": {"validation_auc": meta.get("validation_auc"), "calibrated": bool(meta.get("calibration")),
                   "monotone_up": meta.get("monotone_up", ["ANNUITY_TO_INCOME", "DEBT_TO_INCOME"])},
@@ -135,6 +151,7 @@ def main(strict=False):
             "worst_examples": worst[:5],
         },
         "band_flip_rate_income_5pct": round(flips / total, 4),
+        "history_monotonicity": {"violations": hist_viol, "checks": hist_checks},
         "band_spread": {k: round(v / len(people), 3) for k, v in bands.items()},
         "decision_spread": {k: round(v / len(people), 3) for k, v in sorted(decisions.items())},
         "gates": GATES,
@@ -147,6 +164,8 @@ def main(strict=False):
         failed.append("decision improves as debt rises")
     if report["band_flip_rate_income_5pct"] > GATES["band_flip_rate"]:
         failed.append("bands unstable under ±5% income")
+    if hist_viol > GATES["history_violations"]:
+        failed.append("a bad repayment history lowers risk")
     report["gates_failed"] = failed
     OUT.write_text(json.dumps(report, indent=2, ensure_ascii=False))
 
@@ -161,6 +180,8 @@ def main(strict=False):
     print(f"2. Final decision improves as debt rises: {d['end_to_end_violations']} cases")
     print(f"4. Band flips under ±5% income: {report['band_flip_rate_income_5pct']:.1%}")
     print(f"5. Bands: {report['band_spread']}   Decisions: {report['decision_spread']}")
+    if hist_checks:
+        print(f"6. A bad-history 'yes' lowers risk: {hist_viol}/{hist_checks} checks")
     print(f"Not measured: {report['not_measured']}")
     print("Gates failed: " + (", ".join(failed) if failed else "none") + f"   (report: {OUT.relative_to(ROOT)})")
     if strict and failed:

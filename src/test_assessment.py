@@ -20,6 +20,7 @@ import assessment as asm  # noqa: E402
 import converse as cv  # noqa: E402
 import scoring  # noqa: E402
 import server  # noqa: E402
+cv.ASK_HISTORY = False  # fixed answer sequences predate the history questions; see test_history.py
 from fastapi.testclient import TestClient  # noqa: E402
 
 c = TestClient(server.app)
@@ -116,7 +117,7 @@ _, _, a = run(KIRANA)
 labels = {i["label"]: i["state"] for i in a["completeness"]}
 for k in ("Monthly income", "Requested loan", "Existing EMI", "Existing debt", "Tenure"):
     assert labels[k] == "known", (k, labels)
-for k in ("Credit history unavailable", "Income proof unavailable", "Employment verification unavailable"):
+for k in ("Credit bureau report unavailable", "Income proof unavailable", "Employment verification unavailable"):
     assert labels[k] == "unavailable", (k, labels)
 assert "score" not in json.dumps(a["completeness"]).lower()
 labels = {i["label"]: i for i in run(no_tenure)[2]["completeness"]}

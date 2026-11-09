@@ -1,0 +1,64 @@
+{
+  "questions": {
+    "PAST_LOANS": "Including closed ones, how many loans have you ever taken?",
+    "EVER_REFUSED": "Has a loan application of yours ever been refused?",
+    "EVER_LATE": "Have you ever paid an EMI late?",
+    "LATE_LAST_YEAR": "In the last 12 months, did you pay any EMI late?",
+    "LATE_OVER_MONTH": "Have you ever been more than a month late on an EMI?",
+    "OVERDUE_NOW": "Is any EMI overdue right now?"
+  },
+  "prevalence": {
+    "EVER_REFUSED": 0.326,
+    "EVER_LATE": 0.504,
+    "LATE_LAST_YEAR": 0.202,
+    "LATE_OVER_MONTH": 0.062,
+    "OVERDUE_NOW": 0.012
+  },
+  "default_rate_if_yes": {
+    "EVER_REFUSED": 0.103,
+    "EVER_LATE": 0.094,
+    "LATE_LAST_YEAR": 0.118,
+    "LATE_OVER_MONTH": 0.107,
+    "OVERDUE_NOW": 0.158
+  },
+  "baseline": 0.6885,
+  "single": {
+    "PAST_LOANS": {
+      "auc": 0.6963,
+      "gain": 0.0078
+    },
+    "EVER_REFUSED": {
+      "auc": 0.6927,
+      "gain": 0.0042
+    },
+    "EVER_LATE": {
+      "auc": 0.6928,
+      "gain": 0.0043
+    },
+    "LATE_LAST_YEAR": {
+      "auc": 0.6971,
+      "gain": 0.0086
+    },
+    "LATE_OVER_MONTH": {
+      "auc": 0.6899,
+      "gain": 0.0014
+    },
+    "OVERDUE_NOW": {
+      "auc": 0.6894,
+      "gain": 0.0009
+    }
+  },
+  "all": {
+    "auc": 0.7089,
+    "gain": 0.0204
+  },
+  "top3": {
+    "features": [
+      "LATE_LAST_YEAR",
+      "PAST_LOANS",
+      "EVER_LATE"
+    ],
+    "auc": 0.7044,
+    "gain": 0.0159
+  }
+}

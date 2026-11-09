@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from features import EMPLOYED_SENTINEL, VOICE_CATEGORICAL, VOICE_FEATURES, add_debt_ratio, add_derived
+from features import EMPLOYED_SENTINEL, VOICE_CATEGORICAL, add_debt_ratio, add_derived
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 ANNUAL_RATE = 0.18  # assumed interest when we have to estimate an EMI
@@ -67,6 +67,12 @@ LABELS = {
     "BUREAU_ACTIVE_LOANS": "other loans running now",
     "BUREAU_ACTIVE_DEBT": "amount owed on other loans",
     "DEBT_TO_INCOME": "existing debt compared to income",
+    "PAST_LOANS": "loans taken before",
+    "EVER_REFUSED": "an earlier loan refusal",
+    "EVER_LATE": "late EMIs before",
+    "LATE_LAST_YEAR": "late EMIs in the last year",
+    "LATE_OVER_MONTH": "EMIs over a month late",
+    "OVERDUE_NOW": "an EMI overdue now",
     "NAME_CONTRACT_TYPE": "type of loan",
     "NAME_INCOME_TYPE": "source of income",
     "NAME_EDUCATION_TYPE": "education",
@@ -79,6 +85,7 @@ LABELS = {
 # decisions (safer people got bigger loans), so "your big loan lowers your risk"
 # would be true of the model but misleading advice. They stay in all_factors.
 SPOKEN = {
+    "PAST_LOANS", "EVER_REFUSED", "EVER_LATE", "LATE_LAST_YEAR", "LATE_OVER_MONTH", "OVERDUE_NOW",
     "ANNUITY_TO_INCOME", "DEBT_TO_INCOME", "BUREAU_ACTIVE_DEBT", "BUREAU_ACTIVE_LOANS",
     "YEARS_EMPLOYED", "NOT_EMPLOYED", "OWNS_REALTY", "OWNS_CAR", "AGE_YEARS",
     "NAME_INCOME_TYPE", "NAME_HOUSING_TYPE",
@@ -165,6 +172,13 @@ def _to_row(a):
         "DAYS_EMPLOYED": EMPLOYED_SENTINEL if yrs is None and "years_employed" in a else (-yrs * 365.25 if yrs is not None else np.nan),
         "BUREAU_ACTIVE_LOANS": a.get("active_loans", 0),
         "BUREAU_ACTIVE_DEBT": (a.get("active_loans_outstanding") or 0) * k,
+        # Repayment history (models trained with features.HISTORY_FEATURES); None = not answered.
+        "PAST_LOANS": _num_or_nan(a.get("past_loans")),
+        "EVER_REFUSED": _num_or_nan(a.get("ever_refused")),
+        "EVER_LATE": _num_or_nan(a.get("ever_late")),
+        "LATE_LAST_YEAR": _num_or_nan(a.get("late_last_year")),
+        "LATE_OVER_MONTH": _num_or_nan(a.get("late_over_month")),
+        "OVERDUE_NOW": _num_or_nan(a.get("overdue_now")),
     }
     df = add_debt_ratio(add_derived(pd.DataFrame([raw])))
     for field, col in FIELD_TO_COLUMN.items():
@@ -174,10 +188,17 @@ def _to_row(a):
             warnings.append(f"{field}={val!r} is not a known value; treated as unknown")
             val = None
         df[col] = pd.Categorical([val], categories=cats)
-    for c in VOICE_FEATURES:
+    feats = meta["features"]  # whatever the trained model uses, so older models keep working
+    for c in feats:
         if c not in VOICE_CATEGORICAL:
             df[c] = df[c].astype("float64")
-    return df[VOICE_FEATURES], warnings
+    return df[feats], warnings
+
+
+def _num_or_nan(v):
+    if v is None:
+        return np.nan
+    return float(v)
 
 
 def band_of(p):
@@ -233,18 +254,19 @@ def score(applicant, n_reasons=3, min_impact=0.003):
     p_debt_floor = _debt_floor(applicant, model) if "BUREAU_ACTIVE_DEBT" not in meta.get("monotone_up", []) else p
 
     typical = {**meta["medians"], **meta["modes"]}
-    variants = pd.concat([X] * len(VOICE_FEATURES), ignore_index=True)
-    for i, col in enumerate(VOICE_FEATURES):
+    feats = meta["features"]
+    variants = pd.concat([X] * len(feats), ignore_index=True)
+    for i, col in enumerate(feats):
         if col in VOICE_CATEGORICAL:
             variants[col] = variants[col].astype(object)
         variants.loc[i, col] = typical[col]
     for col in VOICE_CATEGORICAL:
         variants[col] = pd.Categorical(variants[col], categories=meta["categorical"][col])
-    p_typical = _calibrate(model.predict(variants[VOICE_FEATURES]))
+    p_typical = _calibrate(model.predict(variants[feats]))
 
     row = X.iloc[0]
     items = []
-    for col, pt in zip(VOICE_FEATURES, p_typical):
+    for col, pt in zip(feats, p_typical):
         v = row[col]
         if pd.isna(v):
             continue  # nothing said about it, so nothing to explain

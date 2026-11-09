@@ -181,7 +181,7 @@ def boolean(v):
         return True
     if s in ("0", "false", "no", "n", "nahi", "nahin", "na", "nai", "illa", "none", "नहीं", "नही", "ना"):
         return False
-    if any(w in s for w in ("nahi", "nahin", "no ", "not", "don't", "dont", "नहीं", "नही")):
+    if any(w in s for w in ("nahi", "nahin", "no ", "not", "don't", "dont", "never", "नहीं", "नही", "कभी नहीं")):
         return False
     if any(w in s for w in ("haan", "yes", "hai", "own", "हाँ", "हां", "है")):
         return True

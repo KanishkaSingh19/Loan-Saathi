@@ -215,6 +215,13 @@ def _reason_text(item, direction):
         "NAME_INCOME_TYPE": (None, "a stable source of income"),
         "NAME_HOUSING_TYPE": (None, "stable housing"),
         "AGE_YEARS": (None, None),  # never tell someone their age counts against them
+        "PAST_LOANS": ("there are no earlier loans to show a repayment record" if v in ("0", "0.0") else None,
+                       "earlier loans give a repayment record"),
+        "EVER_REFUSED": ("an earlier loan application was refused", None),
+        "EVER_LATE": ("an EMI was paid late before", "EMIs have been paid on time"),
+        "LATE_LAST_YEAR": ("an EMI was paid late in the last 12 months", "no late EMIs in the last 12 months"),
+        "LATE_OVER_MONTH": ("an EMI was once more than a month late", None),
+        "OVERDUE_NOW": ("an EMI is overdue right now", None),
     }
     pair = phrases.get(f)
     return None if pair is None else pair[0 if up else 1]
@@ -227,6 +234,10 @@ _TIPS = {
     "BUREAU_ACTIVE_LOANS": "starting with a small loan and repaying on time, to build a loan history",
     "YEARS_EMPLOYED": "applying again after more time in the current work",
     "NOT_EMPLOYED": "showing a regular income source",
+    "EVER_LATE": "paying every EMI on time for a few months",
+    "LATE_LAST_YEAR": "paying every EMI on time for a few months",
+    "LATE_OVER_MONTH": "paying every EMI on time for a few months",
+    "OVERDUE_NOW": "clearing the overdue EMI first",
 }
 
 
@@ -266,6 +277,24 @@ def build_applicant(body):
     if a["active_loans"] == 0:
         a["active_loans_outstanding"] = a["active_loans_outstanding"] or 0
         a["existing_emi"] = a["existing_emi"] or 0
+    # Repayment history (features.HISTORY_FEATURES). Unknown stays None (model: "not answered").
+    past = norm.number(body.get("past_loans"))
+    if past is None and (norm.boolean(body.get("past_loans")) is False):
+        past = 0
+    if past is not None and a.get("active_loans"):
+        past = max(past, a["active_loans"])  # running loans are loans taken
+    a["past_loans"] = past
+    for key in ("ever_refused", "ever_late", "late_last_year", "late_over_month", "overdue_now"):
+        b = norm.boolean(body.get(key))
+        a[key] = None if b is None else int(b)
+    if past == 0 and not a.get("active_loans"):  # never borrowed: can't have been late or overdue
+        for key in ("ever_late", "late_last_year", "late_over_month", "overdue_now"):
+            a[key] = 0
+    if a.get("ever_late") == 0:
+        a["late_last_year"] = a["late_last_year"] if a["late_last_year"] is not None else 0
+        a["late_over_month"] = a["late_over_month"] if a["late_over_month"] is not None else 0
+    if a.get("active_loans") == 0 and a.get("overdue_now") is None:
+        a["overdue_now"] = 0
     return {k: v for k, v in a.items() if v is not None or k == "years_employed"}
 
 

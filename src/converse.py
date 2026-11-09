@@ -118,6 +118,22 @@ FIELDS = [
     {"key": "other_loans_outstanding",
      "en": "And how much do you still owe in total on those loans?",
      "hi": "Aur un loans par abhi kul kitna chukana baaki hai?"},
+    # Repayment history (features.HISTORY_FEATURES, +0.02 AUC). First-time borrowers hear only two of these.
+    {"key": "past_loans",
+     "en": "Including closed ones, how many loans have you taken in your life? Say 'none' if this is your first.",
+     "hi": "Ab tak kul kitne loan liye hain, band ho chuke bhi milakar? Pehli baar hai toh 'koi nahi' boliye."},
+    {"key": "ever_refused",
+     "en": "Has a loan application of yours ever been refused?",
+     "hi": "Kya kabhi aapki koi loan application reject hui hai?"},
+    {"key": "ever_late",
+     "en": "Have you ever paid an EMI late?", "hi": "Kya aapne kabhi koi EMI der se bhari hai?"},
+    {"key": "late_last_year",
+     "en": "Was any EMI late in the last 12 months?", "hi": "Kya pichhle 12 mahine mein koi EMI late hui?"},
+    {"key": "late_over_month",
+     "en": "Were you ever more than a month late on an EMI?",
+     "hi": "Kya kabhi koi EMI ek mahine se zyada late hui?"},
+    {"key": "overdue_now",
+     "en": "Is any EMI overdue right now?", "hi": "Kya abhi koi EMI overdue hai, yaani bharni baaki reh gayi hai?"},
     {"key": "housing",
      "en": "Do you live in your own house, on rent, or with family?",
      "hi": "Aap apne ghar mein rehte hain, kiraye pe, ya parivaar ke saath?"},
@@ -128,7 +144,10 @@ BY_KEY = {f["key"]: f for f in FIELDS}
 EXTRA = ()  # kept for compatibility: every captured field is now asked for
 REQUIRED = tuple(f["key"] for f in FIELDS if f.get("need"))
 MONEY = ("loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding")
-NUMERIC = MONEY + ("tenure_months", "other_loans_count", "years_in_work", "age")
+NUMERIC = MONEY + ("tenure_months", "other_loans_count", "years_in_work", "age", "past_loans")
+HISTORY_FLAGS = ("ever_refused", "ever_late", "late_last_year", "late_over_month", "overdue_now")
+HISTORY = ("past_loans",) + HISTORY_FLAGS
+FIRST_TIME = re.compile(r"\b(none|never|first|pehli baar|pehla|koi nahi|kabhi nahi|zero)\b|पहली बार|कोई नहीं", re.I)
 CRITICAL = MONEY + ("tenure_months", "other_loans_count")  # the financial profile spoken back
 SUMMABLE = ("monthly_income", "other_loans_emi", "other_loans_outstanding")  # "both" can mean a total
 DEFAULT_TENURE = 24
@@ -147,16 +166,24 @@ LABELS = {
     "en": {"loan_amount": "requested loan", "tenure_months": "repayment period",
            "monthly_income": "monthly income", "work": "work", "years_in_work": "years in work",
            "other_loans_count": "number of other loans", "other_loans_emi": "existing EMI",
-           "other_loans_outstanding": "existing debt", "housing": "housing", "age": "age"},
+           "other_loans_outstanding": "existing debt", "housing": "housing", "age": "age",
+           "past_loans": "number of past loans", "ever_refused": "earlier refusals",
+           "ever_late": "late EMIs", "late_last_year": "late EMIs in the last year",
+           "late_over_month": "EMIs over a month late", "overdue_now": "overdue EMIs"},
     "hi": {"loan_amount": "loan ki rakam", "tenure_months": "chukane ka samay",
            "monthly_income": "mahine ki kamaai", "work": "kaam", "years_in_work": "kaam ke saal",
            "other_loans_count": "chal rahe loans ki ginti", "other_loans_emi": "maujooda EMI",
-           "other_loans_outstanding": "baaki loan", "housing": "ghar", "age": "umar"},
+           "other_loans_outstanding": "baaki loan", "housing": "ghar", "age": "umar",
+           "past_loans": "pichhle loans ki ginti", "ever_refused": "pehle reject hui application",
+           "ever_late": "late EMI", "late_last_year": "pichhle saal late EMI",
+           "late_over_month": "mahine se zyada late EMI", "overdue_now": "overdue EMI"},
 }
 TITLES = {"loan_amount": "Requested loan", "tenure_months": "Tenure", "monthly_income": "Monthly income",
           "work": "Work", "years_in_work": "Years in work", "other_loans_count": "Other loans",
           "other_loans_emi": "Existing EMI", "other_loans_outstanding": "Existing debt",
-          "housing": "Housing", "age": "Age"}
+          "housing": "Housing", "age": "Age", "past_loans": "Loans taken before", "ever_refused": "Ever refused",
+          "ever_late": "Ever paid an EMI late", "late_last_year": "Late in the last 12 months",
+          "late_over_month": "Ever over a month late", "overdue_now": "EMI overdue now"}
 
 HOUSING_WORDS = re.compile(
     r"own|apna|apne|khud|rent|kiray|family|parivaar|parivar|parents|maa|papa|ghar|house|home|flat|"
@@ -186,7 +213,7 @@ MAX_EMI = re.compile(r"(max|maximum|zyada se zyada|kitni|kitna|how much).{0,40}\
                      r"(afford|max|maximum|kitni|kitna|bhar sakta|bhar sakti)|afford", re.I)
 LOW_EMI = re.compile(r"\bemi\b.{0,25}\b(kam|less|lower|low|chhoti|kum)\b|\b(kam|lower|less|low|chhoti)\b.{0,12}\bemi\b", re.I)
 TENURE_PHRASE = re.compile(r"((?:\d+(?:\.\d+)?|[a-zऀ-ॿ]+)\s*(?:saal|sal|years?|yrs?|varsh|baras|mahine|mahina|"
-                           r"months?|साल|महीने))", re.I)
+                           r"months?|साल|महीने)(?![a-zऀ-ॿ]))", re.I)  # not the "sal" in "salary"
 BACK = re.compile(r"\b(original|meri request|wapas|back to|reset)\b", re.I)
 
 
@@ -367,6 +394,11 @@ next, and the caller's latest words. Do two things:
      if they gave loan sizes but no monthly installment, other_loans_emi is not answered yet.
    housing: one of "own house", "rented", "with family", "government quarters".
    tenure_months: how long they want to repay, in months ("2 saal" -> "24").
+   past_loans: how many loans they have EVER taken, closed ones included, as a number ("never" -> "0").
+   ever_refused, ever_late, late_last_year, late_over_month, overdue_now: "yes" or "no" only:
+     whether a loan application was ever refused; whether they ever paid an EMI late; late in the last
+     12 months; ever more than a month late; an EMI overdue right now. If they say they don't know,
+     leave the field out.
 
 2. REPLY: one or two short spoken sentences. Briefly acknowledge what they said, then ask
    about the NEXT field: the first one in `still_needed` (it is in order) that the caller has not
@@ -483,6 +515,14 @@ def valid(key, value):
     if key == "tenure_months":
         n = norm.months(v)
         return n if n and 3 <= n <= 120 else None
+    if key == "past_loans":
+        n = norm.number(v)
+        if n is None and (FIRST_TIME.search(v) or norm.boolean(v) is False):
+            n = 0
+        return int(n) if n is not None and 0 <= n <= 50 else None
+    if key in HISTORY_FLAGS:
+        b = norm.boolean(v)
+        return None if b is None else int(b)
     return None
 
 
@@ -566,8 +606,10 @@ def fmt(key, v, lang="en"):
         n = round(float(v), 1)
         n = int(n) if n == int(n) else n
         return f"{n} saal" if lang == "hi" else f"{n} years"
-    if key == "other_loans_count":
+    if key in ("other_loans_count", "past_loans"):
         return str(int(v))
+    if key in HISTORY_FLAGS:
+        return ("Haan" if v else "Nahi") if lang == "hi" else ("Yes" if v else "No")
     return str(v)
 
 
@@ -585,12 +627,26 @@ def _skip(key, answers):
         return income_type in ("Pensioner", "Unemployed", "Student")
     if key in ("other_loans_emi", "other_loans_outstanding"):
         return valid("other_loans_count", answers.get("other_loans_count")) == 0
+    # The history funnel: no loans ever -> no lateness questions; "never late" -> no follow-ups;
+    # nothing running now -> nothing can be overdue.
+    never_borrowed = answers.get("past_loans") == 0 and answers.get("other_loans_count") in (0, None)
+    if key == "ever_late":
+        return never_borrowed
+    if key in ("late_last_year", "late_over_month"):
+        return never_borrowed or answers.get("ever_late") == 0
+    if key == "overdue_now":
+        return answers.get("other_loans_count") == 0 or never_borrowed
     return False
+
+
+ASK_HISTORY = True  # the repayment-history questions; older test suites switch them off to keep their flows
 
 
 def next_field(s):
     for f in FIELDS:
         k = f["key"]
+        if not ASK_HISTORY and k in HISTORY:
+            continue
         if k in s["answers"] or k in s["skipped"] or _skip(k, s["answers"]):
             continue
         return k
@@ -1074,14 +1130,43 @@ async def _extract(s, env, text, asked):
             print(f"[converse {s['id']}] Gemini failed, using fallback: {type(e).__name__}: {e}", flush=True)
     if g["used"] == "fallback" and text:
         out = fallback_candidates(text, asked)
+    elif text:
+        # Belt and braces: Gemini sometimes skips a field the caller clearly stated ("my salary is 40,000"
+        # in a dry run). Our parser fills only money/tenure fields Gemini didn't return; every value still
+        # goes through check() and the read-back.
+        have = {k for k, _, _ in out}
+        for k, raw, words in fallback_candidates(text, asked):
+            if k not in have and k not in s["answers"] and (k in MONEY or k == "tenure_months"):
+                out.append((k, raw, words))
     return out, g
 
 
 # Clause breaks for the scripted parser: punctuation, "and"/"aur"/"but" (not "one and a half"), and
 # where a new "I ..." / "main ..." / "mujhe ..." statement starts (speech-to-text drops punctuation).
-CLAUSES = re.compile(r"(?<!\d)[,.]|[,.](?!\d)|[;!?]|\b(?:and|aur|but|par)\b(?!\s+(?:a\s+)?(?:half|1/2))|"
-                     r"(?=\b(?:i|main|mujhe|meri|mera|mere|my)\b)", re.I)  # not inside "40,000" or "1.5"
+CLAUSES = re.compile(r"(?<!\d)[,.]|[,.](?!\d)|[;!?।]|\b(?:and|aur|but|par)\b(?!\s+(?:a\s+)?(?:half|1/2))|"
+                     r"(?<!\S)और(?!\S)|(?=\b(?:i|main|mujhe|meri|mera|mere|my)\b)|"
+                     r"(?=(?<!\S)(?:मुझे|मैं|मेरी|मेरा|मेरे)(?!\S))", re.I)  # not inside "40,000" or "1.5"
 LOANS_COUNT = re.compile(r"(?<![\d,.])\b(\d{1,2}|[a-z]+)\s+(?:other\s+|aur\s+)?loans?\b", re.I)
+_SCALE = r"(?:lakhs?|lacs?|k|hazaar|hazar|thousand|crores?|लाख|हज़ार|हजार|करोड़)(?![a-zऀ-ॿ])"
+AMOUNT_SPAN = re.compile(r"₹?\s*(?:\d[\d,]*(?:\.\d+)?(?:\s*" + _SCALE + r")?|[a-zऀ-ॿ]+\s+" + _SCALE + r")", re.I)
+
+
+def _segments(clause):
+    """Split a clause with several amounts so each piece holds one amount and the words right after it
+    ("मुझे 50,000 का लोन चाहिए ... महीने में 30,000 कमाता हूँ" -> loan piece, income piece). Speech-to-text
+    often drops every comma, so clause breaks alone can't separate them."""
+    spans = [m for m in AMOUNT_SPAN.finditer(clause) if norm.number(m.group()) and norm.number(m.group()) >= 1000]
+    if len(spans) < 2:
+        return [clause]
+    out, start = [], 0
+    for i, m in enumerate(spans):
+        stop = spans[i + 1].start() if i + 1 < len(spans) else len(clause)
+        after = clause[m.end():stop].split()
+        end = m.end() + len(" ".join(after[:3])) + (1 if after else 0) if i + 1 < len(spans) else len(clause)
+        end = min(end, stop)
+        out.append(clause[start:end])
+        start = end
+    return [p for p in out if p.strip()]
 
 
 def fallback_candidates(text, asked):
@@ -1093,7 +1178,7 @@ def fallback_candidates(text, asked):
     the question we asked. Every value still goes through check() and the read-back like any other.
     """
     found, leftover = {}, []
-    for clause in CLAUSES.split(text):
+    for clause in (piece for c0 in CLAUSES.split(text) for piece in _segments(c0 or "")):
         c = (clause or "").strip()
         if not c:
             continue
@@ -1139,6 +1224,9 @@ async def _collecting(s, env, text, action):
 
     if asked == "tenure_months" and DONT_KNOW.search(text) and not norm.amounts(text):
         s["skipped"].add("tenure_months")  # the affordability rule picks the tenure
+        return _advance(s, env, SAY["noted"][s["lang"]])
+    if asked in HISTORY and DONT_KNOW.search(text):
+        s["skipped"].add(asked)  # unknown stays unknown: the model has a learned "not answered" branch
         return _advance(s, env, SAY["noted"][s["lang"]])
     if asked == "tenure_months" and LOW_EMI.search(text) and not norm.amounts(text):
         s["skipped"].add("tenure_months")  # "EMI kam rakhni hai": options come after the result

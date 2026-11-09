@@ -53,12 +53,30 @@ VOICE_NUMERIC = [
     "BUREAU_ACTIVE_DEBT",
     "DEBT_TO_INCOME",
 ]
+# Repayment history a caller can tell us in a few words (src/experiment_features.py: together they add
+# about +0.02 AUC). Asked as a short funnel on the call; a skipped answer is missing (NaN), never "no".
+HISTORY_FEATURES = ["PAST_LOANS", "EVER_REFUSED", "EVER_LATE", "LATE_LAST_YEAR", "LATE_OVER_MONTH", "OVERDUE_NOW"]
+HISTORY_FLAGS = HISTORY_FEATURES[1:]  # yes/no; risk can only go up with a "yes"
+VOICE_NUMERIC = VOICE_NUMERIC + HISTORY_FEATURES
 VOICE_FEATURES = VOICE_NUMERIC + VOICE_CATEGORICAL
 # Risk may only go up as these go up (keeps explanations and loan suggestions sane).
 # BUREAU_ACTIVE_DEBT was added after live testing: unconstrained, the model rated ₹36L owed on a
 # ₹40k income as *safer* than no debt (large bureau debts went with wealthier borrowers in the data).
 # BUREAU_ACTIVE_LOANS stays free on purpose: no loan history at all is a genuine risk signal.
-VOICE_MONOTONE_UP = ["ANNUITY_TO_INCOME", "DEBT_TO_INCOME", "BUREAU_ACTIVE_DEBT"]
+VOICE_MONOTONE_UP = ["ANNUITY_TO_INCOME", "DEBT_TO_INCOME", "BUREAU_ACTIVE_DEBT"] + HISTORY_FLAGS
+
+
+def add_history(df):
+    """The six history answers, as a caller would give them, from the side-table aggregates."""
+    past = (df["BUREAU_LOANS"].fillna(0) + df["PREV_APPROVED"].fillna(0)).clip(upper=20)
+    df["PAST_LOANS"] = past.astype("float32")  # every loan ever taken, closed ones too
+    df["EVER_REFUSED"] = (df["PREV_REFUSED"].fillna(0) > 0).astype("float32")
+    df["EVER_LATE"] = (df["INST_LATE_RATE"].fillna(0) > 0).astype("float32")
+    df["LATE_LAST_YEAR"] = (df["INST_RECENT_LATE_RATE"].fillna(0) > 0).astype("float32")
+    df["LATE_OVER_MONTH"] = (df["INST_DPD_MAX"].fillna(0) > 30).astype("float32")
+    df["OVERDUE_NOW"] = ((df["BUREAU_DAY_OVERDUE_MAX"].fillna(0) > 0)
+                         | (df["BUREAU_OVERDUE_SUM"].fillna(0) > 0)).astype("float32")
+    return df
 
 
 def _downcast(df):
@@ -276,6 +294,7 @@ def build_dataset(log=print):
     df["BUREAU_ACTIVE_LOANS"] = df["BUREAU_ACTIVE_LOANS"].fillna(0)
     df["BUREAU_ACTIVE_DEBT"] = df["BUREAU_ACTIVE_DEBT"].fillna(0)
     df = add_debt_ratio(df)
+    df = add_history(df)
 
     cat_cols = [c for c in df.columns if df[c].dtype == object or str(df[c].dtype) in ("str", "string")]
     for c in cat_cols:

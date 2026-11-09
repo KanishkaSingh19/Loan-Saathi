@@ -18,6 +18,12 @@ Ask naturally, in roughly this order, and skip anything the caller already said:
 7. age.
 8. other_loans_count: whether they have any other loans running now, and how many.
 9. If yes, other_loans_outstanding (how much is still left to repay) and other_loans_emi (monthly EMI on them).
+9a. past_loans: how many loans they have ever taken, closed ones included ("none" is fine).
+9b. ever_refused: whether a loan application was ever refused (yes/no).
+9c. If they have ever borrowed: ever_late (ever paid an EMI late?). Only if yes: late_last_year (in the last
+    12 months?) and late_over_month (ever more than a month late?).
+9d. If they have loans running now: overdue_now (is any EMI overdue right now?).
+    If they don't know or don't want to say, leave it empty: never fill in "no" for them.
 10. housing: whether they live in their own house, on rent, or with parents.
 11. family_members and children: how many people in the family, and how many children.
 12. education: how far they studied (it's fine if they say they didn't study).

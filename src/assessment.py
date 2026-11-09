@@ -43,7 +43,7 @@ WHY_NOTE = ("Risk factors come from patterns in past borrowers' repayment record
             "what usually went with repayment trouble, not a judgement about you. Gender and marital "
             "status are never used, and age is never given as a reason.")
 UNAVAILABLE = [
-    ("Credit history", "No credit bureau report in a pre-screening; other loans are as you told us."),
+    ("Credit bureau report", "Not checked in a pre-screening; loans and repayment history are as you told us."),
     ("Income proof", "Income is self-reported until salary slips or bank statements are checked."),
     ("Employment verification", "Work and years in work are self-reported."),
 ]
@@ -259,6 +259,9 @@ def build(applicant, risk, afford, decision, policy, model_up, model_down, check
         ("Years in work", "years_employed" in a, "" if "years_employed" in a else "Not given"),
         ("Housing", bool(a.get("housing")), "" if a.get("housing") else "Not given"),
         ("Age", a.get("age") is not None, "" if a.get("age") is not None else "Not given"),
+        ("Repayment history", a.get("past_loans") is not None or a.get("ever_late") is not None,
+         "As you told us" if a.get("past_loans") is not None or a.get("ever_late") is not None
+         else "Not given"),
     ]
     completeness = [{"label": label, "state": "known" if ok else "missing", "note": note}
                     for label, ok, note in known]
