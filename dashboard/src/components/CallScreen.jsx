@@ -217,6 +217,53 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const buttonsOn = active && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
   const verifying = call?.state === "VERIFYING_INFORMATION";
 
+  if (!call && !busy && !studyMode) {
+    return (
+      <main className="layout call-layout">
+        <section className="hero" aria-labelledby="hero-title">
+          <span className="eyebrow">Voice loan pre-screening</span>
+          <h2 id="hero-title">
+            Know what you can <em>safely</em> borrow.
+          </h2>
+          <p className="lede">
+            Talk to Saathi in Hindi, Hinglish or English. In about two minutes you&rsquo;ll see an estimate of
+            what fits your income, and why. A pre-screening, not a loan decision.
+          </p>
+          <div className="hero-actions">
+            <button type="button" className="wave-cta" onClick={begin}>
+              <span className="wave-badge" aria-hidden="true">
+                <svg viewBox="0 0 34 34">
+                  {[3, 7, 11, 15, 19, 23, 27, 31].map((x, i) => (
+                    <rect key={x} x={x - 1} width="2" rx="1" fill="#fff"
+                      y={17 - [4, 8, 13, 6, 11, 14, 7, 3][i]} height={2 * [4, 8, 13, 6, 11, 14, 7, 3][i]} />
+                  ))}
+                </svg>
+              </span>
+              Start a call
+            </button>
+            <div className="hero-langs" role="group" aria-label="Language">
+              {[["hi", "Hinglish"], ["en", "English"]].map(([id, label]) => (
+                <button key={id} type="button" aria-pressed={lang === id} onClick={() => setLang(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="toggle">
+            <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
+            Speak replies aloud
+          </label>
+          {error && <p className="call-error" role="alert">{error}</p>}
+          <ul className="hero-points">
+            <li>Reads your details back before estimating</li>
+            <li>Shows where every number comes from</li>
+            <li>Try other amounts with the what-if simulator</li>
+          </ul>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="layout call-layout">
       <section className="panel call-panel">

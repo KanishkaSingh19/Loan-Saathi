@@ -133,12 +133,20 @@ export default function App() {
               onClick={() => setView("study")}>Study</button>
           )}
         </nav>
-        {view !== "call" && (
-          <div className={`status ${status}`} role="status">
-            <span className="dot" />
-            {statusText}
-          </div>
-        )}
+        <div className="topbar-actions">
+          {view !== "call" && (
+            <div className={`status ${status}`} role="status">
+              <span className="dot" />
+              {statusText}
+            </div>
+          )}
+          <button type="button" className="btn outline" onClick={() => setView("feed")}>
+            For advisors
+          </button>
+          <button type="button" className="btn primary cta" onClick={() => setView("call")}>
+            Talk to Saathi
+          </button>
+        </div>
       </header>
 
       {view === "study" ? (
