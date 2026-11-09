@@ -184,3 +184,24 @@ h1, h2, h3, h4 { font-family: var(--font); }
 .composer input:focus, .call-controls select:focus, .mic:focus-visible,
 .btn:focus-visible, .chip:focus-visible, .feed-item:focus-visible { outline: 2px solid var(--violet-500); outline-offset: 2px; }
 .toggle input, .sim-controls input[type=range] { accent-color: var(--violet-700); }
+
+/* ---------- the pipeline: LISTEN -> EXTRACT -> ... -> HANDOFF ---------- */
+.journey-wrap { padding: 12px 18px 0; display: grid; gap: 6px; }
+.journey { padding: 0; gap: 4px; align-items: center; }
+.journey li { display: inline-flex; align-items: center; gap: 4px; border: none; background: none; padding: 0;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.journey li .arrow { color: var(--violet-400); font-weight: 400; }
+.journey li .step { padding: 4px 10px; border-radius: 999px; }
+.journey li.done { background: none; color: var(--violet-700); }
+.journey li.now { background: none; color: var(--violet-700); }
+.journey li.now .step { background: var(--violet-700); color: #fff; }
+.journey-caption { font-size: 13px; color: var(--muted); margin: 0; }
+.journey-caption b { color: var(--violet-700); }
+.stage-tag {
+  display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--violet-700); background: var(--violet-100); padding: 3px 9px; border-radius: 999px; margin-bottom: 6px;
+}
+.pipeline { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 6px 4px; font-size: 12.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.pipeline li { color: var(--violet-700); }
+.pipeline li + li::before { content: "→"; margin: 0 8px 0 4px; color: var(--violet-400); font-weight: 400; }

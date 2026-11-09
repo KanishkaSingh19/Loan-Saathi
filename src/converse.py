@@ -77,6 +77,37 @@ TRANSITIONS = {
     COMPLETED: set(),
 }
 STATES = tuple(TRANSITIONS)
+
+# The product pipeline: LISTEN -> EXTRACT -> VALIDATE -> CONFIRM -> ASSESS -> EXPLAIN -> SIMULATE -> HANDOFF.
+# Every state belongs to one stage (stage()); the call screen shows the stage, the state machine stays
+# the source of truth.
+STAGES = ("LISTEN", "EXTRACT", "VALIDATE", "CONFIRM", "ASSESS", "EXPLAIN", "SIMULATE", "HANDOFF")
+STAGE_OF = {
+    START: "LISTEN",
+    COLLECTING: "EXTRACT",          # VALIDATE while a read-back is waiting (see stage())
+    CORRECTION: "VALIDATE",         # a value is being fixed
+    VERIFYING: "CONFIRM",
+    CONFIRMED: "ASSESS", ASSESSING: "ASSESS", AFFORDABILITY: "ASSESS",
+    RESULT: "EXPLAIN",
+    WHAT_IF: "SIMULATE",
+    NEXT_STEPS: "HANDOFF", HANDOFF: "HANDOFF",
+}
+
+
+def stage(s):
+    """Which pipeline stage the call is in."""
+    st = s["state"]
+    if st == COLLECTING and s.get("pending"):
+        return "VALIDATE"   # "I heard ₹40,000, is that right?" / "which amount?"
+    if st == RECOVERY:
+        return "CONFIRM" if s.get("recover_to") == VERIFYING else "EXTRACT"
+    if st == COMPLETED:
+        if s.get("advisor_case") or any(t["to"] in (NEXT_STEPS, HANDOFF) for t in s.get("trail", [])):
+            return "HANDOFF"
+        if any(t["to"] == WHAT_IF for t in s.get("trail", [])):
+            return "SIMULATE"
+        return "EXPLAIN" if s.get("result") else "EXTRACT"
+    return STAGE_OF.get(st, "EXTRACT")
 FINISHED = (COMPLETED, HANDOFF)
 
 
@@ -838,6 +869,7 @@ def public(s):
             "buttons": buttons(s), "skipped": sorted(s["skipped"]),
             "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
             "simulation": s.get("simulation"), "advisor_case": s.get("advisor_case"),
+            "stage": stage(s),
             "trail": [f"{t['from']} -> {t['to']}" for t in s["trail"][-20:]],
             "llm": s["llm"][-1] if s["llm"] else ""}
 

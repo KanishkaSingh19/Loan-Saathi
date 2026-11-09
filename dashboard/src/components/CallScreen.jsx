@@ -5,6 +5,7 @@ import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
 import Journey from "./Journey";
+import { STAGES } from "../stages";
 import { StudySetup, StudySurvey } from "./Study";
 import DecisionBadge from "./DecisionBadge";
 
@@ -29,6 +30,7 @@ const STATE_LABELS = {
   COMPLETED: "Completed",
   ERROR_RECOVERY: "Recovering",
   HUMAN_HANDOFF: "Saved for a loan advisor",
+  WHAT_IF: "Trying options",
 };
 const MONEY = new Set(["loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding"]);
 const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
@@ -251,6 +253,11 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             Speak replies aloud
           </label>
           {error && <p className="call-error" role="alert">{error}</p>}
+          <ol className="pipeline" aria-label="How Loan-Saathi works">
+            {STAGES.map((s) => (
+              <li key={s.id} title={s.caption}>{s.label}</li>
+            ))}
+          </ol>
           <ul className="hero-points">
             <li>Reads your details back before estimating</li>
             <li>Shows where every number comes from</li>
@@ -264,7 +271,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   return (
     <main className="layout call-layout">
       <section className="panel call-panel">
-        <Journey state={call?.state} />
+        <Journey stage={call?.stage} busy={busy} />
         <div className="call-head">
           <div>
             <h2>

@@ -1,44 +1,26 @@
-// Where the applicant is in the journey: Talk → Profile → Confirm → Assessment → What-if → Next steps → Advisor.
-const STEPS = [
-  { id: "talk", label: "Talk" },
-  { id: "profile", label: "Your details" },
-  { id: "confirm", label: "Confirm" },
-  { id: "assessment", label: "Assessment" },
-  { id: "whatif", label: "What-if" },
-  { id: "next", label: "Next steps" },
-  { id: "advisor", label: "Advisor" },
-];
+import { currentStage, stageStatus } from "../stages";
 
-const STATE_STEP = {
-  START: "talk",
-  COLLECTING_PROFILE: "profile",
-  CORRECTION_REQUIRED: "confirm",
-  VERIFYING_INFORMATION: "confirm",
-  CONFIRMED: "assessment",
-  ASSESSING_RISK: "assessment",
-  CHECKING_AFFORDABILITY: "assessment",
-  SHOWING_RESULT: "assessment",
-  WHAT_IF: "whatif",
-  NEXT_STEPS: "next",
-  COMPLETED: "next",
-  HUMAN_HANDOFF: "advisor",
-  ERROR_RECOVERY: "profile",
-};
-
-export function journeyStep(state) {
-  return state ? STATE_STEP[state] || "profile" : "talk";
-}
-
-export default function Journey({ state }) {
-  const current = journeyStep(state);
-  const at = STEPS.findIndex((s) => s.id === current);
+// LISTEN -> EXTRACT -> VALIDATE -> CONFIRM -> ASSESS -> EXPLAIN -> SIMULATE -> HANDOFF, with a caption
+// for the current stage.
+export default function Journey({ stage = undefined, busy = null }) {
+  const current = currentStage(stage, busy);
+  const steps = stageStatus(current);
+  const now = steps.find((s) => s.status === "now");
   return (
-    <ol className="journey" aria-label="Your progress">
-      {STEPS.map((s, i) => (
-        <li key={s.id} className={i < at ? "done" : i === at ? "now" : ""} aria-current={i === at ? "step" : undefined}>
-          {s.label}
-        </li>
-      ))}
-    </ol>
+    <div className="journey-wrap">
+      <ol className="journey" aria-label="Loan-Saathi pipeline">
+        {steps.map((s, i) => (
+          <li key={s.id} className={s.status === "next" ? "" : s.status} aria-current={s.status === "now" ? "step" : undefined}>
+            {i > 0 && <span className="arrow" aria-hidden="true">→</span>}
+            <span className="step">{s.label}</span>
+          </li>
+        ))}
+      </ol>
+      {now ? (
+        <p className="journey-caption" aria-live="polite">
+          <b>{now.label}:</b> {now.caption}
+        </p>
+      ) : null}
+    </div>
   );
 }

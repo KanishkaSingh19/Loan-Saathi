@@ -45,6 +45,7 @@ export default function AdvisorPanel({
     <section className="advisor" aria-labelledby="advisor-title">
       <div className="advisor-head">
         <div>
+          <span className="stage-tag">Handoff</span>
           <h3 id="advisor-title">Want to talk it through with a person?</h3>
           <p className="muted small">
             A loan advisor can look at your answers, this assessment and any option you tried.

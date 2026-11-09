@@ -10,12 +10,23 @@ LightGBM credit-risk model trained on the
 [Home Credit Default Risk](https://www.kaggle.com/c/home-credit-default-risk) dataset as a mid-call webhook.
 
 ## How it works
-1. The caller talks naturally: *"Mujhe 50 hazaar chahiye, kirana ki dukaan ke liye…"*
-2. The Gnani agent asks follow-up questions (income, work, existing loans…) one at a time.
-3. It calls our webhook, which normalises spoken answers ("dhai lakh", "6 mahine", "apna ghar"),
-   scores repayment risk and applies the affordability rule.
-4. The agent explains the outcome in the caller's language: eligible for further review, a smaller
-   suggested amount, an advisor review, or kindly "not right now", with reasons and tips.
+
+**LISTEN → EXTRACT → VALIDATE → CONFIRM → ASSESS → EXPLAIN → SIMULATE → HANDOFF**
+
+| Stage | What happens | Who decides |
+|---|---|---|
+| **Listen** | The caller speaks (or types) in Hindi, Hinglish or English; Gnani Prisma turns speech into text. | – |
+| **Extract** | Gemini pulls answers out of free speech, each with an exact quote of the caller's words; our parser does the same deterministically and fills anything Gemini misses. | Gemini proposes, our code checks |
+| **Validate** | Every value is range-checked; ambiguous numbers ("40", "40-50 hazaar") are read back, contradictions are asked about, impossible values refused. | Our code |
+| **Confirm** | "Here's what I understood": the caller confirms or corrects single fields. Nothing is assessed before this. | The caller |
+| **Assess** | Safety checks, then the LightGBM risk model, the 50% affordability rule and the 24-month debt rule. | Model + rules |
+| **Explain** | The result in plain words: status, estimated risk and affordability, the financial picture and *why*, every number with its source. | Our code (Gemini may phrase it; numbers must match) |
+| **Simulate** | "What if I take ₹2 lakh over 5 years?": the same decision path on a copy of the request, labelled *Simulation, not a lender offer*. | Model + rules |
+| **Handoff** | Next steps, or a structured summary saved (and optionally sent) for a loan advisor. | The caller |
+
+The call's `stage` comes from the state machine (`converse.stage()`); the call screen shows it, and the
+result page tags its sections Assess, Explain, Simulate and Handoff. On the phone (Agent Builder) the
+same stages run without the read-back step.
 
 ## Web call with Gemini (in the browser)
 The dashboard's **Web call** tab lets anyone try Saathi from a browser, with no phone line:
