@@ -1,0 +1,214 @@
+{
+ "ts": 1794247779.6883209,
+ "commit": "d5ee844",
+ "python": "3.12.10",
+ "suites": {
+  "test_advisor.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - voice handoff saves a full advisor case (profile, request, risk, affordability, simulation, question)",
+    "ok - dashboard button: case with the current simulation, recomputed on the server",
+    "ok - early handoff: partial profile, no assessment invented",
+    "ok - advisor case failure is explained, the call carries on",
+    "ok - concise spoken summary in English and Hinglish",
+    "ok - 'mujhe 3 lakh ka loan chahiye', 'meri salary 40 hazaar hai', 'EMI kam rakhni hai'",
+    "ok - clear recovery: repeat prompts, server glitches, no stack traces",
+    "ok - recovery offers the advisor"
+   ],
+   "seconds": 7.8
+  },
+  "test_assessment.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - every number carries its source",
+    "ok - figures match the affordability rule and the decision",
+    "ok - no approval claims",
+    "ok - borrowing picture totals and burden",
+    "ok - explanations come from the rules and the model's spoken-safe factors only",
+    "ok - completeness lists what is known and what is not",
+    "ok - safety check passes, flags and pauses",
+    "ok - web call: safety check before the model, assessment with the result"
+   ],
+   "seconds": 7.6
+  },
+  "test_confirmation.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - normal confirmation: card with income source, then confirm, then assess",
+    "ok - single-field correction: by voice and by button, only that field changes, then re-confirm",
+    "ok - ambiguous amounts are asked about, never guessed (bare number, range)",
+    "ok - contradictory income: both values shown, the caller picks",
+    "ok - missing required field: no assessment, recovery asks again",
+    "ok - assessment before confirmation is impossible (conversation, gate, state machine, API)",
+    "ok - lakh/crore values parse correctly; very large ones are read back",
+    "ok - invalid values are refused with a reason and never reach the assessment"
+   ],
+   "seconds": 7.2
+  },
+  "test_converse.py": {
+   "passed": true,
+   "ok_lines": [],
+   "seconds": 7.0
+  },
+  "test_evaluation.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - risk model unavailable: the web call recovers without a result; the phone pre-screen fails closed",
+    "ok - speech-to-text failures: timeout, upstream error, bad or empty response give a clean 502, never a transcript",
+    "ok - model numbers equal the files they cite; unmeasured ones say so",
+    "ok - every listed safeguard exists in the code",
+    "ok - every listed check exists in its suite; failed or unrun suites never show as passed"
+   ],
+   "seconds": 6.3
+  },
+  "test_handoff.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok 1 - correction shown as originally heard -> confirmed value",
+    "ok 2 - timeline from the recorded state trail, in order",
+    "ok 3 - transcript keeps the caller's exact words",
+    "ok 4 - handoff keeps the confirmed profile and the assessment",
+    "ok 5 - only flags that actually exist (self-reported info), nothing invented",
+    "ok 6 - honest: no advisor channel, so nobody is said to be notified",
+    "ok 7 - no correction data is invented",
+    "ok 8 - contradiction flagged, the caller's choice shown, unconfirmed answers flagged",
+    "ok 9 - excessive debt and missing critical information come from the rules and the profile",
+    "ok 10 - a pre-screen without a call gets no made-up conversation",
+    "ok 11 - the workspace is saved with the case"
+   ],
+   "seconds": 7.2
+  },
+  "test_history.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - first-time borrower: 2 history questions",
+    "ok - with loans: lateness funnel, follow-ups only after a 'yes', overdue only with running loans",
+    "ok - 'I don't know' is kept as unknown (the model has a learned 'not answered' branch)",
+    "ok - yes/no and counts in English, Hinglish and Devanagari",
+    "ok - consistent applicant: never borrowed means never late; running loans are past loans",
+    "ok - risk rises with a bad history: clean 5.8%, late last year 10.3%, overdue now 8.4%, refused before 7.5%, unknown 8.0%",
+    "ok - 'an EMI was paid late in the last 12 months' and the tip appear; completeness lists the history",
+    "ok - full call with history: read-back shows it, assessment runs, advisor case includes it"
+   ],
+   "seconds": 7.2
+  },
+  "test_model.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - live model: risk never falls as debt rises [7.55, 9.61, 10.12, 10.3, 10.73, 11.01, 11.01]",
+    "ok - interim debt floor: on only for unconstrained models, never lowers risk",
+    "ok - calibration map applied when present, identity when training didn't keep one"
+   ],
+   "seconds": 6.3
+  },
+  "test_operations.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - calls survive restarts mid-call (even mid read-back); stale calls expire after 2 hours",
+    "ok - advisor notified only when the webhook confirms; failures are saved and said honestly",
+    "ok - cases go open -> in review -> closed (and reopen), with names, notes and history",
+    "ok - study: persona ground truth, first-pass and final accuracy, timings, survey, report, CSV"
+   ],
+   "seconds": 7.3
+  },
+  "test_safety.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok 1 - no approval claims anywhere an applicant can see or hear",
+    "ok 2 - no lender names",
+    "ok 3 - gender and marital status never used; age never given as a reason",
+    "ok 4 - Gemini can't skip questions, invent answers or numbers, or announce a decision",
+    "ok 4b - a slow Gemini is cut off at the deadline; the scripted parser carries the turn",
+    "ok 5 - negative, out-of-range and impossible values are refused",
+    "ok 6 - no assessment without the applicant's confirmation",
+    "ok 7 - every suggested amount keeps all EMIs within 50% of income",
+    "ok 8 - debt over 24 months of income means not eligible right now",
+    "ok 9 - contradictions are asked about (web call) or pause the assessment (phone)",
+    "ok 10 - closed by default: without WEBHOOK_KEY every /v1 route refuses (503), wrong key 401"
+   ],
+   "seconds": 7.0
+  },
+  "test_simulate.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - original request through the real decision path",
+    "ok - safer option / your request / higher burden",
+    "ok - no safer option when existing EMIs already use 40% of income",
+    "ok - very small / very large loans, minimum / maximum tenure, invalid values",
+    "ok - affordability boundary at 331000",
+    "ok - EMI above income is flagged, never within",
+    "ok - 25 repeated simulations; the saved request is unchanged",
+    "ok - debt rule, paused and incomplete assessments, auth: no bypass",
+    "ok - labelled as simulations, no approvals or lender offers",
+    "ok - changes shown from the borrower's side; a heavier loan is never shown as lower risk",
+    "ok - voice what-ifs: amount, tenure, maximum EMI, lower EMI, invalid, back, after next steps",
+    "ok - normal simulation: EMI, burden and assessment from the existing rules",
+    "ok - very low and very high amounts",
+    "ok - boundary values: 40% lower-burden line, 50% limit, min and max amounts",
+    "ok - risk is never shown lower for a bigger loan; it says it wasn't recalculated",
+    "ok - original application unchanged and always returned",
+    "ok - repeated simulations are deterministic",
+    "ok - invalid amounts are refused with a reason",
+    "ok - voice: Hinglish what-if, ambiguous and bare amounts asked about, original result kept"
+   ],
+   "seconds": 15.0
+  },
+  "test_speech_api.py": {
+   "passed": true,
+   "ok_lines": [],
+   "seconds": 6.9
+  },
+  "test_stages.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - a full call walks EXTRACT -> VALIDATE -> CONFIRM -> ASSESS -> EXPLAIN -> SIMULATE -> HANDOFF",
+    "ok - ASSESS, LISTEN, recovery and early handoff map to their stages"
+   ],
+   "seconds": 6.9
+  },
+  "test_states.py": {
+   "passed": true,
+   "ok_lines": [
+    "ok - lakh / crore / Hindi / Hinglish number parsing",
+    "ok - invalid state transitions are refused",
+    "ok - assessment refused before confirmation",
+    "ok - normal conversation: summary -> confirm -> risk -> affordability -> result -> next steps -> done",
+    "ok - spoken confirmation",
+    "ok - rejecting the summary asks which field, then fixes only that one",
+    "ok - field-level correction of income, EMI, tenure, debt, work",
+    "ok - repeated corrections, then a handoff after too many",
+    "ok - correction that needs follow-up questions",
+    "ok - ambiguous numbers are read back: bare 40, fourteen/forty",
+    "ok - two amounts in one answer: pick one or the total",
+    "ok - very large amounts are read back",
+    "ok - a Gemini value that differs from the caller's words is read back",
+    "ok - Gemini intent fallback for the summary, never deciding on its own",
+    "ok - contradicting income and debt answers are asked about, never overwritten",
+    "ok - invalid values are refused with a reason: loan, tenure, negative and zero income, EMI, age",
+    "ok - income corrected below the EMI is questioned",
+    "ok - a missing required field leads to error recovery, never to an assessment",
+    "ok - assessment failure -> error recovery -> retry",
+    "ok - human handoff from any point",
+    "ok - live-run regressions: spoken halves, tenure numbers, language drift, wide quotes, early corrections, multi-field fallback, what-if at the summary, plain retry"
+   ],
+   "seconds": 9.2
+  },
+  "test_webhook.py": {
+   "passed": true,
+   "ok_lines": [],
+   "seconds": 6.5
+  },
+  "tests/test_normalize.py": {
+   "passed": true,
+   "ok_lines": [],
+   "tests": 0,
+   "seconds": 1.8
+  }
+ },
+ "skipped": [
+  {
+   "suite": "test_postgres.py",
+   "why": "needs a real DATABASE_URL"
+  }
+ ]
+}
