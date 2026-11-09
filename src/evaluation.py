@@ -416,7 +416,8 @@ def _git_commit():
     try:
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True,
                               timeout=10).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT,
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no", "--", ".",
+                                ":(exclude)reports"], cwd=ROOT,  # its own output doesn't count
                                capture_output=True, text=True, timeout=10).stdout.strip()
         return f"{head} + uncommitted changes" if head and dirty else head
     except Exception:  # noqa: BLE001
