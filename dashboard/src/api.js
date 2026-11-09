@@ -102,3 +102,27 @@ export async function simulate(key, prescreenId, { loanAmount, tenureMonths, sce
   if (!res.ok) throw new ApiError(await errorText(res));
   return res.json();
 }
+
+// ---------- advisor cases ----------
+
+/**
+ * Save a summary for a human loan advisor. The server rebuilds every number itself; the simulation
+ * is sent only as the loan amount and tenure to recompute.
+ * @param {string} key
+ * @param {{prescreenId?: string, sessionId?: string, question?: string, loanAmount?: number, tenureMonths?: number}} c
+ */
+export async function createAdvisorCase(key, { prescreenId, sessionId, question, loanAmount, tenureMonths }) {
+  const body = { prescreen_id: prescreenId || "", session_id: sessionId || "", question: question || "" };
+  if (loanAmount != null) body.loan_amount = loanAmount;
+  if (tenureMonths != null) body.tenure_months = tenureMonths;
+  const res = await postJson(key, "/v1/advisor-cases", body);
+  if (!res.ok) throw new ApiError(await errorText(res));
+  return res.json();
+}
+
+export async function fetchAdvisorCases(key) {
+  const res = await fetch(`${API_BASE}/v1/advisor-cases`, { headers: { "X-Webhook-Key": key } });
+  if (res.status === 401) throw new Unauthorized();
+  if (!res.ok) throw new ApiError("Couldn't load advisor cases. Please try again.");
+  return res.json();
+}

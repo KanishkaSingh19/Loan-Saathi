@@ -27,6 +27,8 @@ python -I -X utf8 src/test_converse.py       # web-call conversation tests (Gemi
 python -I -X utf8 src/test_states.py         # web-call state machine: confirm, correct, ambiguity, contradictions
 python -I -X utf8 src/test_assessment.py     # applicant assessment: provenance, wording, why, safety check
 python -I -X utf8 src/test_simulate.py       # what-if simulator: boundaries, scenarios, voice what-ifs, no bypass
+python -I -X utf8 src/test_advisor.py        # advisor cases, listen summary, code-mixed speech, recovery
+python -I -X utf8 src/test_safety.py         # product safety boundaries (wording scan, LLM can't decide...)
 python -I -m ruff check src                  # Python lint (requirements-dev.txt)
 cd dashboard; npm test; npm run lint; npm run typecheck; npm run build   # frontend checks
 python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
@@ -87,6 +89,9 @@ trained models are in `models/`); only retraining or the model comparison does.
   your request, higher burden (1.5x). `POST /v1/simulate` is read-only on a saved pre-screen; 409 for
   paused/incomplete ones. The web call answers "what if I take 2 lakh?", "5 saal", "max EMI" and
   "EMI kam" in SHOWING_RESULT / WHAT_IF / NEXT_STEPS. Labels: "Simulation — not a lender offer."
+- `src/advisor.py`: advisor cases (`POST/GET /v1/advisor-cases`, table `advisor_cases`), built only
+  from session/prescreen data; voice handoff in `converse._handoff` saves one. Prototype: nobody is
+  notified, and replies say so. Use "loan advisor" in applicant-facing text, never "officer".
 - `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/converse`, `/v1/stt` and `/v1/tts`
   (pass-throughs to Gnani's speech APIs), `/dashboard`, `/health`. Stores data in SQLite under `data/`.
 - Evon (Gnani's LLM) has no public API; Agent Builder offers Gnani's Pampa Go / Pampa Priority (not

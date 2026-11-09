@@ -1,7 +1,7 @@
 export const DECISIONS = {
   pre_approved: { label: "Eligible for review", tone: "good" },
   counter_offer: { label: "Smaller amount suggested", tone: "warn" },
-  needs_review: { label: "Officer review", tone: "warn" },
+  needs_review: { label: "Advisor review", tone: "warn" },
   not_eligible_now: { label: "Not eligible now", tone: "bad" },
   need_more_info: { label: "Needs more info", tone: "info" },
 };
@@ -9,7 +9,7 @@ export const DECISIONS = {
 export const FILTERS = [
   { id: "all", label: "All" },
   { id: "pre_approved", label: "Eligible for review" },
-  { id: "offer", label: "Smaller amount / officer review", match: ["counter_offer", "needs_review"] },
+  { id: "offer", label: "Smaller amount / advisor review", match: ["counter_offer", "needs_review"] },
   { id: "not_eligible_now", label: "Not eligible" },
   { id: "need_more_info", label: "Needs info" },
 ];

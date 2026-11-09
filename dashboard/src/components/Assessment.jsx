@@ -6,7 +6,10 @@ import {
   SOURCE_TAGS,
   STATUS_TONE,
 } from "../assessmentView";
+import { useState } from "react";
+import AdvisorPanel from "./AdvisorPanel";
 import IncomeBar from "./IncomeBar";
+import ListenButton from "./ListenButton";
 import Simulator from "./Simulator";
 
 // The applicant-facing result of a pre-screen. Everything comes from result.assessment
@@ -28,6 +31,7 @@ function Figure({ label, figure, tone = "", wide = false }) {
     <div className={`figure${wide ? " wide" : ""}`}>
       <span className="figure-label">{label}</span>
       <strong className={tone ? `tone-${tone}` : ""}>{figure.text}</strong>
+      {figure.help ? <span className="figure-help">{figure.help}</span> : null}
       <Source source={figure.source} text={figure.source_text} />
     </div>
   );
@@ -132,10 +136,15 @@ export default function Assessment({
   prescreenId = "",
   liveSimulation = null,
   onUnauthorized = undefined,
+  lang = "en",
+  sessionId = "",
+  advisorCase = "",
 }) {
+  const [currentSim, setCurrentSim] = useState(null); // { loan, tenure } while a simulation is shown
   if (!assessment) return null;
   const a = assessment;
   const tone = STATUS_TONE[a.status] || "info";
+  const spokenText = a.spoken?.[lang] || a.spoken?.en;
 
   return (
     <article className="assessment" aria-labelledby="assessment-title">
@@ -147,9 +156,12 @@ export default function Assessment({
         <span className={`badge ${tone}`}>{a.decision_label}</span>
       </header>
 
-      <p className={`as-status ${tone}`} role="status">
-        {a.status_text}
-      </p>
+      <div className="as-lead">
+        <p className={`as-status ${tone}`} role="status">
+          {a.status_text}
+        </p>
+        <ListenButton apiKey={apiKey} text={spokenText} onUnauthorized={onUnauthorized} />
+      </div>
 
       {a.status === "paused" ? (
         <>
@@ -206,6 +218,7 @@ export default function Assessment({
               prescreenId={prescreenId}
               liveSimulation={liveSimulation}
               onUnauthorized={onUnauthorized}
+              onSimulationChange={setCurrentSim}
             />
           ) : null}
           <div className="as-two">
@@ -214,6 +227,17 @@ export default function Assessment({
           </div>
         </>
       )}
+
+      {apiKey && (prescreenId || sessionId) ? (
+        <AdvisorPanel
+          apiKey={apiKey}
+          prescreenId={prescreenId}
+          sessionId={sessionId}
+          simulation={currentSim}
+          existingCase={advisorCase}
+          onUnauthorized={onUnauthorized}
+        />
+      ) : null}
     </article>
   );
 }

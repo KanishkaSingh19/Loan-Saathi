@@ -193,7 +193,7 @@ ok("field-level correction of income, EMI, tenure, debt, work")
 assert cv.SESSIONS[sid]["corrections"] == 6, cv.SESSIONS[sid]["corrections"]
 t = say(sid, "income galat hai")
 t = say(sid, "42,000")                                            # 7th change: a person takes over
-assert t["state"] == cv.HANDOFF and t["done"] and "loan officer" in t["reply"], t
+assert t["state"] == cv.HANDOFF and t["done"] and "loan advisor" in t["reply"] and t["advisor_case"], t
 ok("repeated corrections, then a handoff after too many")
 
 # A correction that makes new questions needed goes back to collecting them.
@@ -359,7 +359,7 @@ ok("assessment failure -> error recovery -> retry")
 sid = new()
 say(sid, "1 lakh")
 t = say(sid, "I want to talk to a real person")
-assert t["state"] == cv.HANDOFF and t["done"] and "loan officer" in t["reply"], t
+assert t["state"] == cv.HANDOFF and t["done"] and "loan advisor" in t["reply"] and t["advisor_case"], t
 t = say(sid, "hello?")
 assert cv.SESSIONS[sid]["state"] == cv.COMPLETED
 ok("human handoff from any point")

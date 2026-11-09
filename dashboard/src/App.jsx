@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadKey, saveKey, sendPrescreen, Unauthorized } from "./api";
 import { usePrescreens } from "./usePrescreens";
 import { FILTERS, SAMPLES } from "./constants";
@@ -8,6 +8,7 @@ import Feed from "./components/Feed";
 import PrescreenDetail from "./components/PrescreenDetail";
 import CallDetail from "./components/CallDetail";
 import CallScreen from "./components/CallScreen";
+import AdvisorCases from "./components/AdvisorCases";
 
 const FRESH_MS = 4000;
 
@@ -20,7 +21,8 @@ export default function App() {
   const [followLive, setFollowLive] = useState(true);
   const [freshIds, setFreshIds] = useState(new Set());
   const [sending, setSending] = useState(null);
-  const [view, setView] = useState("feed");
+  const [view, setView] = useState("call");
+  const logout = useCallback(() => setKey(""), []);
   const knownIds = useRef(null);
 
   // One feed of pre-screens and post-call logs, newest first.
@@ -110,16 +112,18 @@ export default function App() {
           <div className="brand-mark" aria-hidden="true">₹</div>
           <div>
             <h1>
-              Loan <span>Saathi</span>
+              Loan-<span>Saathi</span>
             </h1>
-            <p className="muted">Live voice pre-screens</p>
+            <p className="muted">Voice loan pre-screening</p>
           </div>
         </div>
         <nav className="views" role="tablist" aria-label="View">
-          <button role="tab" aria-selected={view === "feed"} className={`chip${view === "feed" ? " active" : ""}`}
-            onClick={() => setView("feed")}>Live feed</button>
           <button role="tab" aria-selected={view === "call"} className={`chip${view === "call" ? " active" : ""}`}
-            onClick={() => setView("call")}>Web call</button>
+            onClick={() => setView("call")}>Talk to Saathi</button>
+          <button role="tab" aria-selected={view === "feed"} className={`chip${view === "feed" ? " active" : ""}`}
+            onClick={() => setView("feed")}>Pre-screens</button>
+          <button role="tab" aria-selected={view === "cases"} className={`chip${view === "cases" ? " active" : ""}`}
+            onClick={() => setView("cases")}>Advisor cases</button>
         </nav>
         <div className={`status ${status}`} role="status">
           <span className="dot" />
@@ -127,8 +131,10 @@ export default function App() {
         </div>
       </header>
 
-      {view === "call" ? (
-        <CallScreen apiKey={key} onUnauthorized={() => setKey("")} onOpenPrescreen={openPrescreen} />
+      {view === "cases" ? (
+        <AdvisorCases apiKey={key} onUnauthorized={logout} />
+      ) : view === "call" ? (
+        <CallScreen apiKey={key} onUnauthorized={logout} onOpenPrescreen={openPrescreen} />
       ) : (
       <>
       <StatTiles prescreens={prescreens} calls={calls} />

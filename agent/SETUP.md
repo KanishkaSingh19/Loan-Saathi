@@ -23,7 +23,7 @@ Caller ⇄ Gnani Agent (Prisma STT → LLM → Timbre TTS)
 ## 1. Create the agent
 Manage Agents → Create Agent → **Create from Scratch**
 - Name: `Saathi Loan Prescreen`
-- Description: `Voice pre-screening for small loans in Hindi, English and Kannada`
+- Description: `Voice pre-screening for small loans in Hindi, Hinglish and English`
 
 ## 2. Agent setup tab
 | Field | Value |

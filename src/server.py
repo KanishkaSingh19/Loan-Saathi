@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import advisor  # noqa: E402
 import assessment  # noqa: E402
 import converse  # noqa: E402
 import normalize as norm  # noqa: E402
@@ -83,6 +84,14 @@ class SimulateRequest(BaseModel):
     loan_amount: float | None = None
     tenure_months: float | None = None
     scenarios: bool = False
+
+
+class AdvisorRequest(BaseModel):
+    prescreen_id: str = Field(default="", max_length=40)
+    session_id: str = Field(default="", max_length=40)
+    question: str = Field(default="", max_length=500)
+    loan_amount: float | None = None   # the applicant's current simulation, recomputed here
+    tenure_months: float | None = None
 
 
 class SpeechRequest(BaseModel):
@@ -333,7 +342,7 @@ def decide(applicant, risk=None, context=None):
         else:
             decision = "needs_review"
             hint = (f"Their request for {inr(requested)} over {tenure} months (EMI about {inr(offer_emi)}) "
-                    "looks possible, and a loan officer will review it and call back within 2 working days. ")
+                    "looks possible, and a loan advisor would need to review it further. ")
         hint += (f"Strengths: {'; '.join(downs)}. " if downs else "")
         hint += ("Next step: keep Aadhaar, PAN and 3 months of bank statements ready for verification. "
                  "Say clearly this is a pre-screening, not a final approval.")
@@ -475,6 +484,64 @@ def simulate_route(body: SimulateRequest, x_webhook_key: str = Header(default=""
         raise HTTPException(status_code=422, detail=str(e)) from None
 
 
+# ---------- advisor cases ----------
+
+def save_case(case):
+    _run("INSERT INTO advisor_cases VALUES (?,?,?)", (case["id"], case["ts"], json.dumps(case, ensure_ascii=False)))
+    print(f"[advisor case {case['id']}] {case['headline']}", flush=True)
+    return case
+
+
+def case_from_session(s, question="", loan=None, tenure=None):
+    """An advisor case from a live web call (partial profiles are fine)."""
+    body = {k: str(v) for k, v in s["answers"].items()}
+    applicant = s.get("applicant") or build_applicant(body)
+    sim = (s.get("simulation") or {}).get("simulation")
+    if (loan is not None or tenure is not None) and s.get("result") and s.get("applicant"):
+        try:
+            sim = simulate_for(s["applicant"], loan, tenure, WEB_CONTEXT)["simulation"]
+        except simulate.InvalidSimulation:
+            pass
+    return advisor.build(applicant, s["answers"], s["status"], s.get("result"), sim, question,
+                         advisor.conversation_summary(s), advisor.recent_turns(s), "web-call",
+                         s.get("prescreen_id") or "", s["id"])
+
+
+@app.post("/v1/advisor-cases")
+def create_advisor_case(body: AdvisorRequest, x_webhook_key: str = Header(default="")):
+    """Save a structured summary for a human loan advisor (prototype: nobody is notified)."""
+    _check_key(x_webhook_key)
+    s = converse.SESSIONS.get(body.session_id) if body.session_id else None
+    if s is not None:
+        case = case_from_session(s, body.question, body.loan_amount, body.tenure_months)
+        s["advisor_case"] = case["id"]
+    elif body.prescreen_id:
+        said, applicant, result = _load_prescreen(body.prescreen_id)
+        sim = None
+        if (body.loan_amount is not None or body.tenure_months is not None) \
+                and result.get("decision") != "need_more_info":
+            context = WEB_CONTEXT if said.get("source") == "web-call" else None
+            try:
+                sim = simulate_for(applicant, body.loan_amount, body.tenure_months, context)["simulation"]
+            except simulate.InvalidSimulation as e:
+                raise HTTPException(status_code=422, detail=str(e)) from None
+        answers = {k: v for k, v in said.items() if k in converse.BY_KEY}
+        case = advisor.build(applicant, answers, {}, result, sim, body.question,
+                             ["Created from the dashboard for a saved pre-screen."], [],
+                             said.get("source") or "phone", body.prescreen_id)
+    else:
+        raise HTTPException(status_code=400, detail="Start a pre-screening first so there is something to summarise.")
+    return save_case(case)
+
+
+@app.get("/v1/advisor-cases")
+def list_advisor_cases(limit: int = 50, x_webhook_key: str = Header(default="")):
+    _check_key(x_webhook_key)
+    limit = max(1, min(limit, 200))
+    rows = _run("SELECT payload FROM advisor_cases ORDER BY ts DESC LIMIT ?", (limit,), fetch=True)
+    return {"cases": [json.loads(p) for (p,) in rows]}
+
+
 @app.post("/v1/converse")
 async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
     """Browser web call: one caller utterance in (already transcribed), Saathi's reply out.
@@ -493,10 +560,16 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
             json.dumps({**result, "details": details}, ensure_ascii=False)))
         print(f"[web-call {s['id']} -> prescreen {pid}] {result['decision']} band={result['risk_band']}", flush=True)
 
-    reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
-                                action=body.action, assess=scoring.score, safety=assessment.safety_pre,
-                                simulator=lambda a, loan=None, tenure=None, scen=False:
-                                simulate_for(a, loan, tenure, WEB_CONTEXT, scen))
+    try:
+        reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
+                                    action=body.action, assess=scoring.score, safety=assessment.safety_pre,
+                                    simulator=lambda a, loan=None, tenure=None, scen=False:
+                                    simulate_for(a, loan, tenure, WEB_CONTEXT, scen),
+                                    advisor=lambda sess, question: save_case(case_from_session(sess, question)))
+    except Exception as e:  # noqa: BLE001  (never show a stack trace to the applicant)
+        print(f"[web-call {s['id']}] turn failed: {type(e).__name__}: {e}", flush=True)
+        reply = converse.SAY["glitch"][s["lang"]]
+        s["history"].append(("Saathi", reply))
     return {**converse.public(s), "reply": reply}
 
 

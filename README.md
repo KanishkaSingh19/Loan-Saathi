@@ -2,7 +2,7 @@
 
 Millions of people in India (shopkeepers, drivers, farmers, daily-wage workers) have no
 credit score and can't get through English loan forms. **Saathi** lets them find out, on a short
-phone call in Hindi, Hinglish, English or Kannada, whether they can get a small loan and **how
+phone call in Hindi, Hinglish or English, whether they can get a small loan and **how
 much they can safely afford**.
 
 Built on **Gnani Agent Builder** (Prisma speech-to-text, LLM, Timbre text-to-speech), with a
@@ -88,6 +88,24 @@ rule and debt rule as the assessment; the saved request never changes. EMIs use 
 18% yearly interest. Everything is labelled *Simulation — not a lender offer*. On a web call the
 applicant can also ask by voice: "What if I take ₹2 lakh?", "What if I choose 5 years?", "What is the
 maximum EMI I can afford?", "EMI kam rakhni hai".
+
+## Talk to a Loan Advisor, listen, and recover
+- **Talk to a Loan Advisor** (button on the assessment, or say "talk to a loan advisor" / "advisor se
+  baat") saves a structured advisor case: income, existing EMI and debt (with whether the applicant
+  confirmed them), requested loan and tenure, estimated risk and affordable EMI, the current
+  simulation (recomputed on the server), the applicant's question, a conversation summary and
+  assessment completeness. Cases appear under **Advisor cases**. This is a prototype: the applicant is
+  told that no advisor is notified automatically.
+- **Listen to this result** reads a short, deterministic summary with Gnani Timbre, in English or
+  Hinglish.
+- **Code-mixed speech** such as "meri salary 40 hazaar hai", "mujhe 3 lakh ka loan chahiye" and "EMI kam
+  rakhni hai" works even without Gemini. Supported languages: Hindi, Hinglish and English.
+- **Recovery, never stack traces**: unclear answers get "Could you repeat your monthly income?", a
+  failed transcription asks to try again, a server error keeps the call and offers **Try again**, a
+  model failure pauses with a retry, and repeated trouble offers the advisor.
+- `src/test_safety.py` checks the product's boundaries end to end: no approval claims or lender names
+  anywhere an applicant can see or hear, no protected attributes, the LLM never decides, numbers are
+  validated, confirmation is required, affordability and the debt rule hold, contradictions are asked.
 
 ## Live dashboard (React + Vite)
 Open `https://<tunnel>/dashboard` (or `http://127.0.0.1:8000/dashboard`) and paste your

@@ -73,7 +73,13 @@ function ScenarioCard({ s, active, onTry }) {
   );
 }
 
-export default function Simulator({ apiKey, prescreenId, liveSimulation = null, onUnauthorized = undefined }) {
+export default function Simulator({
+  apiKey,
+  prescreenId,
+  liveSimulation = null,
+  onUnauthorized = undefined,
+  onSimulationChange = undefined,
+}) {
   const [base, setBase] = useState(null); // { original, scenarios }
   const [loan, setLoan] = useState(null);
   const [tenure, setTenure] = useState(null);
@@ -119,6 +125,13 @@ export default function Simulator({ apiKey, prescreenId, liveSimulation = null, 
     setTyped(String(sim.loan_amount.value));
     setResult({ simulation: sim, compare: liveSimulation.compare });
   }, [liveSimulation]);
+
+  // Tell the assessment which simulation is on screen (for the advisor summary).
+  useEffect(() => {
+    const s = result?.simulation;
+    onSimulationChange?.(s && s.status !== "paused" ? { loan: s.loan_amount.value, tenure: s.tenure.value } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   // Recalculate on the server whenever the amount or tenure changes (debounced).
   useEffect(() => {

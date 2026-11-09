@@ -28,7 +28,7 @@ SOURCES = {
 COMFORT_FOIR = 0.4  # lower end of the suggested range: all EMIs within 40% of income
 DECISION_LABELS = {
     "pre_approved": "Eligible for further review",
-    "needs_review": "Eligible for officer review",
+    "needs_review": "Eligible for advisor review",
     "counter_offer": "Smaller amount suggested",
     "not_eligible_now": "Not eligible right now",
     "need_more_info": "More information needed",
@@ -122,6 +122,43 @@ def safety_pre(applicant, context=None):
     return checks
 
 
+HELP = {
+    "risk": "How often people with similar answers had trouble repaying, in past records: low, medium or high.",
+    "affordability": "The most a new EMI can be while all your EMIs stay within half of your income.",
+    "requested_emi": "Your estimated monthly payment for the loan you asked for.",
+    "suggested_range": "Loan amounts whose EMIs keep all your EMIs within 40% to 50% of your income.",
+}
+STATUS_HI = {
+    "within": "Aapka maanga hua loan aapki anumanit chukane ki kshamta ke andar hai.",
+    "pressure": "Yeh loan aapki mahine ki kamaai par zyada dabaav daal sakta hai.",
+    "not_now": "Aapki batayi jaankari ke hisaab se yeh loan abhi theek nahi baithta.",
+    "paused": "Jaanch abhi ruki hai, pehle kuch jaankari chahiye.",
+}
+RISK_HI = {"low": "kam", "medium": "madhyam", "high": "zyada"}
+
+
+def spoken(status, risk_band=None, affordable=None, requested_emi=None, needed=None):
+    """Short, plain sentences for 'Listen to this result' (read by Gnani Timbre)."""
+    en = [STATUS_TEXT[status]]
+    hi = [STATUS_HI[status]]
+    if status == "paused":
+        en += needed or []
+        hi += needed or []
+    else:
+        if affordable is not None:
+            en.append(f"Your estimated affordable EMI for a new loan is {inr(affordable)} a month.")
+            hi.append(f"Naye loan ke liye aapki anumanit affordable EMI {inr(affordable)} mahina hai.")
+        if requested_emi is not None:
+            en.append(f"The loan you asked for would have an EMI of about {inr(requested_emi)} a month.")
+            hi.append(f"Aapke maange hue loan ki EMI lagbhag {inr(requested_emi)} mahina hogi.")
+        if risk_band:
+            en.append(f"Estimated risk is {risk_band}.")
+            hi.append(f"Anumanit risk {RISK_HI[risk_band]} hai.")
+    en.append("This is a pre-screening estimate, not a lender's decision.")
+    hi.append("Yeh sirf pre-screening ka anumaan hai, lender ka faisla nahi.")
+    return {"en": " ".join(en), "hi": " ".join(hi)}
+
+
 def failed(checks):
     return [c for c in checks if c["state"] == "fail"]
 
@@ -131,7 +168,7 @@ def paused(checks):
     needed = [c["detail"] for c in failed(checks)]
     return {"status": "paused", "status_text": STATUS_TEXT["paused"],
             "decision_label": DECISION_LABELS["need_more_info"], "needed": needed,
-            "safety": {"passed": False, "checks": checks}}
+            "safety": {"passed": False, "checks": checks}, "spoken": spoken("paused", needed=needed)}
 
 
 def safety_post(applicant, afford, owed_limit_months, req_emi):
@@ -192,7 +229,8 @@ def build(applicant, risk, afford, decision, policy, model_up, model_down, check
         else:
             text = f"{inr(low)} – {inr(high)}"
         suggested = {"low": int(max(low, 0)), "high": int(high), "text": text, "source": "rules",
-                     "source_text": SOURCES["rules"] + " (all EMIs within 40% to 50% of income)"}
+                     "source_text": SOURCES["rules"] + " (all EMIs within 40% to 50% of income)",
+                     "help": HELP["suggested_range"]}
 
     helping, against = [], []
     if req_emi <= max_new_emi:
@@ -233,10 +271,11 @@ def build(applicant, risk, afford, decision, policy, model_up, model_down, check
         "status_text": STATUS_TEXT[status],
         "decision_label": DECISION_LABELS[decision],
         "risk": {"band": risk["band"], "text": risk["band"].upper(), "source": "model",
-                 "source_text": SOURCES["model"]},
-        "affordability": _num(max_new_emi, "rules", suffix="/month"),
+                 "source_text": SOURCES["model"], "help": HELP["risk"]},
+        "affordability": {**_num(max_new_emi, "rules", suffix="/month"), "help": HELP["affordability"]},
         "requested_loan": _num(requested, "you"),
-        "requested_emi": _num(req_emi, "calc", suffix="/month"),
+        "requested_emi": {**_num(req_emi, "calc", suffix="/month"), "help": HELP["requested_emi"]},
+        "spoken": spoken(status, risk["band"], max_new_emi, req_emi),
         "suggested_range": suggested,
         "picture": {
             "monthly_income": _num(income, "you"),

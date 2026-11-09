@@ -172,8 +172,9 @@ NO = re.compile(
     r"not)\b|नहीं|नही|गलत|ग़लत|बदल", re.I)
 HUMAN = re.compile(
     r"\b(human|insaan|insan|real person|actual person|customer care|customer support|helpline)\b|"
-    r"kisi (insaan|aadmi|vyakti|person) se|(agent|officer|manager|executive) se baat|"
-    r"(talk|speak) to (a |an |the )?(loan )?(person|human|agent|officer|someone|real)|इंसान|किसी से बात", re.I)
+    r"kisi (insaan|aadmi|vyakti|person) se|(agent|officer|manager|executive|advisor|adviser) se baat|"
+    r"(talk|speak) to (a |an |the )?(loan )?(person|human|agent|officer|someone|real|advisor|adviser)|"
+    r"इंसान|किसी से बात", re.I)
 FIRST = re.compile(r"\b(pehla|pehle|pahla|pahle|first|purana|old|earlier)\b|पहल", re.I)
 SECOND = re.compile(r"\b(doosra|dusra|doosre|dusre|second|naya|nayi|new|latest|abhi wala|baad wala|later)\b|दूसर|नया", re.I)
 BOTH = re.compile(r"\b(total|dono|both|jod|jodo|add|sum|milakar|mila ke)\b|दोनों|कुल", re.I)
@@ -233,7 +234,13 @@ CLARIFY = {
     },
 }
 SAY = {
-    "sorry": {"hi": "Maaf kijiye, main samjha nahi. ", "en": "Sorry, I didn't catch that. "},
+    "sorry": {"hi": "Maaf kijiye, main samajh nahi paaya. ", "en": "Sorry, I couldn't understand that. "},
+    "repeat": {"hi": "Kya aap apni {label} phir se bata sakte hain? Jaise '40 hazaar' ya '₹40,000'.",
+               "en": "Could you repeat your {label}? For example, '40 thousand' or '₹40,000'."},
+    "glitch": {"hi": "Maaf kijiye, mere taraf kuch gadbad hui. Kya aap apni pichhli baat phir se bata sakte hain?",
+               "en": "Sorry, something went wrong on my side. Could you say that again?"},
+    "low_emi_noted": {"hi": "Theek hai, EMI kam rakhni hai. Result ke baad main kam EMI wale vikalp dikhaunga. ",
+                      "en": "Okay, you'd like a low EMI. After the result I'll show you lower-EMI options. "},
     "again": {"hi": "Theek hai, phir se bataiye. ", "en": "Okay, please tell me again. "},
     "noted": {"hi": "Theek hai. ", "en": "Okay. "},
     "updated": {"hi": "Theek hai, maine {label} {value} kar di. ", "en": "Okay, I've changed your {label} to {value}. "},
@@ -262,9 +269,9 @@ SAY = {
     "emi_over_income": {"hi": "Aapki EMI {emi} aapki kamaai {income} se zyada ho rahi hai. ",
                         "en": "Your EMI of {emi} is more than your income of {income}. "},
     "recovery": {"hi": "Maaf kijiye, mujhe theek se samajh nahi aa raha. Aap jawab type bhi kar sakte hain. "
-                       "Kya hum phir se koshish karein, ya main aapko loan officer se jod doon?",
+                       "Kya hum phir se koshish karein, ya main aapka summary loan advisor ke liye save kar doon?",
                  "en": "Sorry, I'm having trouble understanding. You can also type your answer. "
-                       "Shall we try again, or would you like a loan officer to call you?"},
+                       "Shall we try again, or shall I save your summary for a loan advisor?"},
     "whatif_more": {"hi": " Koi aur rakam ya samay try karna hai? Ya 'aage ke steps' boliye.",
                     "en": " Want to try another amount or tenure? Or say 'next steps'."},
     "whatif_unclear": {"hi": "Aap koi rakam ya samay boliye, jaise 'agar 2 lakh loon' ya '5 saal mein'. "
@@ -283,19 +290,23 @@ SAY = {
                       "en": "Before I can check, one thing needs clearing up. Shall we go over the details again?"},
     "assess_failed": {"hi": "Maaf kijiye, jaanch karte waqt kuch technical dikkat aa gayi. Kya main phir se koshish karoon?",
                       "en": "Sorry, something went wrong while checking. Shall I try again?"},
-    "handoff": {"hi": "Theek hai, main aapki request hamare loan officer ke liye note kar raha hoon. Woh aapse "
-                      "2 working din mein sampark karenge. Dhanyavaad!",
-                "en": "Okay, I'm noting a request for one of our loan officers to contact you within 2 working "
-                      "days. Thank you!"},
-    "too_many_changes": {"hi": "Lagta hai kaafi baatein badal rahi hain, isliye behtar hoga ki hamare loan officer aapse "
+    "handoff": {"hi": "Theek hai. Maine aapki baatcheet ka summary loan advisor ke liye case {case} mein save kar "
+                      "diya hai. Yeh prototype hai, isliye kisi advisor ko apne aap suchna nahi jaati. Dhanyavaad!",
+                "en": "Okay. I've saved a summary of our conversation for a loan advisor as case {case}. This is a "
+                      "prototype, so no advisor is notified automatically. Thank you!"},
+    "handoff_failed": {"hi": "Maaf kijiye, abhi advisor ke liye summary save nahi ho paaya. Thodi der baad phir "
+                             "koshish kijiye.",
+                       "en": "Sorry, I couldn't save the summary for an advisor just now. Please try again in a "
+                             "moment."},
+    "too_many_changes": {"hi": "Lagta hai kaafi baatein badal rahi hain, isliye behtar hoga ki ek loan advisor aapse "
                                "seedhe baat karein. ",
-                         "en": "Quite a few details have changed, so it's best if one of our loan officers talks to "
+                         "en": "Quite a few details have changed, so it's best if a loan advisor talks to "
                                "you directly. "},
     "bye": {"hi": "Koi baat nahi. Jab chahein dobara baat kijiye. Dhanyavaad!",
             "en": "No problem. Talk to me again any time. Thank you!"},
     "finished": {"hi": "Aapka pre-screening ho gaya hai. Dhanyavaad!", "en": "Your pre-screening is complete. Thank you!"},
-    "more": {"hi": " Aur kuch poochna ho, ya loan officer se baat karni ho, toh bataiye.",
-             "en": " If you have any other question or want to talk to a loan officer, just say so."},
+    "more": {"hi": " Aur kuch poochna ho, ya loan advisor se baat karni ho, toh bataiye.",
+             "en": " If you have another question or want to talk to a loan advisor, just say so."},
 }
 PROBLEMS = {
     "negative": {"hi": "{label} minus mein nahi ho sakti. ", "en": "Your {label} can't be negative. "},
@@ -307,8 +318,10 @@ PROBLEMS = {
                   "en": "This pre-screening is for ages 18 to 100. "},
 }
 RESULT_FOLLOWUP = {
-    "pre_approved": {"hi": " Kya main aage ke steps bataun?", "en": " Shall I tell you the next steps?"},
-    "needs_review": {"hi": " Kya main aage ke steps bataun?", "en": " Shall I tell you the next steps?"},
+    "pre_approved": {"hi": " Kya main aage ke steps bataun? Aap 'agar 2 lakh loon' jaise sawaal bhi pooch sakte hain.",
+                     "en": " Shall I tell you the next steps? You can also ask 'what if' with another amount or tenure."},
+    "needs_review": {"hi": " Kya main aage ke steps bataun? Aap 'agar 2 lakh loon' jaise sawaal bhi pooch sakte hain.",
+                     "en": " Shall I tell you the next steps? You can also ask 'what if' with another amount or tenure."},
     "not_eligible_now": {"hi": " Kya main bataun ki aage kya kar sakte hain?", "en": " Shall I tell you what could help?"},
     "counter_offer": {"hi": "", "en": ""},  # the result already asks "would that work?"
 }
@@ -697,8 +710,8 @@ def buttons(s):
     if s["state"] == RESULT:
         return [{"label": "Yes", "action": "yes", "text": "Haan" if hi else "Yes"},
                 {"label": "No, thanks", "action": "no", "text": "Nahi, shukriya" if hi else "No, thanks"},
-                {"label": "Talk to an officer", "action": "handoff",
-                 "text": "Loan officer se baat karni hai" if hi else "I'd like to talk to a loan officer"}]
+                {"label": "Talk to a loan advisor", "action": "handoff",
+                 "text": "Loan advisor se baat karni hai" if hi else "I'd like to talk to a loan advisor"}]
     return []
 
 
@@ -715,7 +728,7 @@ def public(s):
             "summary": summary(s), "pending": pending, "correcting": s["correcting"],
             "buttons": buttons(s), "skipped": sorted(s["skipped"]),
             "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
-            "simulation": s.get("simulation"),
+            "simulation": s.get("simulation"), "advisor_case": s.get("advisor_case"),
             "trail": [f"{t['from']} -> {t['to']}" for t in s["trail"][-20:]],
             "llm": s["llm"][-1] if s["llm"] else ""}
 
@@ -930,7 +943,7 @@ def _cross_checks(s):
 # ---------- the turn ----------
 
 async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini-3.5-flash-lite",
-               action="", assess=None, safety=None, simulator=None):
+               action="", assess=None, safety=None, simulator=None, advisor=None):
     """Handles one caller utterance (or button press) and returns the reply to speak."""
     text = (text or "").strip()[:1000]
     action = (action or "").strip()
@@ -942,11 +955,12 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
         return SAY["finished"][s["lang"]]
     s["history"].append(("Caller", text or f"[{action}]"))
     env = {"decide": decide, "build_applicant": build_applicant, "save": save, "assess": assess,
-           "safety": safety, "simulator": simulator, "api_key": api_key, "model": model}
+           "safety": safety, "simulator": simulator, "advisor": advisor, "api_key": api_key, "model": model}
+    s["_advisor"] = advisor  # used by _handoff, which some paths reach without env
 
     if action == "handoff" or (not action and text and HUMAN.search(text)):
         if HANDOFF in TRANSITIONS[s["state"]]:
-            reply = _handoff(s, "caller asked for a person")
+            reply = _handoff(s, "caller asked for a loan advisor", question=text)
             s["history"].append(("Saathi", reply))
             return reply
 
@@ -958,11 +972,24 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
     return reply
 
 
-def _handoff(s, why):
+def _handoff(s, why, question=""):
+    """Save an advisor case (when the server provides one) and tell the caller honestly."""
+    lang = s["lang"]
+    case_id = ""
+    if s.get("_advisor"):
+        try:
+            case_id = s["_advisor"](s, question)["id"]
+        except Exception as e:  # noqa: BLE001
+            print(f"[converse {s['id']}] advisor case failed: {type(e).__name__}: {e}", flush=True)
+            return SAY["handoff_failed"][lang]
     transition(s, HANDOFF, why)
     s["asking"] = "done"
-    print(f"[converse {s['id']}] human handoff: {why}", flush=True)
-    return SAY["handoff"][s["lang"]]
+    s["advisor_case"] = case_id or s.get("advisor_case")
+    print(f"[converse {s['id']}] advisor handoff: {why} case={case_id}", flush=True)
+    if not case_id:
+        return ("Theek hai, aap loan advisor se baat karna chahte hain. Dhanyavaad!" if lang == "hi"
+                else "Okay, you'd like to talk to a loan advisor. Thank you!")
+    return SAY["handoff"][lang].format(case=case_id)
 
 
 async def _extract(s, env, text, asked):
@@ -1014,7 +1041,12 @@ async def _collecting(s, env, text, action):
     if asked == "tenure_months" and DONT_KNOW.search(text) and not norm.amounts(text):
         s["skipped"].add("tenure_months")  # the affordability rule picks the tenure
         return _advance(s, env, SAY["noted"][s["lang"]])
+    if asked == "tenure_months" and LOW_EMI.search(text) and not norm.amounts(text):
+        s["skipped"].add("tenure_months")  # "EMI kam rakhni hai": options come after the result
+        s["prefers_low_emi"] = True
+        return _advance(s, env, SAY["low_emi_noted"][s["lang"]])
 
+    s["asked_before"] = asked
     candidates, g = await _extract(s, env, text, asked)
     problem = None
     for k, raw, words in candidates:
@@ -1073,9 +1105,13 @@ def _advance(s, env, prefix="", problem=None, g=None):
         if s.get("clarify") == nxt:
             return prefix + CLARIFY[nxt][lang]
         if problem and problem[0] == nxt:
+            if problem[1] == "unclear" and nxt in MONEY:
+                return prefix + SAY["sorry"][lang] + SAY["repeat"][lang].format(label=LABELS[lang][nxt])
             return prefix + _problem_text(s, nxt, problem[1]) + BY_KEY[nxt][lang]
         if g and g["used"] == "gemini" and g["asking"] == nxt and g["reply"] and not prefix:
             return g["reply"]
+        if nxt == s.get("asked_before") and not prefix and nxt in MONEY:
+            return SAY["sorry"][lang] + SAY["repeat"][lang].format(label=LABELS[lang][nxt])
         return prefix + BY_KEY[nxt][lang]
 
     if s["state"] in (COLLECTING, CORRECTION):
@@ -1097,6 +1133,8 @@ def _enter_recovery(s, back_to, why):
 
 async def _recovering(s, env, text, action):
     back = s["recover_to"] or COLLECTING
+    if not action and re.search(r"\b(advisor|adviser|summary|save)\b|save kar", text or "", re.I):
+        return _handoff(s, "caller chose the advisor in recovery", question=text)
     if _no(text, action) and not _yes(text, action):
         transition(s, COMPLETED, "caller stopped")
         s["asking"] = "done"
@@ -1315,6 +1353,10 @@ def _try_what_if(s, env, text, action):
     except sim_mod.InvalidSimulation as e:
         return str(e) + SAY["whatif_more"][lang]
     s["simulation"] = out
+    sm = out["simulation"]
+    if sm.get("status") != "paused":
+        s.setdefault("sim_log", []).append(f"{sm['loan_amount']['text']} over {sm['tenure']['value']} months "
+                                           f"(EMI {sm['emi']['text']})")
     if s["state"] != WHAT_IF:
         transition(s, WHAT_IF, "caller asked a what-if")
     return sim_mod.spoken(out["simulation"], lang) + SAY["whatif_more"][lang]
@@ -1364,14 +1406,14 @@ def _next_steps(r, lang):
     if lang == "hi":
         if d in ("pre_approved", "needs_review", "counter_offer"):
             return ("Aage ke steps: Aadhaar card, PAN card aur pichhle 3 mahine ka bank statement taiyaar rakhiye. "
-                    "Hamare loan officer 2 working din mein call karke documents check karenge. "
-                    "Final approval documents ki jaanch ke baad hi hoga.")
+                    "Lender documents ki jaanch ke baad hi koi faisla karega. Agar aap chahein, toh 'loan advisor "
+                    "se baat' boliye, main aapka summary advisor ke liye save kar dunga.")
         return ((f"Isme madad karega: {tips}. " if tips else "")
                 + "3 se 6 mahine baad, jab EMI ya baaki loan kam ho jaaye, dobara check kijiye.")
     if d in ("pre_approved", "needs_review", "counter_offer"):
         return ("Next steps: keep your Aadhaar card, PAN card and the last 3 months of bank statements ready. "
-                "A loan officer will call you within 2 working days to check the documents. "
-                "Final approval happens only after that verification.")
+                "A lender decides only after checking those documents. If you like, say 'talk to a loan advisor' "
+                "and I'll save your summary for one.")
     return ((f"What would help: {tips}. " if tips else "")
             + "Check again in 3 to 6 months, once your EMIs or existing loans have come down.")
 
@@ -1419,7 +1461,7 @@ def _fallback_result(r, lang):
                     "Yeh sirf pre-screening hai, final approval nahi.")
         if d == "needs_review":
             return (f"Aapki {amt} ki request, {n} mahine mein, EMI lagbhag {emi}, mumkin lagti hai. "
-                    "Hamare loan officer ise dekhkar 2 working din mein call karenge.")
+                    "Ise aage ek loan advisor ko dekhna hoga.")
         if d == "counter_offer":
             return (f"Aapki maangi hui rakam se EMI aapki kamaai ke aadhe se zyada ho jaati. "
                     f"{amt}, {n} mahine ke liye, EMI lagbhag {emi} mahina, aapki kamaai mein fit ho sakta hai. "
@@ -1431,7 +1473,7 @@ def _fallback_result(r, lang):
                 f"{n} months, with an EMI of about {emi} a month. This is a pre-screening, not a final approval.")
     if d == "needs_review":
         return (f"Your request for {amt} over {n} months, EMI about {emi}, looks possible. "
-                "A loan officer will review it and call you within 2 working days.")
+                "A loan advisor would need to review it further.")
     if d == "counter_offer":
         return (f"The amount you asked for would take more than half your income in EMIs. "
                 f"A smaller loan of {amt} over {n} months, EMI about {emi} a month, would fit your estimated "

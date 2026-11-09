@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { converse, speak, transcribe, Unauthorized } from "../api";
 import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
+import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
+import Journey from "./Journey";
 import DecisionBadge from "./DecisionBadge";
 
 // Browser web call: mic -> Gnani Prisma (/v1/stt) -> Gemini + our model (/v1/converse)
@@ -23,7 +25,7 @@ const STATE_LABELS = {
   NEXT_STEPS: "Next steps",
   COMPLETED: "Completed",
   ERROR_RECOVERY: "Recovering",
-  HUMAN_HANDOFF: "Handed to an officer",
+  HUMAN_HANDOFF: "Saved for a loan advisor",
 };
 const MONEY = new Set(["loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding"]);
 const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
@@ -72,9 +74,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
     audio.current?.pause();
   }, []);
 
-  const fail = (err) => {
+  const [retry, setRetry] = useState(null); // { text, action } of a turn the server never answered
+
+  // Applicants never see technical errors; details go to the console for whoever runs the demo.
+  const fail = (err, friendly) => {
     if (err instanceof Unauthorized) return onUnauthorized();
-    setError(err.message || String(err));
+    console.warn("[web call]", err);
+    setError(friendly || "Saathi couldn't reach the server. Please check your connection and try again.");
   };
 
   const say = async (reply) => {
@@ -92,7 +98,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
       URL.revokeObjectURL(url);
     } catch (err) {
       if (err instanceof Unauthorized) return onUnauthorized();
-      setVoiceNote(`Voice replies are off: ${err.message}. The call carries on in text.`);
+      console.warn("[web call] voice reply failed", err);
+      setVoiceNote("Voice replies aren't available right now, so Saathi will reply in text.");
       setVoiceOn(false);
     }
   };
@@ -123,16 +130,18 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
   const send = async (said, action = "") => {
     const clean = said.trim();
     if ((!clean && !action) || !call || call.done) return;
-    setMessages((m) => [...m, { who: "caller", text: clean }]);
+    if (!retry) setMessages((m) => [...m, { who: "caller", text: clean }]);
     setText("");
     setError("");
+    setRetry(null);
     setBusy("thinking");
     try {
       const r = await converse(apiKey, call.session_id, clean, lang, action);
       await handle(r.reply, r);
     } catch (err) {
       setBusy(null);
-      fail(err);
+      setRetry({ text: clean, action });
+      fail(err, "Saathi couldn't reach the server, so your last answer wasn't heard. Tap Try again.");
     }
   };
 
@@ -143,13 +152,28 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
       try {
         const { wav, seconds } = await recorder.current.stop();
         recorder.current = null;
-        if (seconds < 0.5) throw new Error("That was too short. Tap the mic, speak, then tap again.");
-        const heard = await transcribe(apiKey, wav, lang);
-        if (!heard.trim()) throw new Error("I couldn't hear anything. Try again, or type your answer.");
+        if (seconds < 0.5) {
+          setBusy(null);
+          setError("That was too short. Tap the mic, speak, then tap again.");
+          return;
+        }
+        let heard = "";
+        try {
+          heard = await transcribe(apiKey, wav, lang);
+        } catch (err) {
+          setBusy(null);
+          fail(err, "I couldn't hear that clearly. Please tap the mic and try again, or type your answer.");
+          return;
+        }
+        if (!heard.trim()) {
+          setBusy(null);
+          setError("I couldn't hear anything. Please try again, or type your answer.");
+          return;
+        }
         await send(heard);
       } catch (err) {
         setBusy(null);
-        fail(err);
+        fail(err, "Something went wrong with the recording. Please try again, or type your answer.");
       }
       return;
     }
@@ -173,13 +197,16 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
   return (
     <main className="layout call-layout">
       <section className="panel call-panel">
+        <Journey state={call?.state} />
         <div className="call-head">
           <div>
             <h2>
-              Web call
+              Talk to Saathi
               {call?.state && <span className="state-pill">{STATE_LABELS[call.state] || call.state}</span>}
             </h2>
-            <p className="muted small">Gnani Prisma hears, Gemini understands, our model decides, Timbre speaks.</p>
+            <p className="muted small">
+              Answer a few questions by voice or text. Saathi reads your details back before estimating anything.
+            </p>
           </div>
           <div className="call-controls">
             <select value={lang} onChange={(e) => setLang(e.target.value)} disabled={!!active} aria-label="Language">
@@ -199,16 +226,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
         <div className="chat" aria-live="polite">
           {!call && !busy && (
             <div className="empty">
-              <p>Start a call to talk to Loan Saathi like a first-time borrower would.</p>
-              <p className="muted small">Speak with the mic, or type your answers to test without speech keys.</p>
+              <p>Find out how much you could comfortably borrow, in about two minutes.</p>
+              <p className="muted small">Tap Start call, then speak with the mic or type. Hindi, Hinglish or English.</p>
             </div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`bubble ${m.who}`}>
               {m.text}
-              {m.who === "saathi" && m.llm === "fallback" && i > 0 && (
-                <small title="Gemini was unavailable or its answer was rejected, so a scripted reply was used">scripted</small>
-              )}
             </div>
           ))}
           {busy && busy !== "speaking" && <div className="typing muted small">{BUSY_TEXT[busy]}</div>}
@@ -226,7 +250,16 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
           </div>
         )}
 
-        {error && <p className="call-error" role="alert">{error}</p>}
+        {error && (
+          <div className="call-error" role="alert">
+            <span>{error}</span>
+            {retry && (
+              <button type="button" className="btn" onClick={() => send(retry.text, retry.action)}>
+                Try again
+              </button>
+            )}
+          </div>
+        )}
         {voiceNote && <p className="muted small call-note">{voiceNote}</p>}
 
         <form
@@ -321,17 +354,29 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
               )}
               {call.prescreen_id && (
                 <button className="btn" onClick={() => onOpenPrescreen(call.prescreen_id)}>
-                  Open full breakdown in the live feed
+                  Open in Pre-screens (advisor view)
                 </button>
               )}
             </section>
           )}
           <p className="muted small">
-            Gemini only understands answers and phrases replies. Every value is checked and confirmed by
-            the caller first; then our model scores the risk and the 50% affordability rule sets the amount.
+            Saathi checks every number with you first. The estimate comes from fixed affordability rules and a
+            risk model, never from the chat itself.
           </p>
         </div>
       </aside>
+
+      {call && !result?.assessment && (call.advisor_case || call.state === "COLLECTING_PROFILE"
+        || call.state === "VERIFYING_INFORMATION" || call.state === "ERROR_RECOVERY") ? (
+        <section className="panel span-all advisor-only">
+          <AdvisorPanel
+            apiKey={apiKey}
+            sessionId={call.session_id}
+            existingCase={call.advisor_case || ""}
+            onUnauthorized={onUnauthorized}
+          />
+        </section>
+      ) : null}
 
       {result?.assessment && (
         <section className="panel assessment-panel span-all" ref={assessmentRef}>
@@ -341,6 +386,9 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
             prescreenId={call.prescreen_id}
             liveSimulation={call.simulation}
             onUnauthorized={onUnauthorized}
+            lang={call.language}
+            sessionId={call.session_id}
+            advisorCase={call.advisor_case || ""}
           />
         </section>
       )}

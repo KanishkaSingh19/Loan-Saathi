@@ -38,7 +38,7 @@ export default function PrescreenDetail({ prescreen, apiKey, onUnauthorized }) {
       {result.assessment ? (
         <>
           <Assessment assessment={result.assessment} apiKey={apiKey} prescreenId={id} onUnauthorized={onUnauthorized} />
-          <h3 className="officer-head">For loan officers</h3>
+          <h3 className="officer-head">For loan advisors</h3>
         </>
       ) : null}
 
