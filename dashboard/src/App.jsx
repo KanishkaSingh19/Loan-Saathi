@@ -170,7 +170,7 @@ export default function App() {
             selected.kind === "call" ? (
               <CallDetail call={selected.data} />
             ) : (
-              <PrescreenDetail prescreen={selected.data} />
+              <PrescreenDetail prescreen={selected.data} apiKey={key} onUnauthorized={() => setKey("")} />
             )
           ) : (
             <div className="empty">

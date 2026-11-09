@@ -1,13 +1,13 @@
 import {
   BAND_TONE,
-  barSummary,
   completenessGroups,
-  incomeBar,
   pictureRows,
   safetyRows,
   SOURCE_TAGS,
   STATUS_TONE,
 } from "../assessmentView";
+import IncomeBar from "./IncomeBar";
+import Simulator from "./Simulator";
 
 // The applicant-facing result of a pre-screen. Everything comes from result.assessment
 // (src/assessment.py): numbers carry their own source, so nothing here invents a label.
@@ -30,28 +30,6 @@ function Figure({ label, figure, tone = "", wide = false }) {
       <strong className={tone ? `tone-${tone}` : ""}>{figure.text}</strong>
       <Source source={figure.source} text={figure.source_text} />
     </div>
-  );
-}
-
-function IncomeBar({ shares }) {
-  const bar = incomeBar(shares);
-  const summary = barSummary(bar);
-  return (
-    <figure className="income-bar">
-      <div className="bar" role="img" aria-label={summary}>
-        <span className="seg existing" style={{ width: `${bar.existing}%` }} />
-        <span className={`seg new${bar.overLimit ? " over" : ""}`} style={{ width: `${bar.new}%` }} />
-        <span className="seg rest" style={{ width: `${bar.remaining}%` }} />
-        <i className="limit" style={{ left: `${bar.limit}%` }} aria-hidden="true" />
-      </div>
-      <figcaption>
-        <span className="key"><i className="existing" />Existing EMI</span>
-        <span className="key"><i className={`new${bar.overLimit ? " over" : ""}`} />New EMI</span>
-        <span className="key"><i className="rest" />Left for everything else</span>
-        <span className="key"><i className="limit-key" />{Math.round(bar.limit)}% limit</span>
-      </figcaption>
-      <p className={`bar-summary${bar.overLimit ? " tone-warn" : ""}`}>{summary}</p>
-    </figure>
   );
 }
 
@@ -148,7 +126,13 @@ function Safety({ safety }) {
   );
 }
 
-export default function Assessment({ assessment }) {
+export default function Assessment({
+  assessment,
+  apiKey = "",
+  prescreenId = "",
+  liveSimulation = null,
+  onUnauthorized = undefined,
+}) {
   if (!assessment) return null;
   const a = assessment;
   const tone = STATUS_TONE[a.status] || "info";
@@ -216,6 +200,14 @@ export default function Assessment({ assessment }) {
           </section>
 
           <Why why={a.why} />
+          {apiKey && prescreenId ? (
+            <Simulator
+              apiKey={apiKey}
+              prescreenId={prescreenId}
+              liveSimulation={liveSimulation}
+              onUnauthorized={onUnauthorized}
+            />
+          ) : null}
           <div className="as-two">
             <Completeness items={a.completeness} />
             <Safety safety={a.safety} />

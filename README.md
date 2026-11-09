@@ -77,6 +77,18 @@ the end of a web call and at the top of each live-feed entry:
   caller confirmation, contradictions resolved, consistent answers) must pass, or the assessment
   pauses and says what is needed. Debt and EMI affordability checks are shown with the result.
 
+## What if you changed the loan?
+Under the explanation, the simulator lets the applicant change the loan amount (slider or typed) and
+the tenure (3 to 120 months) and see, side by side with their original request: EMI, estimated total
+repayment, room left in their estimated affordability, and the estimated risk band, with arrows
+judged from the borrower's side. Three scenarios sit on top: **safer option** (all EMIs within 40%
+of income), **your request**, and **higher burden** (half as much again), each with *Try this option*.
+Every number comes from `POST /v1/simulate`, which runs the same safety check, model, affordability
+rule and debt rule as the assessment; the saved request never changes. EMIs use the model's assumed
+18% yearly interest. Everything is labelled *Simulation — not a lender offer*. On a web call the
+applicant can also ask by voice: "What if I take ₹2 lakh?", "What if I choose 5 years?", "What is the
+maximum EMI I can afford?", "EMI kam rakhni hai".
+
 ## Live dashboard (React + Vite)
 Open `https://<tunnel>/dashboard` (or `http://127.0.0.1:8000/dashboard`) and paste your
 `WEBHOOK_KEY`. It has a live feed on the left and the selected caller's full breakdown on the

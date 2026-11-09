@@ -38,6 +38,7 @@ import uuid
 import httpx
 
 import normalize as norm
+import simulate as sim_mod
 from scoring import inr
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -68,8 +69,8 @@ TRANSITIONS = {
     ASSESSING: {AFFORDABILITY, RECOVERY},
     AFFORDABILITY: {RESULT, RECOVERY},
     RESULT: {NEXT_STEPS, WHAT_IF, HANDOFF, COMPLETED},
-    WHAT_IF: {RESULT, NEXT_STEPS, HANDOFF},  # reserved for the what-if simulator
-    NEXT_STEPS: {COMPLETED, HANDOFF},
+    WHAT_IF: {RESULT, NEXT_STEPS, HANDOFF, COMPLETED},  # "what if I take 2 lakh?"
+    NEXT_STEPS: {COMPLETED, HANDOFF, WHAT_IF},
     RECOVERY: {COLLECTING, VERIFYING, HANDOFF, COMPLETED},
     HANDOFF: {COMPLETED},
     COMPLETED: set(),
@@ -177,6 +178,27 @@ FIRST = re.compile(r"\b(pehla|pehle|pahla|pahle|first|purana|old|earlier)\b|प�
 SECOND = re.compile(r"\b(doosra|dusra|doosre|dusre|second|naya|nayi|new|latest|abhi wala|baad wala|later)\b|दूसर|नया", re.I)
 BOTH = re.compile(r"\b(total|dono|both|jod|jodo|add|sum|milakar|mila ke)\b|दोनों|कुल", re.I)
 
+# What-if questions after the result ("what if I take 2 lakh?", "agar 5 saal ka loon?").
+MAX_EMI = re.compile(r"(max|maximum|zyada se zyada|kitni|kitna|how much).{0,40}\bemi\b|\bemi\b.{0,40}"
+                     r"(afford|max|maximum|kitni|kitna|bhar sakta|bhar sakti)|afford", re.I)
+LOW_EMI = re.compile(r"\bemi\b.{0,25}\b(kam|less|lower|low|chhoti|kum)\b|\b(kam|lower|less|low|chhoti)\b.{0,12}\bemi\b", re.I)
+TENURE_PHRASE = re.compile(r"((?:\d+(?:\.\d+)?|[a-zऀ-ॿ]+)\s*(?:saal|sal|years?|yrs?|varsh|baras|mahine|mahina|"
+                           r"months?|साल|महीने))", re.I)
+BACK = re.compile(r"\b(original|meri request|wapas|back to|reset)\b", re.I)
+
+
+def whatif_request(text):
+    """(loan, tenure_months) the caller is asking about; either may be None."""
+    tenure = None
+    for m in TENURE_PHRASE.finditer(text or ""):
+        n = norm.months(m.group(1))
+        if n and norm.number(m.group(1)) is not None:
+            tenure = int(n)
+    rest = TENURE_PHRASE.sub(" ", text or "")
+    loans = [a["value"] for a in norm.amounts(rest) if a["scaled"] or a["value"] >= 1000]
+    return (loans[0] if loans else None), tenure
+
+
 # Words that point at a field, for corrections and for "actually I earn 60k" mid-call.
 # Checked in order: specific words first, plain "loan" last.
 MENTIONS = [
@@ -243,6 +265,20 @@ SAY = {
                        "Kya hum phir se koshish karein, ya main aapko loan officer se jod doon?",
                  "en": "Sorry, I'm having trouble understanding. You can also type your answer. "
                        "Shall we try again, or would you like a loan officer to call you?"},
+    "whatif_more": {"hi": " Koi aur rakam ya samay try karna hai? Ya 'aage ke steps' boliye.",
+                    "en": " Want to try another amount or tenure? Or say 'next steps'."},
+    "whatif_unclear": {"hi": "Aap koi rakam ya samay boliye, jaise 'agar 2 lakh loon' ya '5 saal mein'. "
+                             "Ya 'aage ke steps' boliye.",
+                       "en": "Say an amount or a tenure, like 'what if I take 2 lakh' or 'over 5 years'. "
+                             "Or say 'next steps'."},
+    "max_emi": {"hi": "Aapki anumanit affordability ke hisaab se naye loan ki EMI lagbhag {cap} mahina tak ho sakti hai, "
+                      "taaki saari EMI milakar kamaai ke aadhe se kam rahein. Yeh anumaan hai, lender ka offer nahi.",
+                "en": "Your estimated affordable EMI for a new loan is about {cap} a month, so that all your EMIs "
+                      "stay within half of your income. This is an estimate, not a lender offer."},
+    "no_room": {"hi": "Aapki maujooda EMI pehle se kamaai ka aadha ya usse zyada hai, isliye naye loan ki EMI ki "
+                      "gunjaish abhi nahi dikhti.",
+                "en": "Your existing EMIs already take half your income or more, so there is no room for a new "
+                      "EMI right now."},
     "safety_failed": {"hi": "Jaanch se pehle ek baat saaf karni hai. Kya hum details phir se dekhein?",
                       "en": "Before I can check, one thing needs clearing up. Shall we go over the details again?"},
     "assess_failed": {"hi": "Maaf kijiye, jaanch karte waqt kuch technical dikkat aa gayi. Kya main phir se koshish karoon?",
@@ -679,6 +715,7 @@ def public(s):
             "summary": summary(s), "pending": pending, "correcting": s["correcting"],
             "buttons": buttons(s), "skipped": sorted(s["skipped"]),
             "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
+            "simulation": s.get("simulation"),
             "trail": [f"{t['from']} -> {t['to']}" for t in s["trail"][-20:]],
             "llm": s["llm"][-1] if s["llm"] else ""}
 
@@ -893,7 +930,7 @@ def _cross_checks(s):
 # ---------- the turn ----------
 
 async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini-3.5-flash-lite",
-               action="", assess=None, safety=None):
+               action="", assess=None, safety=None, simulator=None):
     """Handles one caller utterance (or button press) and returns the reply to speak."""
     text = (text or "").strip()[:1000]
     action = (action or "").strip()
@@ -905,7 +942,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
         return SAY["finished"][s["lang"]]
     s["history"].append(("Caller", text or f"[{action}]"))
     env = {"decide": decide, "build_applicant": build_applicant, "save": save, "assess": assess,
-           "safety": safety, "api_key": api_key, "model": model}
+           "safety": safety, "simulator": simulator, "api_key": api_key, "model": model}
 
     if action == "handoff" or (not action and text and HUMAN.search(text)):
         if HANDOFF in TRANSITIONS[s["state"]]:
@@ -915,7 +952,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
 
     handler = {COLLECTING: _collecting, VERIFYING: _verifying, CORRECTION: _correcting,
                RESULT: _after_result, NEXT_STEPS: _after_next_steps, RECOVERY: _recovering,
-               WHAT_IF: _after_next_steps}[s["state"]]
+               WHAT_IF: _what_if}[s["state"]]
     reply = await handler(s, env, text, action)
     s["history"].append(("Saathi", reply))
     return reply
@@ -1221,7 +1258,7 @@ async def _assess(s, env):
     pid = uuid.uuid4().hex[:12]
     result["prescreen_id"] = pid
     env["save"](pid, {**body, "source": "web-call", "session_id": s["id"]}, applicant, result, details)
-    s.update(result=result, prescreen_id=pid)
+    s.update(result=result, prescreen_id=pid, applicant=applicant, simulation=None)
     transition(s, RESULT, result["decision"])
 
     reply = ""
@@ -1242,8 +1279,67 @@ async def _assess(s, env):
     return reply + RESULT_FOLLOWUP.get(result["decision"], {}).get(s["lang"], "")
 
 
+def _try_what_if(s, env, text, action):
+    """Answers a what-if question with the deterministic simulator, or returns None."""
+    if action or not text or not env.get("simulator") or not s.get("applicant"):
+        return None
+    lang, a = s["lang"], s["applicant"]
+    if MAX_EMI.search(text):
+        cap = ((s["result"] or {}).get("assessment") or {}).get("affordability") or {}
+        if cap.get("value", 0) <= 0:
+            reply = SAY["no_room"][lang]
+        else:
+            reply = SAY["max_emi"][lang].format(cap=inr(cap["value"]))
+        if s["state"] != WHAT_IF:
+            transition(s, WHAT_IF, "caller asked for the maximum EMI")
+        return reply + SAY["whatif_more"][lang]
+    current = s.get("simulation") or {}
+    loan, tenure = whatif_request(text)
+    if LOW_EMI.search(text) and loan is None and tenure is None:
+        options = env["simulator"](a, scen=True).get("scenarios") or []
+        safer = next((o for o in options if o.get("kind") == "safer" and not o.get("unavailable")), None)
+        if safer:
+            loan, tenure = safer["loan_amount"]["value"], safer["tenure"]["value"]
+        else:  # no lower amount fits: show the same loan over a longer time
+            base = int(a.get("tenure_months") or 24)
+            loan, tenure = a["loan_amount"], min(120, base + 12)
+    if BACK.search(text) and loan is None and tenure is None:
+        loan, tenure = a["loan_amount"], int(a.get("tenure_months") or 24)
+    if loan is None and tenure is None:
+        return None
+    sim = (current.get("simulation") or {})
+    loan = loan if loan is not None else (sim.get("loan_amount") or {}).get("value")
+    tenure = tenure if tenure is not None else (sim.get("tenure") or {}).get("value")
+    try:
+        out = env["simulator"](a, loan, tenure)
+    except sim_mod.InvalidSimulation as e:
+        return str(e) + SAY["whatif_more"][lang]
+    s["simulation"] = out
+    if s["state"] != WHAT_IF:
+        transition(s, WHAT_IF, "caller asked a what-if")
+    return sim_mod.spoken(out["simulation"], lang) + SAY["whatif_more"][lang]
+
+
+async def _what_if(s, env, text, action):
+    lang = s["lang"]
+    reply = _try_what_if(s, env, text, action)
+    if reply:
+        return reply
+    if _no(text, action) and not _yes(text, action):
+        transition(s, COMPLETED, "caller finished")
+        s["asking"] = "done"
+        return SAY["bye"][lang]
+    if _yes(text, action) or re.search(r"next|aage|steps", text or "", re.I):
+        transition(s, NEXT_STEPS, "caller wants next steps")
+        return _next_steps(s["result"], lang) + SAY["more"][lang]
+    return SAY["whatif_unclear"][lang]
+
+
 async def _after_result(s, env, text, action):
     lang = s["lang"]
+    reply = _try_what_if(s, env, text, action)
+    if reply:
+        return reply
     if _no(text, action) and not _yes(text, action):
         transition(s, COMPLETED, "caller declined next steps")
         s["asking"] = "done"
@@ -1253,8 +1349,9 @@ async def _after_result(s, env, text, action):
 
 
 async def _after_next_steps(s, env, text, action):
-    if s["state"] == WHAT_IF:  # reserved: nothing enters WHAT_IF yet
-        transition(s, NEXT_STEPS, "what-if not available")
+    reply = _try_what_if(s, env, text, action)
+    if reply:
+        return reply
     transition(s, COMPLETED, "call finished")
     s["asking"] = "done"
     return SAY["finished"][s["lang"]]

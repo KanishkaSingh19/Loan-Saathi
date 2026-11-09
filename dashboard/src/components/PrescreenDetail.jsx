@@ -20,7 +20,7 @@ function Reasons({ title, items, tone }) {
   );
 }
 
-export default function PrescreenDetail({ prescreen }) {
+export default function PrescreenDetail({ prescreen, apiKey, onUnauthorized }) {
   const { id, ts, said, applicant, result } = prescreen;
   const details = result.details || {};
   const saidRows = Object.entries(SAID_LABELS).filter(([k]) => !isBlank(said[k]));
@@ -37,7 +37,7 @@ export default function PrescreenDetail({ prescreen }) {
 
       {result.assessment ? (
         <>
-          <Assessment assessment={result.assessment} />
+          <Assessment assessment={result.assessment} apiKey={apiKey} prescreenId={id} onUnauthorized={onUnauthorized} />
           <h3 className="officer-head">For loan officers</h3>
         </>
       ) : null}

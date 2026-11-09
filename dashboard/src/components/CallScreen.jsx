@@ -335,7 +335,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen }) 
 
       {result?.assessment && (
         <section className="panel assessment-panel span-all" ref={assessmentRef}>
-          <Assessment assessment={result.assessment} />
+          <Assessment
+            assessment={result.assessment}
+            apiKey={apiKey}
+            prescreenId={call.prescreen_id}
+            liveSimulation={call.simulation}
+            onUnauthorized={onUnauthorized}
+          />
         </section>
       )}
     </main>

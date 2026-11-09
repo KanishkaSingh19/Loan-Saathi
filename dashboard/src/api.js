@@ -82,3 +82,23 @@ export async function speak(key, text) {
   if (!res.ok) throw new Error(await errorText(res));
   return res.blob();
 }
+
+// ---------- what-if simulator ----------
+
+export class ApiError extends Error {}
+
+// Read-only what-if for a completed pre-screen. Server errors come back as ApiError with a message
+// that is safe to show the applicant (e.g. "The tenure must be between 3 months and 10 years").
+/**
+ * @param {string} key
+ * @param {string} prescreenId
+ * @param {{loanAmount?: number, tenureMonths?: number, scenarios?: boolean}} [options]
+ */
+export async function simulate(key, prescreenId, { loanAmount, tenureMonths, scenarios = false } = {}) {
+  const body = { prescreen_id: prescreenId, scenarios };
+  if (loanAmount != null) body.loan_amount = loanAmount;
+  if (tenureMonths != null) body.tenure_months = tenureMonths;
+  const res = await postJson(key, "/v1/simulate", body);
+  if (!res.ok) throw new ApiError(await errorText(res));
+  return res.json();
+}

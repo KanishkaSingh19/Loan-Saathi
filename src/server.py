@@ -33,6 +33,7 @@ import assessment  # noqa: E402
 import converse  # noqa: E402
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
+import simulate  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -77,6 +78,13 @@ class ConverseRequest(BaseModel):
     action: str = Field(default="", max_length=40)
 
 
+class SimulateRequest(BaseModel):
+    prescreen_id: str = Field(min_length=1, max_length=40)
+    loan_amount: float | None = None
+    tenure_months: float | None = None
+    scenarios: bool = False
+
+
 class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     language: str = "hi-en"
@@ -92,6 +100,7 @@ class SpeechRequest(BaseModel):
 _SCHEMA = [
     "CREATE TABLE IF NOT EXISTS prescreens (id TEXT PRIMARY KEY, ts {real}, raw TEXT, applicant TEXT, result TEXT)",
     "CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
+    "CREATE TABLE IF NOT EXISTS advisor_cases (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
 ]
 _schema_ready = False
 
@@ -422,6 +431,50 @@ def applications(limit: int = 50, x_webhook_key: str = Header(default="")):
     }
 
 
+# ---------- what-if simulator ----------
+
+WEB_CONTEXT = {"channel": "web", "confirmed": True, "open_checks": 0}
+
+
+def _load_prescreen(pid):
+    rows = _run("SELECT raw, applicant, result FROM prescreens WHERE id = ?", (pid,), fetch=True)
+    if not rows:
+        raise HTTPException(status_code=404, detail="This assessment wasn't found. Please run the pre-screening again.")
+    said, applicant, result = (json.loads(x) for x in rows[0])
+    return said, applicant, result
+
+
+def simulate_for(applicant, loan=None, tenure=None, context=None, with_scenarios=False):
+    """Original request + optional simulation (+ the three scenarios), all through decide()."""
+    base_tenure = int(applicant.get("tenure_months") or scoring.DEFAULT_TENURE)
+    original = simulate.run(applicant, applicant["loan_amount"], base_tenure, decide, context, kind="request")
+    out = {"label": simulate.LABEL, "original": original}
+    if with_scenarios:
+        out["scenarios"] = simulate.scenarios(applicant, decide, context)
+    if loan is not None or tenure is not None:
+        sim = simulate.run(applicant, applicant["loan_amount"] if loan is None else loan,
+                           base_tenure if tenure is None else tenure, decide, context)
+        out["simulation"] = sim
+        out["compare"] = simulate.compare(original, sim)
+    return out
+
+
+@app.post("/v1/simulate")
+def simulate_route(body: SimulateRequest, x_webhook_key: str = Header(default="")):
+    """What-if simulation for a completed pre-screen. Read-only: the saved request never changes."""
+    _check_key(x_webhook_key)
+    said, applicant, result = _load_prescreen(body.prescreen_id)
+    if result.get("decision") == "need_more_info" or not applicant.get("loan_amount") \
+            or not applicant.get("monthly_income"):
+        raise HTTPException(status_code=409, detail="Finish the assessment first: the simulator only works on a "
+                                                    "completed, checked profile.")
+    context = WEB_CONTEXT if said.get("source") == "web-call" else None
+    try:
+        return simulate_for(applicant, body.loan_amount, body.tenure_months, context, body.scenarios)
+    except simulate.InvalidSimulation as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
+
 @app.post("/v1/converse")
 async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
     """Browser web call: one caller utterance in (already transcribed), Saathi's reply out.
@@ -441,7 +494,9 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
         print(f"[web-call {s['id']} -> prescreen {pid}] {result['decision']} band={result['risk_band']}", flush=True)
 
     reply = await converse.turn(s, body.text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
-                                action=body.action, assess=scoring.score, safety=assessment.safety_pre)
+                                action=body.action, assess=scoring.score, safety=assessment.safety_pre,
+                                simulator=lambda a, loan=None, tenure=None, scen=False:
+                                simulate_for(a, loan, tenure, WEB_CONTEXT, scen))
     return {**converse.public(s), "reply": reply}
 
 

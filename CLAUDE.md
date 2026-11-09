@@ -26,6 +26,7 @@ python -I -X utf8 src/test_speech_api.py     # speech proxy route tests (mocked,
 python -I -X utf8 src/test_converse.py       # web-call conversation tests (Gemini mocked)
 python -I -X utf8 src/test_states.py         # web-call state machine: confirm, correct, ambiguity, contradictions
 python -I -X utf8 src/test_assessment.py     # applicant assessment: provenance, wording, why, safety check
+python -I -X utf8 src/test_simulate.py       # what-if simulator: boundaries, scenarios, voice what-ifs, no bypass
 python -I -m ruff check src                  # Python lint (requirements-dev.txt)
 cd dashboard; npm test; npm run lint; npm run typecheck; npm run build   # frontend checks
 python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
@@ -80,6 +81,12 @@ trained models are in `models/`); only retraining or the model comparison does.
   runs before the model (in `decide()` and before ASSESSING_RISK in the web call); a "fail" pauses
   with what's needed. Wording says "estimated" / "eligible for further review", never "approved";
   decision codes (`pre_approved` etc.) are unchanged for Agent Builder.
+- `src/simulate.py`: the what-if simulator. `run()` puts a copy of the saved applicant with a new loan
+  amount/tenure through `server.decide()` (safety check, model, affordability, debt rule), so a
+  simulation can never bypass a rule. `scenarios()`: safer option (all EMIs within 40% of income),
+  your request, higher burden (1.5x). `POST /v1/simulate` is read-only on a saved pre-screen; 409 for
+  paused/incomplete ones. The web call answers "what if I take 2 lakh?", "5 saal", "max EMI" and
+  "EMI kam" in SHOWING_RESULT / WHAT_IF / NEXT_STEPS. Labels: "Simulation — not a lender offer."
 - `src/server.py`: `/v1/prescreen`, `/v1/post-call`, `/v1/applications`, `/v1/converse`, `/v1/stt` and `/v1/tts`
   (pass-throughs to Gnani's speech APIs), `/dashboard`, `/health`. Stores data in SQLite under `data/`.
 - Evon (Gnani's LLM) has no public API; Agent Builder offers Gnani's Pampa Go / Pampa Priority (not
