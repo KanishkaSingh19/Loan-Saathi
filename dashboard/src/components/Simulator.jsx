@@ -4,29 +4,15 @@ import { BAND_TONE } from "../assessmentView";
 import { change, cleanLoan, cleanTenure, isOriginal, loanSlider, tenureText } from "../simulatorView";
 import IncomeBar from "./IncomeBar";
 
-// "What if you changed the loan?" Every figure comes from /v1/simulate, which runs the same
+// "Explore another option". Every figure comes from /v1/simulate, which runs the same
 // safety check, risk model and affordability rule as the assessment. The saved request never changes:
 // "Your request" and "Current simulation" stay side by side.
 
-const ROWS = [
-  ["loan_amount", "Loan amount"],
-  ["tenure", "Tenure"],
-  ["emi", "Monthly EMI"],
-  ["total_repayment", "Total repayment (estimated)"],
-  ["headroom", "Room left in your estimated affordability"],
-  ["risk", "Estimated risk"],
-];
-
-function cell(sim, key) {
-  if (!sim || sim.status === "paused") return "–";
-  if (key === "risk") return sim.risk?.text ?? "–";
-  if (key === "tenure") return tenureText(sim.tenure?.value);
-  return sim[key]?.text?.replace("/month", "") ?? "–";
-}
+const LABEL = "Simulation only — not a lender offer or approval.";
 
 function Delta({ cmp, metric }) {
   const d = cmp?.[metric];
-  if (!d || d.direction === "same") return <span className="muted">no change</span>;
+  if (!d || d.direction === "same") return null;
   const c = change(metric, d.direction);
   return (
     <span className={`delta ${c.tone}`}>
@@ -35,41 +21,60 @@ function Delta({ cmp, metric }) {
   );
 }
 
-function ScenarioCard({ s, active, onTry }) {
-  if (s.unavailable) {
-    return (
-      <div className="scenario unavailable">
-        <h4>{s.title}</h4>
-        <p className="muted small">{s.blurb}</p>
-      </div>
-    );
-  }
+function burdenText(s) {
+  if (s.emi_share == null) return "–";
+  return `${Math.round(s.emi_share)}% of income`;
+}
+
+// One scenario: the saved request or the alternative. Same rows, so they read side by side.
+// `risk` is what to show for the estimated risk (the alternative may keep the original's).
+function ScenarioPanel({ title, note, s, cmp = null, risk, kind }) {
   const paused = s.status === "paused";
   return (
-    <div className={`scenario${active ? " active" : ""} ${s.kind}`}>
-      <h4>{s.title}</h4>
-      <p className="muted small">{s.blurb}</p>
-      <dl>
-        <div><dt>Loan</dt><dd>{s.loan_amount.text}</dd></div>
-        <div><dt>Tenure</dt><dd>{s.tenure.value} months</dd></div>
-        {!paused && <div><dt>EMI</dt><dd>{s.emi.text.replace("/month", "")}/mo</dd></div>}
-        {!paused && (
+    <section className={`what-if-card ${kind}`} aria-label={title}>
+      <header>
+        <h4>{title}</h4>
+        <p>{note}</p>
+      </header>
+      {paused ? (
+        <p className="as-status info">Can&rsquo;t simulate this yet: {(s.needed || []).join(" ")}</p>
+      ) : (
+        <dl>
           <div>
-            <dt>Affordability</dt>
-            <dd className={s.fits ? "tone-good" : "tone-warn"}>{s.fits ? "Within estimate" : "Above estimate"}</dd>
+            <dt>Loan amount</dt>
+            <dd><strong>{s.loan_amount.text}</strong><Delta cmp={cmp} metric="loan_amount" /></dd>
           </div>
-        )}
-        {!paused && (
+          <div>
+            <dt>Repayment period</dt>
+            <dd><strong>{tenureText(s.tenure.value)}</strong><Delta cmp={cmp} metric="tenure" /></dd>
+          </div>
+          <div>
+            <dt>Estimated EMI</dt>
+            <dd><strong>{s.emi.text}</strong><Delta cmp={cmp} metric="emi" /></dd>
+          </div>
+          <div>
+            <dt>Monthly burden</dt>
+            <dd>
+              <strong className={s.burden?.level === "over" ? "tone-bad" : s.burden?.level === "stretched" ? "tone-warn" : ""}>
+                {burdenText(s)}
+              </strong>
+              <small>all EMIs: {s.total_obligations?.text ?? "–"}</small>
+            </dd>
+          </div>
+          <div>
+            <dt>Assessment</dt>
+            <dd><strong>{s.outcome?.title ?? s.status_text}</strong></dd>
+          </div>
           <div>
             <dt>Estimated risk</dt>
-            <dd className={`tone-${BAND_TONE[s.risk.band]}`}>{s.risk.text}</dd>
+            <dd>
+              <strong className={risk.tone ? `tone-${risk.tone}` : ""}>{risk.text}</strong>
+              {risk.note ? <small>{risk.note}</small> : null}
+            </dd>
           </div>
-        )}
-      </dl>
-      <button type="button" className="btn" onClick={() => onTry(s)} aria-pressed={active}>
-        {active ? "Showing this option" : s.kind === "request" ? "Back to your request" : `Try ${s.title.toLowerCase()} option`}
-      </button>
-    </div>
+        </dl>
+      )}
+    </section>
   );
 }
 
@@ -162,7 +167,7 @@ export default function Simulator({
   if (error && !base) {
     return (
       <section className="as-section simulator">
-        <h3>What if you changed the loan?</h3>
+        <h3>Explore another option</h3>
         <p className="call-error" role="alert">{error}</p>
       </section>
     );
@@ -170,38 +175,44 @@ export default function Simulator({
   if (!base) {
     return (
       <section className="as-section simulator">
-        <h3>What if you changed the loan?</h3>
-        <p className="muted">Preparing the simulator…</p>
+        <h3>Explore another option</h3>
+        <p className="loading-line"><span className="dots" aria-hidden="true"><i /><i /><i /></span>
+          Preparing the simulator…</p>
       </section>
     );
   }
 
   const original = base.original;
   const sim = result?.simulation;
-  const showing = sim || original;
   const slider = loanSlider(original.loan_amount.value);
-  const tryOption = (s) => {
-    setLoan(s.loan_amount.value);
-    setTenure(s.tenure.value);
-    setTyped(String(s.loan_amount.value));
+  const tryOption = (o) => {
+    setLoan(o.loan_amount.value);
+    setTenure(o.tenure.value);
+    setTyped(String(o.loan_amount.value));
   };
   const reset = () => tryOption(original);
-  const activeKind = sim ? (base.scenarios || []).find((s) => !s.unavailable && isOriginal(loan, tenure, s))?.kind
-    : "request";
+  const safer = (base.scenarios || []).find((o) => o.kind === "safer");
+  const onSafer = sim && safer && !safer.unavailable && isOriginal(loan, tenure, safer);
+
+  const bandRisk = (x) => ({ text: x.risk?.text ?? "–", tone: BAND_TONE[x.risk?.band] });
+  const cmpRisk = result?.compare?.risk;
+  // The model re-scores the alternative, except where it can't be trusted: then the original stands.
+  const altRisk = !sim || sim.status === "paused" ? null
+    : cmpRisk && cmpRisk.recalculated === false
+      ? { text: "Not recalculated", note: `Original estimate (${original.risk?.text}) still applies.` }
+      : { ...bandRisk(sim), note: "Recalculated by the model for this amount" };
 
   return (
     <section className="as-section simulator" aria-labelledby="sim-title">
       <div className="sim-head">
         <div>
-          <h3 id="sim-title">What if you changed the loan?</h3>
+          <h3 id="sim-title">Explore another option</h3>
+          <p className="muted small">
+            Change the amount or the repayment period to see how your monthly budget would change. Your
+            request stays saved as it is.
+          </p>
         </div>
-        <span className="sim-label">Simulation — not a lender offer.</span>
-      </div>
-
-      <div className="scenarios">
-        {(base.scenarios || []).map((s) => (
-          <ScenarioCard key={s.kind} s={s} active={activeKind === s.kind} onTry={tryOption} />
-        ))}
+        <span className="sim-label">{LABEL}</span>
       </div>
 
       <div className="sim-controls">
@@ -240,7 +251,7 @@ export default function Simulator({
           </div>
         </label>
         <label>
-          <span>Tenure: {tenureText(tenure)}</span>
+          <span>Repayment period: {tenureText(tenure)}</span>
           <input
             type="range"
             min={3}
@@ -248,57 +259,55 @@ export default function Simulator({
             step={3}
             value={tenure}
             onChange={(e) => setTenure(cleanTenure(e.target.value))}
-            aria-label="Tenure in months"
+            aria-label="Repayment period in months"
           />
         </label>
       </div>
 
-      <div className="sim-result" aria-live="polite" aria-busy={busy}>
-        {error && <p className="call-error" role="alert">{error}</p>}
-        {showing.status === "paused" ? (
-          <p className="as-status info">Can&rsquo;t simulate this yet: {(showing.needed || []).join(" ")}</p>
-        ) : (
-          <>
-            <p className={`as-status ${showing.fits && !showing.debt_over_limit ? "good" : "warn"}`}>
-              {sim ? "This simulation: " : "Your request: "}
-              {showing.fits
-                ? `EMI of ${showing.emi.text} is within your estimated affordability of ${showing.affordability.text}.`
-                : `EMI of ${showing.emi.text} is above your estimated affordability of ${showing.affordability.text}.`}
-              {showing.debt_over_limit ? " Existing loans are still more than 2 years of income." : ""}
-            </p>
-            <table className="sim-table">
-              <thead>
-                <tr>
-                  <th scope="col"><span className="sr-only">Figure</span></th>
-                  <th scope="col">Your request</th>
-                  <th scope="col">Current simulation</th>
-                  <th scope="col">Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ROWS.map(([key, label]) => (
-                  <tr key={key}>
-                    <th scope="row">{label}</th>
-                    <td>{cell(original, key)}</td>
-                    <td>{sim ? cell(sim, key) : <span className="muted">same as request</span>}</td>
-                    <td>{sim ? <Delta cmp={result.compare} metric={key} /> : null}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {showing.shares ? <IncomeBar shares={showing.shares} /> : null}
-            <p className="muted small">
-              EMIs and totals: {showing.emi.source_text.toLowerCase()}; a lender&rsquo;s real rate may differ.
-              Estimated affordability keeps all your EMIs within half of your income.
-            </p>
-          </>
-        )}
+      <div className="sim-actions">
+        {safer && !safer.unavailable ? (
+          <button type="button" className="btn" onClick={() => tryOption(safer)} aria-pressed={!!onSafer}>
+            Lower-burden option: {safer.loan_amount.text}
+          </button>
+        ) : null}
         {sim ? (
-          <button type="button" className="btn" onClick={reset}>
+          <button type="button" className="btn primary" onClick={reset}>
             Back to my request
           </button>
         ) : null}
+        {safer ? <span className="muted small">{safer.blurb}</span> : null}
       </div>
+
+      <div className="what-if-pair" aria-live="polite" aria-busy={busy}>
+        <ScenarioPanel title="Your request" note="Saved. Simulations never change it." s={original}
+          risk={{ ...bandRisk(original), note: "Estimated by model" }} kind="request" />
+        {sim ? (
+          <ScenarioPanel title="Alternative" note={onSafer ? "Lower-burden option" : "Simulation"} s={sim}
+            cmp={result.compare} risk={altRisk || { text: "–" }} kind="alternative" />
+        ) : (
+          <section className="what-if-card alternative empty" aria-label="Alternative">
+            <header>
+              <h4>Alternative</h4>
+              <p>Move a slider, type an amount, or ask Saathi &ldquo;what if I borrow 2 lakh?&rdquo;</p>
+            </header>
+          </section>
+        )}
+      </div>
+
+      {error && <p className="call-error" role="alert">{error}</p>}
+      {sim && sim.status !== "paused" && sim.shares ? (
+        <div className="burden">
+          <p className="burden-line">
+            <strong>Alternative: {sim.burden?.text}</strong>
+            <span>{sim.burden?.detail}</span>
+          </p>
+          <IncomeBar shares={sim.shares} />
+        </div>
+      ) : null}
+      <p className="muted small">
+        EMIs: {original.emi.source_text.toLowerCase()}; a lender&rsquo;s real rate may differ. Monthly burden is
+        all your EMIs as a share of income; the affordability rules allow up to 50%.
+      </p>
     </section>
   );
 }

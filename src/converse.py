@@ -250,6 +250,16 @@ TENURE_PHRASE = re.compile(r"((?:\d+(?:\.\d+)?|[a-zऀ-ॿ]+)\s*(?:saal|sal|year
 BACK = re.compile(r"\b(original|meri request|wapas|back to|reset)\b", re.I)
 
 
+def whatif_amounts(text):
+    """(distinct loan amounts, bare small numbers) in a what-if, outside any tenure phrase. Two amounts
+    ("2 ya 3 lakh") or a bare "40" are asked about, never guessed."""
+    rest = TENURE_PHRASE.sub(" ", text or "")
+    found = norm.amounts(rest)
+    loans = sorted({int(a["value"]) for a in found if a["scaled"] or a["value"] >= 1000})
+    bare = [int(a["value"]) for a in found if not a["scaled"] and a["value"] < 1000]
+    return loans, bare
+
+
 def whatif_request(text):
     """(loan, tenure_months) the caller is asking about; either may be None."""
     tenure = None
@@ -338,6 +348,10 @@ SAY = {
                            "upar padhi gayi jaankari sahi hai? 'Haan' boliye, ya bataiye kya badalna hai.",
                      "en": "I can show other amounts or tenures right after the assessment. First, is the information "
                            "I read out correct? Say yes, or tell me what to change."},
+    "whatif_which": {"hi": "Maine do rakam suni: {options}. Kaunsi rakam dekhni hai? Ek hi rakam boliye.",
+                     "en": "I heard two amounts: {options}. Which one should I simulate? Please say one amount."},
+    "whatif_bare": {"hi": "Maine sirf '{n}' suna. Poori rakam boliye, jaise '{n} hazaar' ya '2 lakh'.",
+                    "en": "I only heard '{n}'. Please say the full amount, like '{n} thousand' or '2 lakh'."},
     "whatif_more": {"hi": " Koi aur rakam ya samay try karna hai? Ya 'aage ke steps' boliye.",
                     "en": " Want to try another amount or tenure? Or say 'next steps'."},
     "whatif_unclear": {"hi": "Aap koi rakam ya samay boliye, jaise 'agar 2 lakh loon' ya '5 saal mein'. "
@@ -1584,6 +1598,13 @@ def _try_what_if(s, env, text, action):
         return reply + SAY["whatif_more"][lang]
     current = s.get("simulation") or {}
     loan, tenure = whatif_request(text)
+    loans, bare = whatif_amounts(text)
+    if len(loans) > 1 or (loan is None and tenure is None and bare and WHAT_IF_WORDS.search(text)):
+        if s["state"] != WHAT_IF:
+            transition(s, WHAT_IF, "caller asked an unclear what-if")
+        if len(loans) > 1:
+            return SAY["whatif_which"][lang].format(options=" / ".join(inr(v) for v in loans))
+        return SAY["whatif_bare"][lang].format(n=bare[0])
     if LOW_EMI.search(text) and loan is None and tenure is None:
         options = env["simulator"](a, scen=True).get("scenarios") or []
         safer = next((o for o in options if o.get("kind") == "safer" and not o.get("unavailable")), None)

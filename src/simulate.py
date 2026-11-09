@@ -14,7 +14,7 @@ import math
 import scoring
 from scoring import inr
 
-LABEL = "Simulation — not a lender offer."
+LABEL = "Simulation only — not a lender offer or approval."
 MIN_LOAN, MAX_LOAN = 1_000, 10_00_00_000
 MIN_TENURE, MAX_TENURE = 3, 120
 COMFORT_FOIR = 0.4      # the "safer option": all EMIs within 40% of income
@@ -75,6 +75,7 @@ def run(applicant, loan, tenure, decide, context=None, kind="custom"):
         "total_interest": _num(emi * tenure - loan, "calc"),
         "status": a.get("status", "paused"),
         "status_text": a.get("status_text", ""),
+        "outcome": a.get("outcome"),
     }
     if out["status"] == "paused":
         out["needed"] = a.get("needed", [])
@@ -84,6 +85,8 @@ def run(applicant, loan, tenure, decide, context=None, kind="custom"):
         "headroom": _num(max_new - emi, "rules", suffix="/month"),
         "fits": emi <= max_new + 0.5,
         "emi_share": round((existing + emi) / income * 100, 1) if income else None,
+        "total_obligations": _num(existing + emi, "calc", suffix="/month"),
+        "burden": (a.get("picture") or {}).get("burden"),
         "shares": (a.get("picture") or {}).get("shares"),
         "risk": {"band": a["risk"]["band"], "text": a["risk"]["text"], "source": "model",
                  "source_text": SOURCE["model"]},
@@ -103,15 +106,19 @@ def scenarios(applicant, decide, context=None):
     if existing is None:
         existing = scoring.estimate_emi(applicant.get("active_loans_outstanding") or 0, scoring.DEFAULT_TENURE)
     comfort = scoring.loan_for_emi(COMFORT_FOIR * income - existing, tenure)
-    safer_amount = math.floor(min(comfort, loan * 0.75 if comfort >= loan else comfort) / 1000) * 1000
+    safer_amount = math.floor(comfort / 1000) * 1000
 
     out = []
-    if safer_amount >= MIN_LOAN and safer_amount < loan:
+    if MIN_LOAN <= safer_amount < loan:
         s = run(applicant, safer_amount, tenure, decide, context, kind="safer")
-        s.update(title="Safer option", blurb="Lower borrowing burden.")
+        s.update(title="Lower-burden option",
+                 blurb="The largest amount that keeps all your EMIs within 40% of your income.")
         out.append(s)
+    elif safer_amount >= loan:
+        out.append({"kind": "safer", "title": "Lower-burden option", "label": LABEL, "unavailable": True,
+                    "blurb": "Your request already keeps all your EMIs within 40% of your income."})
     else:
-        out.append({"kind": "safer", "title": "Safer option", "label": LABEL, "unavailable": True,
+        out.append({"kind": "safer", "title": "Lower-burden option", "label": LABEL, "unavailable": True,
                     "blurb": "No lower-burden amount: your existing EMIs already use 40% or more of your income."})
     r = run(applicant, loan, tenure, decide, context, kind="request")
     r.update(title="Your request", blurb="The loan you asked for.")
@@ -151,11 +158,14 @@ def compare(original, sim):
     elif b < a and not heavier:
         risk = ("down", "Estimated risk goes down.")
     elif b < a:  # a heavier loan the model rates lower: don't present that as safer
-        risk = ("same", "Estimated risk band changes little; the model can't reliably rate this change.")
+        out["risk"] = {"direction": "same", "recalculated": False,
+                       "text": "Risk estimate not recalculated: the model can't reliably rate a larger loan as "
+                               "safer, so your original estimate stands."}
+        return out
     else:
         risk = ("same", "Estimated risk stays about the same."
                 if not lighter else "Estimated risk band stays the same; a lower EMI still eases your budget.")
-    out["risk"] = {"direction": risk[0], "text": risk[1]}
+    out["risk"] = {"direction": risk[0], "text": risk[1], "recalculated": True}
     return out
 
 
@@ -173,9 +183,9 @@ def spoken(sim, lang="en"):
                f"Yeh aapki anumanit affordability {cap} mahina se zyada hai.")
         debt = " Lekin aapke maujooda loan 2 saal ki kamaai se zyada hain." if sim["debt_over_limit"] else ""
         return (f"Simulation: {loan}, {n} mahine mein, EMI lagbhag {emi} mahina, kul chukana lagbhag {total}. "
-                f"{fit}{debt} Yeh sirf simulation hai, lender ka offer nahi.")
+                f"{fit}{debt} Yeh sirf simulation hai, lender ka offer ya approval nahi.")
     fit = (f"That is within your estimated affordability of {cap} a month." if sim["fits"] else
            f"That is above your estimated affordability of {cap} a month.")
     debt = " But your existing loans are more than 2 years of income." if sim["debt_over_limit"] else ""
     return (f"Simulation: {loan} over {n} months, EMI about {emi} a month, about {total} repaid in total. "
-            f"{fit}{debt} This is a simulation, not a lender offer.")
+            f"{fit}{debt} This is a simulation only, not a lender offer or approval.")
