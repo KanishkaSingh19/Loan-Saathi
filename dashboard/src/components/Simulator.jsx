@@ -193,7 +193,6 @@ export default function Simulator({
     <section className="as-section simulator" aria-labelledby="sim-title">
       <div className="sim-head">
         <div>
-          <span className="stage-tag">Simulate</span>
           <h3 id="sim-title">What if you changed the loan?</h3>
         </div>
         <span className="sim-label">Simulation — not a lender offer.</span>

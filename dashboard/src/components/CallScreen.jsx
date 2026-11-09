@@ -4,7 +4,6 @@ import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
-import { STAGES } from "../stages";
 import { StudySetup, StudySurvey } from "./Study";
 import DecisionBadge from "./DecisionBadge";
 
@@ -252,11 +251,6 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             Speak replies aloud
           </label>
           {error && <p className="call-error" role="alert">{error}</p>}
-          <ol className="pipeline" aria-label="How Loan-Saathi works">
-            {STAGES.map((s) => (
-              <li key={s.id} title={s.caption}>{s.label}</li>
-            ))}
-          </ol>
           <ul className="hero-points">
             <li>Reads your details back before estimating</li>
             <li>Shows where every number comes from</li>

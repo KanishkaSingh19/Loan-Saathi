@@ -42,7 +42,6 @@ function Why({ why }) {
   const none = !why.helping?.length && !why.risk?.length;
   return (
     <section className="as-section">
-      <span className="stage-tag">Explain</span>
       <h3>Why this result?</h3>
       {none ? <p className="muted">No strong factors either way.</p> : null}
       <div className="why-grid">
@@ -151,7 +150,6 @@ export default function Assessment({
     <article className="assessment" aria-labelledby="assessment-title">
       <header className="as-head">
         <div>
-          <span className="stage-tag">Assess</span>
           <h2 id="assessment-title">Your Loan-Saathi Assessment</h2>
           <p className="muted small">A pre-screening estimate from what you shared. Not a lending decision.</p>
         </div>
