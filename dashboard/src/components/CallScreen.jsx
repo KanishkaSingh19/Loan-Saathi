@@ -372,7 +372,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             <section className="understood">
               <h3>Here&rsquo;s what I understood</h3>
               <dl className="said">
-                {call.summary.filter((r) => r.critical).map((r) => (
+                {call.summary.filter((r) => r.card ?? r.critical).map((r) => (
                   <div key={r.field}>
                     <dt>{r.label}</dt>
                     <dd>{r.status === "default" ? <span className="muted">{r.text}</span> : r.text}</dd>

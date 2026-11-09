@@ -181,6 +181,7 @@ HISTORY_FLAGS = ("ever_refused", "ever_late", "late_last_year", "late_over_month
 HISTORY = ("past_loans",) + HISTORY_FLAGS
 FIRST_TIME = re.compile(r"\b(none|never|first|pehli baar|pehla|koi nahi|kabhi nahi|zero)\b|पहली बार|कोई नहीं", re.I)
 CRITICAL = MONEY + ("tenure_months", "other_loans_count")  # the financial profile spoken back
+CARD = CRITICAL + ("work",)  # shown on the "Here's what I understood" card (income source included)
 SUMMABLE = ("monthly_income", "other_loans_emi", "other_loans_outstanding")  # "both" can mean a total
 DEFAULT_TENURE = 24
 MAX_TRIES = 3
@@ -789,9 +790,9 @@ def summary(s):
         if k in s["answers"]:
             rows.append({"field": k, "label": TITLES[k], "value": s["answers"][k],
                          "text": fmt(k, s["answers"][k]), "status": s["status"].get(k, "validated"),
-                         "critical": k in CRITICAL})
+                         "critical": k in CRITICAL, "card": k in CARD})
         elif k == "tenure_months" and "loan_amount" in s["answers"] and k in s["skipped"]:
-            rows.append({"field": k, "label": TITLES[k], "value": None, "critical": True,
+            rows.append({"field": k, "label": TITLES[k], "value": None, "critical": True, "card": True,
                          "text": f"not given ({DEFAULT_TENURE} months will be used)", "status": "default"})
     return rows
 
@@ -808,8 +809,9 @@ def _spoken_summary(s):
                 f" over {fmt('tenure_months', a['tenure_months'], lang)}"
         parts.append(f"loan {inr(a['loan_amount'])}{t}" if hi else f"a loan of {inr(a['loan_amount'])}{t}")
     if "monthly_income" in a:
-        parts.append(f"kamaai {inr(a['monthly_income'])} mahina" if hi
-                     else f"monthly income {inr(a['monthly_income'])}")
+        source = f" ({a['work']})" if a.get("work") else ""
+        parts.append(f"kamaai {inr(a['monthly_income'])} mahina{source}" if hi
+                     else f"monthly income {inr(a['monthly_income'])}{source}")
     n = a.get("other_loans_count")
     if n == 0:
         parts.append("koi aur loan nahi" if hi else "no other loans")
@@ -964,7 +966,8 @@ def _resolve_pending(s, text, action):
     """The caller's answer to a read-back. Returns (prefix to say, problem code)."""
     p = s["pending"][0]
     k, lang, mode = p["field"], s["lang"], p.get("mode", "collect")
-    heard = [a["value"] for a in norm.amounts(text)] if not action else []
+    # Only real amounts count as a new value: in "the second one" / "pehla wala, ek" the word "one" is not ₹1.
+    heard = [a["value"] for a in norm.amounts(text) if a["digits"] or a["scaled"]] if not action else []
 
     if p["kind"] == "choose":
         pick = None

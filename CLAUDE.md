@@ -32,6 +32,7 @@ python -I -X utf8 src/test_simulate.py       # what-if simulator: boundaries, sc
 python -I -X utf8 src/test_advisor.py        # advisor cases, listen summary, code-mixed speech, recovery
 python -I -X utf8 src/test_operations.py     # persistent calls, advisor notifications + case workflow, study kit
 python -I -X utf8 src/test_model.py          # debt monotonicity, interim debt floor, calibration plumbing
+python -I -X utf8 src/test_confirmation.py   # profile confirmation: confirm, correct, ambiguity, contradiction, gate
 python -I -X utf8 src/test_stages.py         # the 8-stage pipeline mapping
 python -I -X utf8 src/test_history.py        # repayment-history questions: funnel, parsing, unknowns, model effect
 python -I -X utf8 src/experiment_features.py # which askable questions add accuracy (~5 min)
@@ -122,6 +123,10 @@ After any retrain run `python -I -X utf8 -W ignore src/validate_model.py --stric
   lowers risk). `scoring` uses the trained model's own `meta["features"]`, so older models keep working.
   Older suites set `converse.ASK_HISTORY = False` to keep their fixed answer sequences; `test_history.py`
   covers the questions.
+- Borrower journey names map onto the existing states (don't add duplicates): COLLECTING_INFORMATION =
+  COLLECTING_PROFILE, ASSESSING = ASSESSING_RISK + CHECKING_AFFORDABILITY, RESULT = SHOWING_RESULT; plus
+  CORRECTION_REQUIRED, ERROR_RECOVERY, HUMAN_HANDOFF. Extraction and parsing never confirm a value:
+  only the caller's yes to "Here's what I understood" does (`require_confirmed`).
 - The product pipeline is LISTEN -> EXTRACT -> VALIDATE -> CONFIRM -> ASSESS -> EXPLAIN -> SIMULATE ->
   HANDOFF: `converse.STAGES`/`stage()` map every state to a stage (`/v1/converse` returns `stage`);
   `dashboard/src/stages.js` has the labels and captions. Add a stage mapping for any new state
