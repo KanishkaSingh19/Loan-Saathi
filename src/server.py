@@ -13,6 +13,8 @@ Run:  python -I -X utf8 src/server.py      (port 8000; set WEBHOOK_KEY in .env t
 The response is deliberately flat with simple keys so it works whether Agent Builder maps
 response keys into "After API Call Variables" or hands the raw JSON to the LLM.
 """
+import asyncio
+import base64
 import hmac
 import json
 import os
@@ -23,9 +25,10 @@ import uuid
 from pathlib import Path
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import (BackgroundTasks, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket,
+                     WebSocketDisconnect)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -43,6 +46,7 @@ import evaluation  # noqa: E402
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
+import spoken  # noqa: E402
 import study  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -132,6 +136,18 @@ class SpeechRequest(BaseModel):
     voice: str = "Nalini"
     model: str = "timbre-v2.5"
     speed: float = Field(default=1.0, ge=0.85, le=1.15)
+    spell_numbers: bool = True  # "₹3,00,000" is spoken as "teen lakh rupaye" (Gnani asks for spelled numbers)
+
+
+class LatencyReport(BaseModel):
+    """One measured voice turn from the browser (milliseconds), for the Evaluation Lab."""
+    session_id: str = Field(default="", max_length=40)
+    mode: str = Field(default="live", max_length=20)          # live (streaming mic) or tap (record, then send)
+    speech_end_to_transcript_ms: float | None = Field(default=None, ge=0, le=120_000)
+    transcript_to_reply_ms: float | None = Field(default=None, ge=0, le=120_000)
+    reply_to_first_audio_ms: float | None = Field(default=None, ge=0, le=120_000)
+    speech_end_to_first_audio_ms: float | None = Field(default=None, ge=0, le=120_000)
+    filler_played: bool = False
 
 
 # ---------- storage ----------
@@ -144,6 +160,7 @@ _SCHEMA = [
     "CREATE TABLE IF NOT EXISTS advisor_cases (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
     "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
     "CREATE TABLE IF NOT EXISTS study_results (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
+    "CREATE TABLE IF NOT EXISTS latency_metrics (id TEXT PRIMARY KEY, ts {real}, payload TEXT)",
 ]
 _schema_ready = False
 
@@ -763,7 +780,12 @@ def evaluation_evidence(x_webhook_key: str = Header(default="")):
     """The Evaluation Lab: model metrics from models/*.json, safeguards checked against the code, and the
     last recorded test run (python -I -X utf8 src/evaluation.py run). Nothing is computed for show."""
     _check_key(x_webhook_key)
-    return evaluation.evidence()
+    try:
+        live = latency_records()
+    except Exception as e:  # noqa: BLE001  (the evidence page must load even if storage is down)
+        print(f"[evaluation] latency records unavailable: {type(e).__name__}", flush=True)
+        live = None
+    return evaluation.evidence(live)
 
 
 @app.get("/v1/advisor-cases")
@@ -852,31 +874,44 @@ async def speech_to_text(
     return result
 
 
+GNANI_TTS_URL = "https://api.vachana.ai/api/v1/tts/inference"
+GNANI_TTS_SSE_URL = "https://api.vachana.ai/api/v1/tts/sse"
+GNANI_STT_WS_URL = "wss://api.vachana.ai/stt/v3/stream"
+STREAM_RATE = 24000  # streamed replies: raw 16-bit mono PCM at 24 kHz
+# Gnani allows one active TTS request per key (HTTP 429 otherwise): replies and fillers take turns.
+_TTS_LOCK = asyncio.Lock()
+
+
+def _speech_text(body):
+    lang = "en" if body.language.lower().startswith("en") else "hi"
+    return spoken.speakable(body.text, lang) if body.spell_numbers else body.text
+
+
+def _tts_payload(body, container="wav", rate=48000):
+    return {"text": _speech_text(body), "voice": body.voice, "model": body.model, "language": body.language,
+            "speed": body.speed, "audio_config": {"sample_rate": rate, "num_channels": 1, "sample_width": 2,
+                                                  "encoding": "linear_pcm", "container": container}}
+
+
+async def _tts_turn():
+    try:
+        await asyncio.wait_for(_TTS_LOCK.acquire(), timeout=20)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=503, detail="Voice is busy; please try again") from None
+
+
 @app.post("/v1/tts")
 async def text_to_speech(body: SpeechRequest, x_webhook_key: str = Header(default="")):
     _check_speech_access(x_webhook_key, GNANI_TTS_API_KEY)
+    await _tts_turn()
     try:
         async with httpx.AsyncClient(timeout=65.0) as client:
-            upstream = await client.post(
-                "https://api.vachana.ai/api/v1/tts/inference",
-                headers={"X-API-Key-ID": GNANI_TTS_API_KEY},
-                json={
-                    "text": body.text,
-                    "voice": body.voice,
-                    "model": body.model,
-                    "language": body.language,
-                    "speed": body.speed,
-                    "audio_config": {
-                        "sample_rate": 48000,
-                        "num_channels": 1,
-                        "sample_width": 2,
-                        "encoding": "linear_pcm",
-                        "container": "wav",
-                    },
-                },
-            )
+            upstream = await client.post(GNANI_TTS_URL, headers={"X-API-Key-ID": GNANI_TTS_API_KEY},
+                                         json=_tts_payload(body))
     except httpx.RequestError as exc:
         raise HTTPException(status_code=502, detail="Gnani TTS request failed") from exc
+    finally:
+        _TTS_LOCK.release()
     if not upstream.is_success:
         raise HTTPException(status_code=502, detail=f"Gnani TTS returned HTTP {upstream.status_code}")
     if not upstream.content:
@@ -885,6 +920,145 @@ async def text_to_speech(body: SpeechRequest, x_webhook_key: str = Header(defaul
         content=upstream.content,
         media_type=upstream.headers.get("content-type", "audio/wav"),
     )
+
+
+@app.post("/v1/tts/stream")
+async def text_to_speech_stream(body: SpeechRequest, x_webhook_key: str = Header(default="")):
+    """The reply as raw 16-bit mono PCM (24 kHz), streamed as Gnani produces it (TTS over SSE), so the
+    browser starts speaking before the whole reply is synthesised."""
+    _check_speech_access(x_webhook_key, GNANI_TTS_API_KEY)
+    await _tts_turn()
+    client = httpx.AsyncClient(timeout=httpx.Timeout(65.0, connect=10.0))
+    try:
+        upstream = await client.send(client.build_request(
+            "POST", GNANI_TTS_SSE_URL, headers={"X-API-Key-ID": GNANI_TTS_API_KEY},
+            json=_tts_payload(body, container="raw", rate=STREAM_RATE)), stream=True)
+    except httpx.RequestError as exc:
+        await client.aclose()
+        _TTS_LOCK.release()
+        raise HTTPException(status_code=502, detail="Gnani TTS request failed") from exc
+    if not upstream.is_success:
+        await upstream.aclose()
+        await client.aclose()
+        _TTS_LOCK.release()
+        raise HTTPException(status_code=502, detail=f"Gnani TTS returned HTTP {upstream.status_code}")
+
+    async def pcm():
+        carry = b""
+        try:
+            event = None
+            async for line in upstream.aiter_lines():
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                elif line.startswith("data:"):
+                    try:
+                        data = json.loads(line[5:])
+                    except ValueError:
+                        continue
+                    if event == "error":
+                        print(f"[tts stream] Gnani error: {data.get('message', '')}", flush=True)
+                        break
+                    chunk = carry + base64.b64decode(data.get("audio") or "")
+                    cut = len(chunk) - len(chunk) % 2      # keep whole 16-bit samples
+                    carry = chunk[cut:]
+                    if cut:
+                        yield chunk[:cut]
+                    if data.get("is_final"):
+                        break
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+            _TTS_LOCK.release()
+
+    return StreamingResponse(pcm(), media_type=f"audio/L16; rate={STREAM_RATE}; channels=1",
+                             headers={"X-Sample-Rate": str(STREAM_RATE), "Cache-Control": "no-store"})
+
+
+@app.websocket("/ws/stt")
+async def speech_to_text_stream(ws: WebSocket):
+    """Live microphone -> Gnani streaming STT. The browser sends {"key", "language"} first, then raw
+    16-bit mono PCM at 16 kHz; it receives Gnani's events (speech_start, processing, transcript, error).
+    Gnani's own voice-activity detection ends each turn. The API key never leaves the server."""
+    await ws.accept()
+
+    async def refuse(message, code=1008):
+        try:
+            await ws.send_json({"type": "error", "message": message})
+            await ws.close(code=code)
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        hello = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
+    except Exception:  # noqa: BLE001
+        return await refuse("Send {\"key\", \"language\"} first.")
+    if not WEBHOOK_KEY or WEBHOOK_KEY.startswith("replace-with"):
+        return await refuse("server not configured: set WEBHOOK_KEY", 1011)
+    if not hmac.compare_digest(str(hello.get("key") or ""), WEBHOOK_KEY):
+        return await refuse("bad webhook key")
+    if not GNANI_STT_API_KEY:
+        return await refuse("Gnani API key is not configured", 1011)
+    import websockets  # uvicorn[standard] ships it
+
+    headers = {"x-api-key-id": GNANI_STT_API_KEY, "language_code": "en-IN" if hello.get("language") == "en"
+               else "hi-IN", "x-sample-rate": "16000", "x-min-silence-ms": "600", "x-idle-timeout-sec": "120"}
+    try:
+        upstream = await websockets.connect(GNANI_STT_WS_URL, additional_headers=headers, open_timeout=10,
+                                            max_size=2**20)
+    except Exception as e:  # noqa: BLE001
+        print(f"[stt stream] connect failed: {type(e).__name__}", flush=True)
+        return await refuse("Live speech recognition is unavailable right now.", 1011)
+
+    async def to_gnani():
+        buf = b""
+        while True:
+            msg = await ws.receive()
+            if msg["type"] == "websocket.disconnect":
+                return
+            if msg.get("bytes"):
+                buf += msg["bytes"]
+                while len(buf) >= 1024:                 # Gnani takes exactly 1,024-byte frames
+                    await upstream.send(buf[:1024])
+                    buf = buf[1024:]
+            elif msg.get("text"):
+                try:
+                    if json.loads(msg["text"]).get("type") == "commit":
+                        await upstream.send(json.dumps({"type": "commit"}))
+                except ValueError:
+                    pass
+
+    async def to_browser():
+        async for m in upstream:
+            if isinstance(m, str):
+                await ws.send_text(m)
+
+    tasks = [asyncio.create_task(to_gnani()), asyncio.create_task(to_browser())]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        for t in tasks:
+            t.cancel()
+        await upstream.close()
+        try:
+            await ws.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@app.post("/v1/metrics/latency")
+def record_latency(body: LatencyReport, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
+    """A measured voice turn from a real browser session (for the Evaluation Lab's latency section)."""
+    _check_key(x_webhook_key)
+    tasks.add_task(_save, "INSERT INTO latency_metrics VALUES (?,?,?)",
+                   (uuid.uuid4().hex[:12], time.time(), json.dumps(body.model_dump())))
+    return {"ok": True}
+
+
+def latency_records(limit=2000):
+    rows = _run("SELECT payload FROM latency_metrics ORDER BY ts DESC LIMIT ?", (limit,), fetch=True)
+    return [json.loads(r[0]) for r in rows]
 
 
 # The built React app holds no data: it asks for the webhook key, then polls /v1/applications.

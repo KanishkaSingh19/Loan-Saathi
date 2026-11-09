@@ -137,6 +137,86 @@ function Model({ m, nm }) {
   );
 }
 
+const secs = (ms) => (ms == null ? null : `${(ms / 1000).toFixed(2)} s`);
+
+function Measurements({ m, nm }) {
+  const lat = m.latency;
+  const b = lat.benchmark;
+  const live = lat.browser;
+  const ex = m.extraction;
+  return (
+    <section className="ev-section" aria-labelledby="ev-measure">
+      <h3 id="ev-measure">Measurements</h3>
+
+      <h4>Voice latency</h4>
+      <table className="ev-table">
+        <thead>
+          <tr>
+            <th scope="col">Stage</th>
+            <th scope="col">Benchmark median</th><th scope="col">Benchmark 90th pct</th>
+            <th scope="col">Real browser calls median</th><th scope="col">Real browser calls 90th pct</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lat.stages.map((st) => (
+            <tr key={st.key}>
+              <th scope="row">{st.label}</th>
+              <td>{secs(b?.summary[st.key]?.median) ?? nm}</td>
+              <td>{secs(b?.summary[st.key]?.p90) ?? nm}</td>
+              <td>{secs(live?.[st.key]?.median) ?? nm}</td>
+              <td>{secs(live?.[st.key]?.p90) ?? nm}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small">
+        {b ? <>Benchmark: {b.turns} caller turns, {when(b.ts)}. {b.method} Gemini wrote {b.gemini_turns} of the
+          replies. Source: <code>{b.source}</code>. </> : <>Benchmark: {nm} </>}
+        {live ? `Real browser calls: ${live.turns} live turns recorded by the call screen.`
+          : "Real browser calls: no live voice turns recorded yet."}
+      </p>
+
+      <h4>Extraction accuracy</h4>
+      <dl className="ev-metrics">
+        {[["parser", "Saathi's own parser (no language model)"], ["gemini", "With Gemini"]].map(([k, label]) => (
+          <div className="ev-metric" key={k}>
+            <dt>{label}</dt>
+            <dd>
+              {ex[k] ? <strong>{ex[k].correct} of {ex[k].cases}</strong> : <span className="muted">{nm}</span>}
+              {ex[k] && k === "gemini" ? <small>Gemini answered {ex[k].gemini_turns} of the {ex[k].cases} turns;
+                the rest fell back to the parser.</small> : null}
+              {ex[k]?.wrong?.length ? <small>Wrong: {ex[k].wrong.map((w) => `"${w.said}" → ${JSON.stringify(w.got)}`).join("; ")}</small> : null}
+              {ex[k] ? <small className="ev-source">{ex[k].source}</small> : null}
+            </dd>
+          </div>
+        ))}
+        <div className="ev-metric">
+          <dt>Real first-time borrowers</dt>
+          <dd><span className="muted">{nm}</span><small>{m.real_users.note}</small></dd>
+        </div>
+      </dl>
+      {ex.parser ? (
+        <details className="ev-details">
+          <summary>By kind of answer</summary>
+          <table className="ev-table">
+            <thead><tr><th scope="col">Kind</th><th scope="col">Parser</th>{ex.gemini ? <th scope="col">Gemini</th> : null}</tr></thead>
+            <tbody>
+              {Object.entries(ex.parser.by_kind).map(([kind, v]) => (
+                <tr key={kind}>
+                  <th scope="row">{kind}</th>
+                  <td>{v.correct} / {v.cases}</td>
+                  {ex.gemini ? <td>{ex.gemini.by_kind[kind] ? `${ex.gemini.by_kind[kind].correct} / ${ex.gemini.by_kind[kind].cases}` : "–"}</td> : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
+      <p className="muted small">{ex.about}</p>
+    </section>
+  );
+}
+
 function Safeguards({ items }) {
   return (
     <section className="ev-section" aria-labelledby="ev-safety">
@@ -269,6 +349,7 @@ export default function EvaluationLab({ apiKey, onUnauthorized }) {
       {data ? (
         <>
           <Model m={data.model} nm={data.not_measured_text} />
+          {data.measurements ? <Measurements m={data.measurements} nm={data.not_measured_text} /> : null}
           <Safeguards items={data.safeguards} />
           <Coverage groups={data.coverage} run={data.run} />
           <Failures cases={data.failure_cases} />

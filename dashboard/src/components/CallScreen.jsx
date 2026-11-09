@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ApiError, converse, speak, transcribe, Unauthorized } from "../api";
+import { ApiError, converse, reportLatency, speak, transcribe, Unauthorized } from "../api";
+import { fetchClip, looksLikeEcho, openLiveMic, playPcm, speakStream, VOICE_LEVEL } from "../liveVoice";
 import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
@@ -7,8 +8,14 @@ import Assessment from "./Assessment";
 import { StudySetup, StudySurvey } from "./Study";
 import DecisionBadge from "./DecisionBadge";
 
-// Browser web call: mic -> Gnani Prisma (/v1/stt) -> Gemini + our model (/v1/converse)
-// -> Gnani Timbre (/v1/tts) -> speaker. Typing works too, for testing without speech keys.
+// Browser web call. Live: mic -> Gnani streaming STT (/ws/stt, its VAD ends each turn) -> Gemini + our
+// model (/v1/converse) -> Gnani streaming TTS (/v1/tts/stream, plays from the first chunk); the caller can
+// interrupt. Tap-to-talk (/v1/stt) is the fallback, and typing works too, for testing without speech keys.
+
+// Said while the server works on a slow turn, so the line never goes silent.
+const FILLER = { hi: "Achha, ek second.", en: "Okay, one moment." };
+const FILLER_AFTER_MS = 900;
+const fillerCache = {};
 
 const ORDER = ["loan_amount", "tenure_months", "monthly_income", "work", "years_in_work", "other_loans_count",
   "other_loans_emi", "other_loans_outstanding", "past_loans", "ever_refused", "ever_late", "late_last_year",
@@ -58,8 +65,10 @@ const PER_MONTH = new Set(["monthly_income", "other_loans_emi"]);
 
 // One quiet status line for where the conversation is: listen -> understand -> verify -> confirm.
 // Derived only from what the server and the recorder report; nothing is staged for show.
-function callPhase(call, busy) {
+function callPhase(call, busy, live = false, hearing = false) {
   if (!call) return busy === "starting" ? { id: "listen", word: "Connecting", text: "Starting your call" } : null;
+  if (hearing && busy !== "thinking") return { id: "listen", word: "Hearing you", text: "Saathi answers when you pause" };
+  if (live && busy === "speaking") return { id: "listen", word: "Saathi is speaking", text: "Just speak to interrupt" };
   if (busy === "listening") return { id: "listen", word: "Listening", text: "Tap the mic again when you finish" };
   if (busy === "transcribing") return { id: "listen", word: "Listening", text: "Turning your speech into text" };
   if (busy === "thinking") return { id: "understand", word: "Understanding", text: "Reading what you said" };
@@ -70,7 +79,8 @@ function callPhase(call, busy) {
     return { id: "confirm", word: "Confirm", text: "Check your details before anything is estimated" };
   if (busy === "speaking") return { id: "listen", word: "Saathi is speaking", text: "You can answer any time" };
   if (call.state === "COLLECTING_PROFILE" || call.state === "ERROR_RECOVERY")
-    return { id: "listen", word: "Your turn", text: "Speak or type your answer" };
+    return live ? { id: "listen", word: "Listening", text: "Just speak; Saathi answers when you pause" }
+      : { id: "listen", word: "Your turn", text: "Speak or type your answer" };
   return null;
 }
 
@@ -100,6 +110,18 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const [text, setText] = useState("");
   const recorder = useRef(null);
   const audio = useRef(null);
+  const [live, setLive] = useState(false);       // hands-free: streaming mic open for the whole call
+  const [hearing, setHearing] = useState(false); // the caller is speaking right now (Gnani heard speech)
+  const mic = useRef(null);
+  const playback = useRef(null);                 // the reply playing now (stoppable for barge-in)
+  const speakingText = useRef("");
+  const bargedIn = useRef(false);
+  const turn = useRef(null);                     // timings of the current voice turn, for latency reports
+  const busyRef = useRef(null);
+  const sendRef = useRef(null);
+  const langRef = useRef("hi");
+  busyRef.current = busy;
+  langRef.current = lang;
   const bottom = useRef(null);
   const assessmentRef = useRef(null);
 
@@ -109,6 +131,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   useEffect(() => () => {
     recorder.current?.cancel();
     audio.current?.pause();
+    playback.current?.stop();
+    mic.current?.close();
   }, []);
 
   useEffect(() => {
@@ -129,17 +153,56 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setError(friendly || "Saathi couldn't reach the server. Please check your connection and try again.");
   };
 
+  // A measured voice turn goes to the Evaluation Lab (caller stops -> first sound of the reply).
+  const report = (firstAudioAt) => {
+    const t = turn.current;
+    turn.current = null;
+    if (!t || !firstAudioAt || !t.replyAt) return;
+    const ms = (a, b) => (a && b && b >= a ? Math.round(b - a) : null);
+    reportLatency(apiKey, {
+      session_id: t.session || "", mode: t.mode, filler_played: !!t.filler,
+      speech_end_to_transcript_ms: ms(t.speechEnd, t.transcriptAt),
+      transcript_to_reply_ms: ms(t.transcriptAt, t.replyAt),
+      reply_to_first_audio_ms: ms(t.replyAt, firstAudioAt),
+      speech_end_to_first_audio_ms: ms(t.speechEnd, firstAudioAt),
+    });
+  };
+
+  const stopSpeaking = () => {
+    playback.current?.stop();
+    playback.current = null;
+    audio.current?.pause();
+  };
+
   const say = async (reply) => {
-    if (!voiceRef.current || !reply) return;
+    if (!voiceRef.current || !reply) {
+      turn.current = null;
+      return;
+    }
     setBusy("speaking");
+    speakingText.current = reply;
+    bargedIn.current = false;
     try {
-      const blob = await speak(apiKey, reply);
+      const pb = await speakStream(apiKey, reply, langRef.current);
+      playback.current = pb;
+      pb.firstAudio.then(report);
+      await pb.done;
+      return;
+    } catch (err) {
+      if (err instanceof Unauthorized) return onUnauthorized();
+      console.warn("[web call] streamed voice failed, trying the whole reply", err);
+    } finally {
+      playback.current = null;
+      speakingText.current = "";
+    }
+    try {
+      const blob = await speak(apiKey, reply, langRef.current);
       const url = URL.createObjectURL(blob);
       audio.current?.pause();
       audio.current = new Audio(url);
       await new Promise((resolve) => {
         audio.current.onended = audio.current.onerror = audio.current.onpause = resolve;
-        audio.current.play().catch(resolve);
+        audio.current.play().then(() => report(performance.now())).catch(resolve);
       });
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -158,10 +221,11 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setBusy(null);
   };
 
-  const begin = async ({ typing = false } = {}) => {
+  const begin = async ({ typing = false, hands = false } = {}) => {
     if (typing) setVoiceOn(false);
     focusInput.current = typing;
-    audio.current?.pause();
+    stopSpeaking();
+    if (hands) startLive(studyInfo?.language || lang);
     setMessages([]);
     setError("");
     setVoiceNote("");
@@ -175,6 +239,9 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
       const r = await converse(apiKey, "", "", callLang, "",
         studyMode && studyInfo ? { participant: studyInfo.participant, persona: studyInfo.persona } : {});
       await handle(r.reply, r);
+      if (voiceRef.current && !fillerCache[callLang]) {
+        fetchClip(apiKey, FILLER[callLang], callLang).then((c) => (fillerCache[callLang] = c)).catch(() => {});
+      }
     } catch (err) {
       setBusy(null);
       fail(err);
@@ -189,10 +256,25 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setError("");
     setRetry(null);
     setBusy("thinking");
+    setHearing(false);
+    /** @type {{ done: Promise<void>, stop: () => void } | null} */
+    let filler = null;
+    const clip = fillerCache[lang];
+    const fillerTimer = voiceRef.current && clip && turn.current
+      ? setTimeout(() => {
+        filler = playPcm(null, clip.rate, clip.pcm);
+        if (turn.current) turn.current.filler = true;
+      }, FILLER_AFTER_MS)
+      : null;
     try {
       const r = await converse(apiKey, call.session_id, clean, lang, action);
+      clearTimeout(fillerTimer);
+      if (turn.current) Object.assign(turn.current, { replyAt: performance.now(), session: r.session_id });
+      if (filler) await filler.done;
       await handle(r.reply, r);
     } catch (err) {
+      clearTimeout(fillerTimer);
+      turn.current = null;
       setBusy(null);
       if (err instanceof ApiError && err.status === 404) {
         fail(err, "This call has expired (it was idle too long or the server restarted). Tap New call to start again.");
@@ -203,8 +285,70 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     }
   };
 
+  // Gnani's events from the live microphone. Refs, not state: this handler outlives renders.
+  const onLiveEvent = (e) => {
+    const m = mic.current;
+    if (e.type === "speech_start") {
+      setHearing(true);
+      const loud = m && performance.now() - m.lastVoiceAt < 400 && m.level > VOICE_LEVEL;
+      if (busyRef.current === "speaking" && loud) {   // barge-in: the caller talks over Saathi
+        bargedIn.current = true;
+        stopSpeaking();
+      }
+    } else if (e.type === "transcript") {
+      const heard = (e.text || "").trim();
+      setHearing(false);
+      if (!heard) return;
+      const now = performance.now();
+      if (busyRef.current === "speaking") {
+        if (!bargedIn.current && looksLikeEcho(heard, speakingText.current)) return; // Saathi's own voice
+        stopSpeaking();
+      }
+      if (busyRef.current === "thinking" || busyRef.current === "starting") return; // one turn at a time
+      turn.current = { mode: "live", speechEnd: m?.lastVoiceAt || now, transcriptAt: now };
+      sendRef.current?.(heard);
+    } else if (e.type === "error") {
+      console.warn("[web call] live speech", e.message);
+    }
+  };
+
+  const startLive = async (callLang) => {
+    if (mic.current) return true;
+    try {
+      mic.current = await openLiveMic({
+        apiKey, lang: callLang, onEvent: (e) => onLiveEvent(e),
+        onClose: () => {
+          mic.current = null;
+          setLive(false);
+          setHearing(false);
+          setVoiceNote("Live listening stopped. Tap the mic to talk again.");
+        },
+      });
+      setLive(true);
+      setVoiceNote("");
+      return true;
+    } catch (err) {
+      console.warn("[web call] live mic unavailable, using tap-to-talk", err);
+      mic.current = null;
+      setLive(false);
+      setVoiceNote("Live listening isn't available here, so tap the mic to talk (or type).");
+      return false;
+    }
+  };
+
+  const stopLive = () => {
+    mic.current?.close();
+    mic.current = null;
+    setLive(false);
+    setHearing(false);
+  };
+
   const toggleMic = async () => {
     setError("");
+    if (live) {
+      stopLive();
+      return;
+    }
     if (busy === "listening") {
       setBusy("transcribing");
       try {
@@ -216,6 +360,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           return;
         }
         let heard = "";
+        const tapEnd = performance.now();
         try {
           heard = await transcribe(apiKey, wav, lang);
         } catch (err) {
@@ -230,6 +375,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           setError("I couldn't hear anything. Please try again, or type your answer.");
           return;
         }
+        turn.current = { mode: "tap", speechEnd: tapEnd, transcriptAt: performance.now() };
         await send(heard);
       } catch (err) {
         setBusy(null);
@@ -237,7 +383,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
       }
       return;
     }
-    audio.current?.pause();
+    stopSpeaking();
     try {
       recorder.current = await startRecording();
       setBusy("listening");
@@ -246,6 +392,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     }
   };
 
+  sendRef.current = send;
   const active = call && !call.done;
   const result = call?.result;
   const answers = call?.answers || {};
@@ -253,7 +400,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const fields = call?.fields || {};
   const buttonsOn = active && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
   const verifying = call?.state === "VERIFYING_INFORMATION";
-  const phase = callPhase(call, busy);
+  const phase = callPhase(call, busy, live, hearing);
   const cardRows = verifying ? (call.summary || []).filter((r) => r.card ?? r.critical) : [];
   const confirmBtn = call?.buttons?.find((b) => b.action === "confirm");
   const changeBtn = call?.buttons?.find((b) => b.action === "change");
@@ -274,7 +421,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             help you explore safer options.
           </p>
           <div className="hero-actions">
-            <button type="button" className="wave-cta" onClick={() => begin()}>
+            <button type="button" className="wave-cta" onClick={() => begin({ hands: true })}>
               <span className="wave-badge" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="#fff">
                   <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" />
@@ -429,11 +576,12 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
         >
           <button
             type="button"
-            className={`mic${busy === "listening" ? " on" : ""}`}
+            className={`mic${busy === "listening" ? " on" : ""}${live ? " live" : ""}${hearing ? " hearing" : ""}`}
             onClick={toggleMic}
-            disabled={!active || (busy !== null && busy !== "listening" && busy !== "speaking")}
-            aria-label={busy === "listening" ? "Stop recording and send" : "Speak your answer"}
-            aria-pressed={busy === "listening"}
+            disabled={!active || (!live && busy !== null && busy !== "listening" && busy !== "speaking")}
+            aria-label={live ? "Live listening is on. Tap to pause it" : busy === "listening"
+              ? "Stop recording and send" : "Speak your answer"}
+            aria-pressed={live || busy === "listening"}
           >
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
               <path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" />

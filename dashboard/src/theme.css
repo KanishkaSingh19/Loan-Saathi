@@ -442,3 +442,9 @@ h1, h2, h3, h4 { font-family: var(--font); }
   .ev-two, .ev-groups, .ev-cases { grid-template-columns: 1fr; }
   .ev-case dl > div { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* ---------- live voice: the mic shows it is listening, and when it hears the caller ---------- */
+.mic.live { box-shadow: 0 0 0 3px var(--violet-100); }
+.mic.live.hearing { box-shadow: 0 0 0 5px var(--violet-200); animation: saathi-hear 1.2s ease-in-out infinite; }
+@keyframes saathi-hear { 50% { box-shadow: 0 0 0 8px var(--violet-100); } }
+@media (prefers-reduced-motion: reduce) { .mic.live.hearing { animation: none; } }

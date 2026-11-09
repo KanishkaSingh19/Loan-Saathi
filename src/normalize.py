@@ -175,7 +175,11 @@ def months(v):
     if n is None:
         return None
     s = str(v).lower()
-    if any(k in s for k in ("saal", "sal", "year", "varsh", "baras")) or n <= 10:
+    if any(k in s for k in ("saal", "sal", "year", "varsh", "baras")):
+        return n * 12
+    if any(k in s for k in ("month", "mahin", "महीन")):  # "six months" is 6, not 6 years
+        return n
+    if n <= 10:
         return n * 12
     return n
 

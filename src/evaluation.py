@@ -173,6 +173,7 @@ CATALOG = [
         ("Contradictory answers", [("test_confirmation.py", "contradictory income"),
                                    ("test_states.py", "contradicting income and debt answers are asked about"),
                                    ("test_safety.py", "contradictions are asked about")]),
+        ("Bugs found by the extraction benchmark", [("test_voice.py", "parser regressions from the extraction benchmark")]),
         ("Code-mixed speech", [("test_advisor.py", "mujhe 3 lakh ka loan chahiye"),
                                ("test_history.py", "yes/no and counts in English, Hinglish and Devanagari")]),
     ]),
@@ -195,6 +196,10 @@ CATALOG = [
         ("Affordability rule", [("test_safety.py", "every suggested amount keeps all EMIs within 50%")]),
     ]),
     ("Voice", [
+        ("Live streaming speech-to-text", [("test_voice.py", "live STT relay")]),
+        ("Streaming replies (speech starts on the first chunk)", [("test_voice.py", "streaming TTS")]),
+        ("Numbers spoken naturally", [("test_voice.py", "numbers are spoken the way people say them")]),
+        ("Latency recorded from real calls", [("test_voice.py", "measured browser turns are stored")]),
         ("Speech-to-text failure", [("test_evaluation.py", "speech-to-text failures"),
                                     ("test_advisor.py", "clear recovery: repeat prompts, server glitches")]),
         ("Language-model fallback", [("test_safety.py", "a slow Gemini is cut off at the deadline")]),
@@ -273,6 +278,18 @@ def failure_cases():
          "what": "'Agar 2 ya 3 lakh loon' simulated ₹2 lakh without asking; a bare '40' skipped to next steps.",
          "fix": "Both are now asked about; nothing is simulated until one amount is clear.",
          "measured_after": "Covered by src/test_simulate.py.", "still": ""},
+        {"title": "The extraction benchmark found parser bugs on its first run",
+         "found": "Extraction benchmark (tests/extraction_cases.json, parser only)",
+         "what": "'six months' was stored as 72 months; 'never taken one' as 1 past loan; 'do loan liye hain pehle' "
+                 "(two loans before) went to the running-loans field; 'aath hazaar mahina' was read back "
+                 "needlessly because 'hazaar mahina' looked like a tenure.",
+         "measured_before": "59 of 64 on the first run (one miss was our own wrong expectation: 'sixty thousand' "
+                            "is read back on purpose because -ty words are often misheard).",
+         "fix": "Month words keep months as months; a 'never/none' answer with no digits is zero; 'N loan' answers "
+                "the question asked; the tenure pattern skips amounts.",
+         "measured_after": "64 of 64 on the same cases. These are the cases that found the bugs, so this is not "
+                           "an independent accuracy figure.",
+         "still": "The cases are hand-written, not real callers' speech."},
         {"title": "Loan size looked predictive, but it was the lender's own risk view",
          "found": "Model development",
          "what": "Loan size divided by EMI mostly reflected the interest rate the lender charged, which a voice agent "
@@ -298,13 +315,64 @@ LIMITATIONS = [
     {"title": "Final lending decisions require verification",
      "detail": "A lender must verify identity, income and credit history (e.g. Aadhaar, PAN, bank statements, "
                "bureau report) before any decision."},
+    {"title": "Latency was measured with a synthetic caller on one machine",
+     "detail": "The benchmark voices the caller with Gnani TTS and runs next to the server. Real phones, networks "
+               "and speech will add delay; real browser turns are listed separately once people use the call."},
     {"title": "Speech recognition quality is not measured here",
      "detail": "Speech-to-text and text-to-speech come from Gnani. The tests check how failures are handled, not "
                "recognition accuracy on real callers."},
 ]
 
 
-def evidence():
+# ---------- measurements: latency and extraction accuracy (each from a run that wrote a file) ----------
+
+REPORTS = ROOT / "reports"
+
+
+def _report(name):
+    p = REPORTS / name
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def _stats(values):
+    v = sorted(x for x in values if x is not None)
+    if not v:
+        return None
+    mid = len(v) // 2
+    median = v[mid] if len(v) % 2 else (v[mid - 1] + v[mid]) / 2
+    return {"median": round(median), "p90": v[min(len(v) - 1, int(round(0.9 * (len(v) - 1))))], "n": len(v)}
+
+
+def measurements(live=None):
+    """Latency (scripted benchmark and real browser turns) and extraction accuracy (parser and Gemini)."""
+    stages = [("speech_end_to_first_audio_ms", "Caller stops → first audio of the reply"),
+              ("speech_end_to_transcript_ms", "Caller stops → final transcript (includes the 0.6 s pause window)"),
+              ("transcript_to_reply_ms", "Transcript → Saathi's reply"),
+              ("reply_to_first_audio_ms", "Reply → first audio (streaming TTS)")]
+    bench = _report("latency_benchmark.json")
+    latency = {"stages": [{"key": k, "label": label} for k, label in stages]}
+    if bench:
+        latency["benchmark"] = {"ts": bench["ts"], "turns": bench["turns"], "method": bench["method"],
+                                "summary": bench["summary"], "source": "reports/latency_benchmark.json",
+                                "gemini_turns": sum(1 for r in bench["rows"] if r.get("llm") == "gemini")}
+    live = [r for r in (live or []) if r.get("mode") == "live"]
+    latency["browser"] = ({k: _stats(r.get(k) for r in live) for k, _ in stages} | {"turns": len(live)}
+                          if live else None)
+    extraction = {}
+    for mode, name in (("parser", "extraction_benchmark.json"), ("gemini", "extraction_benchmark_gemini.json")):
+        r = _report(name)
+        if r:
+            extraction[mode] = {"ts": r["ts"], "cases": r["cases"], "correct": r["correct"], "by_kind": r["by_kind"],
+                                "gemini_turns": r.get("gemini_turns", 0), "source": f"reports/{name}",
+                                "wrong": [{"field": w["field"], "said": w["said"], "got": w["got"],
+                                           "expect": w["expect"]} for w in r["wrong"]]}
+    cases = json.loads((ROOT / "tests" / "extraction_cases.json").read_text(encoding="utf-8"))
+    extraction["about"] = cases["about"]
+    return {"latency": latency, "extraction": extraction,
+            "real_users": _missing("No study with real first-time borrowers has been run yet (STUDY.md has the kit).")}
+
+
+def evidence(live=None):
     run = json.loads(RUN_FILE.read_text(encoding="utf-8")) if RUN_FILE.exists() else None
     summary = None
     if run:
@@ -314,6 +382,7 @@ def evidence():
                    "checks_passed": sum(len(s["ok_lines"]) + (s.get("tests") or 0) for s in suites if s["passed"]),
                    "skipped": run.get("skipped", [])}
     return {"model": model_evidence(), "safeguards": safeguards(), "coverage": coverage(run),
+            "measurements": measurements(live),
             "run": summary, "failure_cases": failure_cases(), "limitations": LIMITATIONS,
             "not_measured_text": NOT_MEASURED}
 

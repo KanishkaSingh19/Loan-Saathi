@@ -245,8 +245,11 @@ BOTH = re.compile(r"\b(total|dono|both|jod|jodo|add|sum|milakar|mila ke)\b|द�
 MAX_EMI = re.compile(r"(max|maximum|zyada se zyada|kitni|kitna|how much).{0,40}\bemi\b|\bemi\b.{0,40}"
                      r"(afford|max|maximum|kitni|kitna|bhar sakta|bhar sakti)|afford", re.I)
 LOW_EMI = re.compile(r"\bemi\b.{0,25}\b(kam|less|lower|low|chhoti|kum)\b|\b(kam|lower|less|low|chhoti)\b.{0,12}\bemi\b", re.I)
-TENURE_PHRASE = re.compile(r"((?:\d+(?:\.\d+)?|[a-zऀ-ॿ]+)\s*(?:saal|sal|years?|yrs?|varsh|baras|mahine|mahina|"
-                           r"months?|साल|महीने)(?![a-zऀ-ॿ]))", re.I)  # not the "sal" in "salary"
+# A number then a time word: "2 saal", "18 mahine". Not "hazaar mahina" or the "000" of "8,000 mahina":
+# after an amount, "mahina" means per month, not a tenure.
+TENURE_PHRASE = re.compile(r"((?:(?<![\d,.])\d+(?:\.\d+)?|(?<![a-zऀ-ॿ])(?!(?:hazaar|hazar|lakhs?|lacs?|thousand|crores?|k|"
+                           r"हज़ार|हजार|लाख|करोड़)(?![a-zऀ-ॿ]))[a-zऀ-ॿ]+)\s*(?:saal|sal|years?|yrs?|varsh|baras|"
+                           r"mahine|mahina|months?|साल|महीने)(?![a-zऀ-ॿ]))", re.I)  # not the "sal" in "salary"
 BACK = re.compile(r"\b(original|meri request|wapas|back to|reset)\b", re.I)
 
 
@@ -528,6 +531,11 @@ def quoted(quote, said):
 
 # ---------- validation ----------
 
+def _none_said(v):
+    """'never taken one', 'koi nahi, ek bhi nahi': a negation with no digits means zero, not 'one'."""
+    return bool(FIRST_TIME.search(str(v))) and not re.search(r"\d", str(v))
+
+
 def valid(key, value):
     """The normalised value if our parser understands it and it is in range, else None."""
     if value in (None, ""):
@@ -545,7 +553,7 @@ def valid(key, value):
         return n if n is not None and n >= 0 else None
     if key == "other_loans_count":
         n = norm.number(v)
-        if n is None and norm.boolean(v) is False:
+        if (n is None and norm.boolean(v) is False) or _none_said(v):
             n = 0
         return int(n) if n is not None and 0 <= n < 50 else None
     if key == "years_in_work":
@@ -564,7 +572,7 @@ def valid(key, value):
         return n if n and 3 <= n <= 120 else None
     if key == "past_loans":
         n = norm.number(v)
-        if n is None and (FIRST_TIME.search(v) or norm.boolean(v) is False):
+        if (n is None and (FIRST_TIME.search(v) or norm.boolean(v) is False)) or _none_said(v):
             n = 0
         return int(n) if n is not None and 0 <= n <= 50 else None
     if key in HISTORY_FLAGS:
@@ -1265,7 +1273,8 @@ def fallback_candidates(text, asked):
             used = True
         m = LOANS_COUNT.search(c)
         if m and norm.number(m.group(1)) is not None and norm.number(m.group(1)) < 50:
-            found.setdefault("other_loans_count", m.group(0))
+            # "do loan liye hain pehle" answers the past-loans question when that is what we asked.
+            found.setdefault("past_loans" if asked == "past_loans" else "other_loans_count", m.group(0))
             used = True
         tenure = next((t.group(1) for t in TENURE_PHRASE.finditer(c) if norm.number(t.group(1)) is not None), None)
         if tenure and (money or re.search(r"\b(loan|repay|chukana|chukane|for|mein|ke liye)\b", c, re.I)) \

@@ -3,6 +3,10 @@
 const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
 const STORAGE_KEY = "saathi_key";
 
+export function apiBase() {
+  return API_BASE;
+}
+
 export function loadKey() {
   try {
     return sessionStorage.getItem(STORAGE_KEY) || "";
@@ -81,8 +85,8 @@ export async function transcribe(key, wavBlob, language = "hi") {
   return (await res.json()).transcript || "";
 }
 
-export async function speak(key, text) {
-  const res = await postJson(key, "/v1/tts", { text: text.slice(0, 5000), language: "hi-en" });
+export async function speak(key, text, lang = "hi") {
+  const res = await postJson(key, "/v1/tts", { text: text.slice(0, 5000), language: lang === "en" ? "en-IN" : "hi-en" });
   if (!res.ok) throw new Error(await errorText(res));
   return res.blob();
 }
@@ -160,6 +164,11 @@ async function getJson(key, path) {
   if (res.status === 401) throw new Unauthorized();
   if (!res.ok) throw new ApiError(await errorText(res), res.status);
   return res;
+}
+
+/** One measured voice turn (milliseconds), stored for the Evaluation Lab. Never blocks the call. */
+export function reportLatency(key, report) {
+  postJson(key, "/v1/metrics/latency", report).catch(() => {});
 }
 
 export async function fetchEvaluation(key) {
