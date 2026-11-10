@@ -43,7 +43,11 @@ def start(lang="hi"):
 
 
 # --- auth ---
-assert c.post("/v1/converse", json={}).status_code == 401
+# A borrower may start a call without the key (it returns the call's token; src/test_access.py has the rules),
+# but can't continue someone's call without that call's token.
+public = c.post("/v1/converse", json={})
+assert public.status_code == 200 and public.json()["call_token"]
+assert c.post("/v1/converse", json={"session_id": public.json()["session_id"], "text": "hi"}).status_code == 401
 assert c.post("/v1/converse", headers=H, json={"session_id": "nope", "text": "hi"}).status_code == 404
 
 # --- 1. no Gemini: scripted + our parser ---
