@@ -81,6 +81,17 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const [lang, setLang] = useState("hi");
   const consent = false; // nothing is stored until the caller says yes in the call room (DPDP)
   const [consentAsked, setConsentAsked] = useState(false);
+  const [leaving, setLeaving] = useState(false); // the landing page fading out before the call room
+  // Fade the landing page out, then start the call (instantly when reduced motion is preferred).
+  const go = (opts) => {
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (still) return begin(opts);
+    setLeaving(true);
+    setTimeout(() => {
+      setLeaving(false);
+      begin(opts);
+    }, 260);
+  };
   const [call, setCall] = useState(null);
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -418,7 +429,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   if (!call && !busy && !studyMode) {
     return (
       <main className="layout call-layout">
-        <section className="hero" aria-labelledby="hero-title">
+        <section className={`hero${leaving ? " leaving" : ""}`} aria-labelledby="hero-title">
           <span className="hero-brand">Loan-Saathi</span>
           <h2 id="hero-title">
             Understand your loan.
@@ -430,13 +441,13 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             help you explore safer options.
           </p>
           <div className="landing-cta">
-            <button type="button" className="talk-button" onClick={() => begin({ hands: true })}>
+            <button type="button" className="talk-button" disabled={leaving} onClick={() => go({ hands: true })}>
               <span className="talk-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="30" height="30"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" /></svg>
               </span>
               Talk to Saathi
             </button>
-            <button type="button" className="link-quiet" onClick={() => begin({ typing: true })}>
+            <button type="button" className="link-quiet" disabled={leaving} onClick={() => go({ typing: true })}>
               or type instead
             </button>
           </div>
@@ -455,7 +466,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   }
 
   return (
-    <main className="layout call-layout">
+    <main className="layout call-layout room-enter">
       <section className="panel call-panel">
         <div className="room-head">
           <p className="room-title">
