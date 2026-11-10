@@ -3,7 +3,7 @@
 // (/v1/tts/stream) and start playing on the first chunk. Gnani's voice-activity detection ends each
 // turn; the caller can interrupt Saathi by speaking.
 
-import { apiBase } from "./api";
+import { apiBase, authHeaders, callAuth } from "./api";
 
 export { looksLikeEcho } from "./echo.js";
 
@@ -59,7 +59,7 @@ export async function openLiveMic({ apiKey, lang, onEvent, onClose = () => {} })
 
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("Live speech didn't connect")), 10000);
-    ws.onopen = () => ws.send(JSON.stringify({ key: apiKey, language: lang }));
+    ws.onopen = () => ws.send(JSON.stringify({ key: apiKey, ...callAuth(), language: lang }));
     ws.onmessage = (m) => {
       const e = JSON.parse(m.data);
       if (e.type === "connected") {
@@ -194,7 +194,7 @@ export function playPcm(chunks, rate, whole = undefined) {
 export async function speakStream(apiKey, text, lang) {
   const res = await fetch(`${apiBase()}/v1/tts/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Webhook-Key": apiKey },
+    headers: { "Content-Type": "application/json", ...authHeaders(apiKey) },
     body: JSON.stringify({ text: text.slice(0, 5000), language: lang === "en" ? "en-IN" : "hi-en" }),
   });
   if (!res.ok || !res.body) throw new Error(`voice stream failed (HTTP ${res.status})`);
@@ -222,7 +222,7 @@ export async function speakStream(apiKey, text, lang) {
 export async function fetchClip(apiKey, text, lang) {
   const res = await fetch(`${apiBase()}/v1/tts/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Webhook-Key": apiKey },
+    headers: { "Content-Type": "application/json", ...authHeaders(apiKey) },
     body: JSON.stringify({ text, language: lang === "en" ? "en-IN" : "hi-en" }),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

@@ -95,13 +95,9 @@ export default function App() {
     setView("feed");
   };
 
-  if (status === "locked") {
-    return (
-      <div className="page">
-        <KeyGate retry={triedKey} onSubmit={submitKey} />
-      </div>
-    );
-  }
+  // Pre-screens, advisor cases and the study report hold callers' personal data: staff key only.
+  const staffView = view === "feed" || view === "cases" || view === "study";
+  const locked = !key || status === "locked";
 
   const statusText = {
     connecting: "Connecting…",
@@ -137,7 +133,7 @@ export default function App() {
           )}
         </nav>
         <div className="topbar-actions">
-          {view !== "call" && (
+          {staffView && !locked && (
             <div className={`status ${status}`} role="status">
               <span className="dot" />
               {statusText}
@@ -152,7 +148,11 @@ export default function App() {
         </div>
       </header>
 
-      {view === "study" ? (
+      {staffView && locked ? (
+        <main className="layout call-layout">
+          <KeyGate retry={triedKey} onSubmit={submitKey} />
+        </main>
+      ) : view === "study" ? (
         <StudyReport apiKey={key} onUnauthorized={logout} />
       ) : view === "eval" ? (
         <EvaluationLab apiKey={key} onUnauthorized={logout} />

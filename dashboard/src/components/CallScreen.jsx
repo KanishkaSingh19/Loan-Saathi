@@ -149,7 +149,11 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
 
   // Applicants never see technical errors; details go to the console for whoever runs the demo.
   const fail = (err, friendly) => {
-    if (err instanceof Unauthorized) return onUnauthorized();
+    if (err instanceof Unauthorized) {  // a staff key that changed, or a call that has ended
+      onUnauthorized();
+      setError("This call has ended. Tap New call to start again.");
+      return;
+    }
     console.warn("[web call]", err);
     setError(friendly || "Saathi couldn't reach the server. Please check your connection and try again.");
   };

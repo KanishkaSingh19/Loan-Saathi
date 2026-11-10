@@ -14,7 +14,7 @@ export default function ListenButton({ apiKey, text, onUnauthorized = undefined 
     [],
   );
 
-  if (!text || !apiKey) return null;
+  if (!text) return null;  // the server decides: staff key, or this browser's own call
 
   const toggle = async () => {
     if (state === "playing" || state === "loading") {

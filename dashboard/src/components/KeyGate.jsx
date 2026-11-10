@@ -11,11 +11,11 @@ export default function KeyGate({ retry, onSubmit }) {
       }}
     >
       <div className="brand-mark" aria-hidden="true">₹</div>
-      <h2>Open the live dashboard</h2>
+      <h2>Advisor sign-in</h2>
       <p className="muted">
         {retry
           ? "That key didn't work. Check WEBHOOK_KEY in your .env file, or in your host's environment settings."
-          : "Paste WEBHOOK_KEY from your .env file (on Render: the service's Environment tab). It is kept in this browser tab only."}
+          : "Pre-screens and advisor cases hold callers' personal data, so they need the staff key: WEBHOOK_KEY from your .env file (on Render, the service's Environment tab). It is kept in this browser tab only. Borrowers don't need it: Talk to Saathi works without signing in."}
       </p>
       <input
         type="password"
@@ -26,7 +26,7 @@ export default function KeyGate({ retry, onSubmit }) {
         autoFocus
       />
       <button type="submit" className="btn primary" disabled={!value.trim()}>
-        Open dashboard
+        Sign in
       </button>
     </form>
   );

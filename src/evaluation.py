@@ -140,6 +140,9 @@ SAFEGUARDS = [
              "number or a decision, and its replies can't contain amounts the caller didn't say."},
     {"name": "Closed by default", "where": ("server", "_check_key"),
      "what": "Without a WEBHOOK_KEY every /v1 route refuses; callers' income and debts are never served openly."},
+    {"name": "Per-call tokens for public callers", "where": ("server", "_owned_session"),
+     "what": "Anyone can start a call, but each call has its own secret token: a visitor reaches only their own "
+             "call and result. Lists of other callers need the staff key. Per-network limits bound API spend."},
 ]
 
 
@@ -194,6 +197,9 @@ CATALOG = [
         ("No approval claims or lender names", [("test_safety.py", "no approval claims anywhere"),
                                                 ("test_safety.py", "no lender names")]),
         ("Protected attributes", [("test_safety.py", "gender and marital status never used")]),
+        ("Public calls reach only their own data", [("test_access.py", "only their own token reaches their call"),
+                                                    ("test_access.py", "still need the staff key"),
+                                                    ("test_access.py", "per-network call limits")]),
         ("Affordability rule", [("test_safety.py", "every suggested amount keeps all EMIs within 50%")]),
     ]),
     ("Voice", [

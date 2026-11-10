@@ -15,7 +15,10 @@ response keys into "After API Call Variables" or hands the raw JSON to the LLM.
 """
 import asyncio
 import base64
+import hashlib
 import hmac
+import secrets
+from collections import deque
 import json
 import os
 import sqlite3
@@ -91,7 +94,7 @@ if ALLOWED_ORIGINS:
         CORSMiddleware,
         allow_origins=ALLOWED_ORIGINS,
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type", "X-Webhook-Key"],
+        allow_headers=["Content-Type", "X-Webhook-Key", "X-Call-Session", "X-Call-Token"],
     )
 
 
@@ -235,6 +238,85 @@ def _check_key(key):
         raise HTTPException(status_code=503, detail="server not configured: set WEBHOOK_KEY")
     if not hmac.compare_digest(str(key or ""), WEBHOOK_KEY):
         raise HTTPException(status_code=401, detail="bad webhook key")
+
+
+# ---------- public borrower calls (no key) vs staff views (webhook key) ----------
+# A borrower can start a call without any key. Each call gets a random token, sent only to the browser that
+# started it; the call's turns, voice, what-ifs and advisor request need that token, so a visitor only ever
+# reaches their own call. Everything that lists or changes other people's data still needs WEBHOOK_KEY.
+# Per-network limits keep Gnani and Gemini spend bounded. PUBLIC_CALLS=0 turns public calls off.
+PUBLIC_CALLS = os.environ.get("PUBLIC_CALLS", "1").strip() != "0"
+RATE = {"call": (int(os.environ.get("PUBLIC_CALLS_PER_IP_DAY") or 20), 86400),
+        "call_total": (int(os.environ.get("PUBLIC_CALLS_PER_DAY") or 300), 86400),
+        "turn": (40, 60), "speech": (60, 60), "advisor": (5, 3600), "metrics": (120, 60)}
+_HITS = {}
+
+
+def _limited(bucket, who):
+    """True when `who` has used up `bucket` (sliding window); otherwise counts this use."""
+    limit, window = RATE[bucket]
+    now = time.time()
+    q = _HITS.setdefault((bucket, who), deque())
+    while q and now - q[0] > window:
+        q.popleft()
+    if len(q) >= limit:
+        return True
+    q.append(now)
+    return False
+
+
+def _client_ip(headers, client):
+    fwd = headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() if fwd else (client.host if client else "unknown")
+
+
+def _token_hash(token):
+    return hashlib.sha256(f"loan-saathi-call:{token}".encode()).hexdigest()
+
+
+def _open():
+    """Closed by default: without a real WEBHOOK_KEY nothing is served, public calls included."""
+    if not WEBHOOK_KEY or WEBHOOK_KEY.startswith("replace-with"):
+        raise HTTPException(status_code=503, detail="server not configured: set WEBHOOK_KEY")
+
+
+def _is_staff(key):
+    return bool(WEBHOOK_KEY) and not WEBHOOK_KEY.startswith("replace-with") and \
+        hmac.compare_digest(str(key or ""), WEBHOOK_KEY)
+
+
+def _owned_session(sid, token):
+    s = get_session(sid) if sid and token else None
+    if s is None or not s.get("token_hash") or not hmac.compare_digest(s["token_hash"], _token_hash(token)):
+        return None
+    return s
+
+
+def _caller(request, key, bucket):
+    """("staff", None) with the webhook key; otherwise ("public", the call this browser holds a token for, or
+    None). Public use is rate-limited per network."""
+    _open()
+    if _is_staff(key):
+        return "staff", None
+    if not PUBLIC_CALLS:
+        raise HTTPException(status_code=401, detail="bad webhook key")
+    if _limited(bucket, _client_ip(request.headers, request.client)):
+        raise HTTPException(status_code=429, detail="Too many requests from your network. Please wait a minute "
+                                                    "and try again.")
+    return "public", _owned_session(request.headers.get("x-call-session", ""),
+                                    request.headers.get("x-call-token", ""))
+
+
+def _need_call(request, key, bucket):
+    role, owner = _caller(request, key, bucket)
+    if role != "staff" and owner is None:
+        raise HTTPException(status_code=401, detail="Start a call first (or sign in as staff).")
+    return role, owner
+
+
+def _check_speech_api(api_key):
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Gnani API key is not configured")
 
 
 def _check_speech_access(key, api_key):
@@ -676,9 +758,12 @@ def simulate_for(applicant, loan=None, tenure=None, context=None, with_scenarios
 
 
 @app.post("/v1/simulate")
-def simulate_route(body: SimulateRequest, x_webhook_key: str = Header(default="")):
-    """What-if simulation for a completed pre-screen. Read-only: the saved request never changes."""
-    _check_key(x_webhook_key)
+def simulate_route(body: SimulateRequest, request: Request, x_webhook_key: str = Header(default="")):
+    """What-if simulation for a completed pre-screen. Read-only: the saved request never changes.
+    Staff can simulate any pre-screen; a caller only their own call's."""
+    role, owner = _need_call(request, x_webhook_key, "turn")
+    if role != "staff" and owner.get("prescreen_id") != body.prescreen_id:
+        raise HTTPException(status_code=401, detail="You can only try options on your own assessment.")
     said, applicant, result = _load_prescreen(body.prescreen_id)
     if result.get("decision") == "need_more_info" or not applicant.get("loan_amount") \
             or not applicant.get("monthly_income"):
@@ -829,9 +914,11 @@ def case_from_session(s, question="", loan=None, tenure=None):
 
 
 @app.post("/v1/advisor-cases")
-def create_advisor_case(body: AdvisorRequest, x_webhook_key: str = Header(default="")):
-    """Save a structured summary for a human loan advisor (prototype: nobody is notified)."""
-    _check_key(x_webhook_key)
+def create_advisor_case(body: AdvisorRequest, request: Request, x_webhook_key: str = Header(default="")):
+    """Save a structured summary for a human loan advisor. A caller can only do it for their own call."""
+    role, owner = _need_call(request, x_webhook_key, "advisor")
+    if role != "staff" and (not body.session_id or owner["id"] != body.session_id):
+        raise HTTPException(status_code=401, detail="You can only ask for an advisor about your own call.")
     s = get_session(body.session_id) if body.session_id else None
     if s is not None:
         case = case_from_session(s, body.question, body.loan_amount, body.tenure_months)
@@ -941,8 +1028,9 @@ def study_report_csv(x_webhook_key: str = Header(default="")):
 @app.get("/v1/evaluation")
 def evaluation_evidence(x_webhook_key: str = Header(default="")):
     """The Evaluation Lab: model metrics from models/*.json, safeguards checked against the code, and the
-    last recorded test run (python -I -X utf8 src/evaluation.py run). Nothing is computed for show."""
-    _check_key(x_webhook_key)
+    last recorded test run (python -I -X utf8 src/evaluation.py run). Nothing is computed for show.
+    Public: it holds no personal data (latency records are timings only)."""
+    _open()
     try:
         live = latency_records()
     except Exception as e:  # noqa: BLE001  (the evidence page must load even if storage is down)
@@ -987,11 +1075,19 @@ async def run_turn(s, text, action, defer, channel="web-call"):
 
 
 @app.post("/v1/converse")
-async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
+async def converse_turn(body: ConverseRequest, request: Request, tasks: BackgroundTasks,
+                        x_webhook_key: str = Header(default="")):
     """Browser web call: one caller utterance in (already transcribed), Saathi's reply out.
-    An empty session_id starts a new call and returns the greeting."""
-    _check_key(x_webhook_key)
+    An empty session_id starts a new call and returns the greeting, plus the call's token (public callers)."""
+    role, owner = _caller(request, x_webhook_key, "turn")
     if not body.session_id:
+        if role != "staff":
+            if body.persona:
+                raise HTTPException(status_code=401, detail="bad webhook key")  # the study kit is staff-only
+            ip = _client_ip(request.headers, request.client)
+            if _limited("call", ip) or _limited("call_total", "all"):
+                raise HTTPException(status_code=429, detail="Saathi has taken a lot of calls today. Please try "
+                                                            "again tomorrow.")
         info = None
         if body.persona:
             if body.persona not in study.BY_ID:
@@ -999,11 +1095,15 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
             info = {"participant": body.participant or "anon", "persona": body.persona,
                     "synthetic": body.synthetic}
         s, reply = converse.start(body.language, study=info, consent=body.consent or bool(info))
+        token = secrets.token_urlsafe(24)
+        s["token_hash"] = _token_hash(token)
         tasks.add_task(_persist, s)
-        return {**converse.public(s), "reply": reply}
+        return {**converse.public(s), "reply": reply, "call_token": token}
     s = get_session(body.session_id)
     if s is None:
         raise HTTPException(status_code=404, detail="call not found or expired; start a new one")
+    if role != "staff" and (owner is None or owner["id"] != s["id"]):
+        raise HTTPException(status_code=401, detail="This call belongs to another browser; start a new call.")
     reply = await run_turn(s, body.text, body.action, tasks.add_task)
     tasks.add_task(_persist, s)
     if s.get("study") and s.get("consent"):
@@ -1013,12 +1113,14 @@ async def converse_turn(body: ConverseRequest, tasks: BackgroundTasks, x_webhook
 
 @app.post("/v1/stt")
 async def speech_to_text(
+    request: Request,
     audio_file: UploadFile = File(...),
     language_code: str = Form(default="hi-IN"),
     output_format: str = Form(default="transcribe", alias="format"),
     x_webhook_key: str = Header(default=""),
 ):
-    _check_speech_access(x_webhook_key, GNANI_STT_API_KEY)
+    _need_call(request, x_webhook_key, "speech")
+    _check_speech_api(GNANI_STT_API_KEY)
     audio = await audio_file.read()
     if not audio:
         raise HTTPException(status_code=400, detail="audio_file must not be empty")
@@ -1075,8 +1177,9 @@ async def _tts_turn():
 
 
 @app.post("/v1/tts")
-async def text_to_speech(body: SpeechRequest, x_webhook_key: str = Header(default="")):
-    _check_speech_access(x_webhook_key, GNANI_TTS_API_KEY)
+async def text_to_speech(body: SpeechRequest, request: Request, x_webhook_key: str = Header(default="")):
+    _need_call(request, x_webhook_key, "speech")
+    _check_speech_api(GNANI_TTS_API_KEY)
     await _tts_turn()
     try:
         async with httpx.AsyncClient(timeout=65.0) as client:
@@ -1097,10 +1200,11 @@ async def text_to_speech(body: SpeechRequest, x_webhook_key: str = Header(defaul
 
 
 @app.post("/v1/tts/stream")
-async def text_to_speech_stream(body: SpeechRequest, x_webhook_key: str = Header(default="")):
+async def text_to_speech_stream(body: SpeechRequest, request: Request, x_webhook_key: str = Header(default="")):
     """The reply as raw 16-bit mono PCM (24 kHz), streamed as Gnani produces it (TTS over SSE), so the
     browser starts speaking before the whole reply is synthesised."""
-    _check_speech_access(x_webhook_key, GNANI_TTS_API_KEY)
+    _need_call(request, x_webhook_key, "speech")
+    _check_speech_api(GNANI_TTS_API_KEY)
     await _tts_turn()
     client = httpx.AsyncClient(timeout=httpx.Timeout(65.0, connect=10.0))
     try:
@@ -1168,8 +1272,12 @@ async def speech_to_text_stream(ws: WebSocket):
         return await refuse("Send {\"key\", \"language\"} first.")
     if not WEBHOOK_KEY or WEBHOOK_KEY.startswith("replace-with"):
         return await refuse("server not configured: set WEBHOOK_KEY", 1011)
-    if not hmac.compare_digest(str(hello.get("key") or ""), WEBHOOK_KEY):
-        return await refuse("bad webhook key")
+    if not _is_staff(hello.get("key")):
+        owned = PUBLIC_CALLS and _owned_session(str(hello.get("session") or ""), str(hello.get("token") or ""))
+        if not owned:
+            return await refuse("bad webhook key")
+        if _limited("speech", _client_ip(ws.headers, ws.client)):
+            return await refuse("Too many requests from your network. Please wait a minute.")
     if not GNANI_STT_API_KEY:
         return await refuse("Gnani API key is not configured", 1011)
     import websockets  # uvicorn[standard] ships it
@@ -1222,9 +1330,10 @@ async def speech_to_text_stream(ws: WebSocket):
 
 
 @app.post("/v1/metrics/latency")
-def record_latency(body: LatencyReport, tasks: BackgroundTasks, x_webhook_key: str = Header(default="")):
+def record_latency(body: LatencyReport, request: Request, tasks: BackgroundTasks,
+                   x_webhook_key: str = Header(default="")):
     """A measured voice turn from a real browser session (for the Evaluation Lab's latency section)."""
-    _check_key(x_webhook_key)
+    _need_call(request, x_webhook_key, "metrics")
     tasks.add_task(_save, "INSERT INTO latency_metrics VALUES (?,?,?)",
                    (uuid.uuid4().hex[:12], time.time(), json.dumps(body.model_dump())))
     return {"ok": True}

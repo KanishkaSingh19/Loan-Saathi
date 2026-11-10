@@ -151,6 +151,15 @@ maximum EMI I can afford?", "EMI kam rakhni hai".
   anywhere an applicant can see or hear, no protected attributes, the LLM never decides, numbers are
   validated, confirmation is required, affordability and the debt rule hold, contradictions are asked.
 
+## Who can see what
+- **Borrowers need no key.** Anyone can open the site and talk to Saathi. Each call gets its own secret token,
+  given only to the browser that started it, so a visitor reaches their own call, result, what-ifs and advisor
+  request, and nothing else. Calls are limited per network (`PUBLIC_CALLS_PER_IP_DAY`, default 20) and per day
+  (`PUBLIC_CALLS_PER_DAY`, default 300) to bound Gnani and Gemini spend. The Evaluation Lab is public too: it
+  holds no personal data.
+- **Staff need `WEBHOOK_KEY`** for everything that shows other callers: Pre-screens, Advisor cases, the audit
+  log, the study kit, admin actions and the phone webhook. `PUBLIC_CALLS=0` makes every call need the key too.
+
 ## WhatsApp, and a daily digest for advisors
 - **WhatsApp** (`/v1/whatsapp/webhook`, Meta's WhatsApp Cloud API): the same conversation, rules and
   model over text, reply buttons and voice notes. A voice note is transcribed by Gnani STT (OGG, up to

@@ -25,8 +25,36 @@ export function saveKey(key) {
 
 export class Unauthorized extends Error {}
 
+// The call this browser started: its id and the token the server handed out with the greeting. Borrowers need
+// no key; the token lets them (and only them) continue their own call.
+const CALL = { session: "", token: "" };
+
+export function setCall(session, token) {
+  CALL.session = session || "";
+  CALL.token = token || "";
+}
+
+export function callAuth() {
+  return { session: CALL.session, token: CALL.token };
+}
+
+/**
+ * Headers for a request: the staff key when signed in, and the call token when a call is running.
+ * @param {string} [key] @returns {Record<string, string>}
+ */
+export function authHeaders(key = "") {
+  /** @type {Record<string, string>} */
+  const h = {};
+  if (key) h["X-Webhook-Key"] = key;
+  if (CALL.token) {
+    h["X-Call-Session"] = CALL.session;
+    h["X-Call-Token"] = CALL.token;
+  }
+  return h;
+}
+
 export async function fetchApplications(key, limit = 100) {
-  const res = await fetch(`${API_BASE}/v1/applications?limit=${limit}`, { headers: { "X-Webhook-Key": key } });
+  const res = await fetch(`${API_BASE}/v1/applications?limit=${limit}`, { headers: authHeaders(key) });
   if (res.status === 401) throw new Unauthorized();
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
@@ -35,7 +63,7 @@ export async function fetchApplications(key, limit = 100) {
 export async function sendPrescreen(key, body) {
   const res = await fetch(`${API_BASE}/v1/prescreen`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Webhook-Key": key },
+    headers: { "Content-Type": "application/json", ...authHeaders(key) },
     body: JSON.stringify(body),
   });
   if (res.status === 401) throw new Unauthorized();
@@ -45,7 +73,7 @@ export async function sendPrescreen(key, body) {
 async function postJson(key, path, body) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Webhook-Key": key },
+    headers: { "Content-Type": "application/json", ...authHeaders(key) },
     body: JSON.stringify(body),
   });
   if (res.status === 401) throw new Unauthorized();
@@ -70,16 +98,19 @@ async function errorText(res) {
  * @param {string} [action] @param {{participant?: string, persona?: string, consent?: boolean}} [study] study fields and the storage consent, when starting a call
  */
 export async function converse(key, sessionId, text, language = "hi", action = "", study = {}) {
+  if (!sessionId) setCall("", "");  // a new call: forget the previous call's token
   const res = await postJson(key, "/v1/converse", { session_id: sessionId || "", text, language, action, ...study });
   if (!res.ok) throw new ApiError(await errorText(res), res.status);
-  return res.json();
+  const data = await res.json();
+  if (data.call_token) setCall(data.session_id, data.call_token);
+  return data;
 }
 
 export async function transcribe(key, wavBlob, language = "hi") {
   const form = new FormData();
   form.append("audio_file", wavBlob, "speech.wav");
   form.append("language_code", language === "en" ? "en-IN" : "hi-IN");
-  const res = await fetch(`${API_BASE}/v1/stt`, { method: "POST", headers: { "X-Webhook-Key": key }, body: form });
+  const res = await fetch(`${API_BASE}/v1/stt`, { method: "POST", headers: authHeaders(key), body: form });
   if (res.status === 401) throw new Unauthorized();
   if (!res.ok) throw new Error(await errorText(res));
   return (await res.json()).transcript || "";
@@ -135,7 +166,7 @@ export async function createAdvisorCase(key, { prescreenId, sessionId, question,
 }
 
 export async function fetchAdvisorCases(key) {
-  const res = await fetch(`${API_BASE}/v1/advisor-cases`, { headers: { "X-Webhook-Key": key } });
+  const res = await fetch(`${API_BASE}/v1/advisor-cases`, { headers: authHeaders(key) });
   if (res.status === 401) throw new Unauthorized();
   if (!res.ok) throw new ApiError("Couldn't load advisor cases. Please try again.");
   return res.json();
@@ -149,7 +180,7 @@ export async function fetchAdvisorCases(key) {
 export async function updateAdvisorCase(key, caseId, change) {
   const res = await fetch(`${API_BASE}/v1/advisor-cases/${encodeURIComponent(caseId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", "X-Webhook-Key": key },
+    headers: { "Content-Type": "application/json", ...authHeaders(key) },
     body: JSON.stringify(change),
   });
   if (res.status === 401) throw new Unauthorized();
@@ -160,7 +191,7 @@ export async function updateAdvisorCase(key, caseId, change) {
 // ---------- user study (STUDY.md) ----------
 
 async function getJson(key, path) {
-  const res = await fetch(`${API_BASE}${path}`, { headers: { "X-Webhook-Key": key } });
+  const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders(key) });
   if (res.status === 401) throw new Unauthorized();
   if (!res.ok) throw new ApiError(await errorText(res), res.status);
   return res;

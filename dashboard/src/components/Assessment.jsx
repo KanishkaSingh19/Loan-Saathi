@@ -248,7 +248,7 @@ export default function Assessment({
                 18% yearly interest. Still a pre-screening, not an offer.</p>
             </section>
           ) : null}
-          {apiKey && prescreenId ? (
+          {prescreenId ? (
             <Simulator
               apiKey={apiKey}
               prescreenId={prescreenId}
@@ -267,7 +267,7 @@ export default function Assessment({
         </>
       )}
 
-      {apiKey && (prescreenId || sessionId) ? (
+      {prescreenId || sessionId ? (
         <AdvisorPanel
           apiKey={apiKey}
           prescreenId={prescreenId}
