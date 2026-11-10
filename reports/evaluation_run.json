@@ -1,6 +1,6 @@
 {
- "ts": 1794300728.26218,
- "commit": "7045b4b",
+ "ts": 1794300997.385654,
+ "commit": "9264171",
  "python": "3.12.10",
  "suites": {
   "test_access.py": {
@@ -12,7 +12,7 @@
     "ok - voice (streaming and tap) and latency reports need the caller's own call",
     "ok - per-network call limits, staff-only study kit, PUBLIC_CALLS=0 off switch, closed by default"
    ],
-   "seconds": 10.9
+   "seconds": 10.6
   },
   "test_advisor.py": {
    "passed": true,
@@ -54,12 +54,12 @@
     "ok - lakh/crore values parse correctly; very large ones are read back",
     "ok - invalid values are refused with a reason and never reach the assessment"
    ],
-   "seconds": 11.5
+   "seconds": 12.6
   },
   "test_converse.py": {
-   "passed": false,
+   "passed": true,
    "ok_lines": [],
-   "seconds": 9.3
+   "seconds": 10.4
   },
   "test_evaluation.py": {
    "passed": true,
@@ -70,7 +70,7 @@
     "ok - every listed safeguard exists in the code",
     "ok - every listed check exists in its suite; failed or unrun suites never show as passed"
    ],
-   "seconds": 9.8
+   "seconds": 9.9
   },
   "test_handoff.py": {
    "passed": true,
@@ -87,7 +87,7 @@
     "ok 10 - a pre-screen without a call gets no made-up conversation",
     "ok 11 - the workspace is saved with the case"
    ],
-   "seconds": 11.0
+   "seconds": 11.2
   },
   "test_history.py": {
    "passed": true,
@@ -110,7 +110,7 @@
     "ok - interim debt floor: on only for unconstrained models, never lowers risk",
     "ok - calibration map applied when present, identity when training didn't keep one"
    ],
-   "seconds": 8.9
+   "seconds": 8.8
   },
   "test_operations.py": {
    "passed": true,
@@ -120,7 +120,7 @@
     "ok - cases go open -> in review -> closed (and reopen), with names, notes and history",
     "ok - study: persona ground truth, first-pass and final accuracy, timings, survey, report, CSV"
    ],
-   "seconds": 11.4
+   "seconds": 11.6
   },
   "test_privacy.py": {
    "passed": true,
@@ -132,7 +132,7 @@
     "ok - phone pre-screens are stored only when the caller agreed",
     "ok - data older than 30 days is deleted from every table; recent data stays"
    ],
-   "seconds": 10.6
+   "seconds": 10.7
   },
   "test_safety.py": {
    "passed": true,
@@ -174,12 +174,12 @@
     "ok - invalid amounts are refused with a reason",
     "ok - voice: Hinglish what-if, ambiguous and bare amounts asked about, original result kept"
    ],
-   "seconds": 25.0
+   "seconds": 24.5
   },
   "test_speech_api.py": {
    "passed": true,
    "ok_lines": [],
-   "seconds": 9.4
+   "seconds": 9.3
   },
   "test_stages.py": {
    "passed": true,
@@ -187,7 +187,7 @@
     "ok - a full call walks EXTRACT -> VALIDATE -> CONFIRM -> ASSESS -> EXPLAIN -> SIMULATE -> HANDOFF",
     "ok - ASSESS, LISTEN, recovery and early handoff map to their stages"
    ],
-   "seconds": 10.1
+   "seconds": 10.2
   },
   "test_states.py": {
    "passed": true,
@@ -214,7 +214,7 @@
     "ok - human handoff from any point",
     "ok - live-run regressions: spoken halves, tenure numbers, language drift, wide quotes, early corrections, multi-field fallback, what-if at the summary, plain retry"
    ],
-   "seconds": 13.8
+   "seconds": 13.9
   },
   "test_voice.py": {
    "passed": true,
@@ -231,7 +231,7 @@
   "test_webhook.py": {
    "passed": true,
    "ok_lines": [],
-   "seconds": 10.1
+   "seconds": 9.9
   },
   "test_whatsapp.py": {
    "passed": true,
@@ -242,13 +242,13 @@
     "ok - unsupported messages get a plain answer; buttons and lists fit WhatsApp's limits",
     "ok - daily advisor digest: open cases only, delivered only when an advisor channel confirms"
    ],
-   "seconds": 10.0
+   "seconds": 9.9
   },
   "tests/test_normalize.py": {
    "passed": true,
    "ok_lines": [],
    "tests": 0,
-   "seconds": 2.5
+   "seconds": 2.1
   }
  },
  "skipped": [
