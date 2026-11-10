@@ -451,3 +451,19 @@ h1, h2, h3, h4 { font-family: var(--font); }
 
 .hero .toggle.consent { max-width: 52ch; text-align: left; align-items: flex-start; font-size: 14px; line-height: 1.45; }
 .hero .toggle.consent input { margin-top: 3px; }
+
+/* ---------- borrower-first chrome: logo + a quiet link; staff nav only in staff views ---------- */
+.brand-home { background: none; border: none; padding: 0; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.brand-home:focus-visible { outline: 2px solid var(--violet-500); outline-offset: 4px; border-radius: 12px; }
+.link-quiet { background: none; border: none; padding: 8px 4px; font: inherit; font-size: 14.5px; font-weight: 600;
+  color: var(--muted); cursor: pointer; box-shadow: none; }
+.link-quiet:hover, .link-quiet:focus-visible { color: var(--violet-700); text-decoration: underline; }
+.site-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; align-items: center;
+  margin-top: 40px; padding: 18px 2px 0; border-top: 1px solid var(--line); font-size: 13.5px; color: var(--muted); }
+.site-footer .link-quiet { font-size: 13.5px; padding: 0; }
+@media (max-width: 560px) {
+  .topbar-actions .link-quiet { white-space: nowrap; font-size: 13.5px; }
+  .site-footer { flex-direction: column; align-items: flex-start; }
+}
+@media (max-width: 860px) { .topbar > .nav-spacer { display: none; } }
+.brand-home { justify-self: start; }

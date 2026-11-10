@@ -109,7 +109,8 @@ export default function App() {
   return (
     <div className="page">
       <header className="topbar">
-        <div className="brand">
+        <button type="button" className="brand brand-home" onClick={() => setView("call")}
+          aria-label="Loan-Saathi home">
           <div className="brand-mark" aria-hidden="true">₹</div>
           <div>
             <h1>
@@ -117,21 +118,22 @@ export default function App() {
             </h1>
             <p className="muted">Voice loan pre-screening</p>
           </div>
-        </div>
-        <nav className="views" role="tablist" aria-label="View">
-          <button role="tab" aria-selected={view === "call"} className={`chip${view === "call" ? " active" : ""}`}
-            onClick={() => setView("call")}>Talk to Saathi</button>
-          <button role="tab" aria-selected={view === "feed"} className={`chip${view === "feed" ? " active" : ""}`}
-            onClick={() => setView("feed")}>Pre-screens</button>
-          <button role="tab" aria-selected={view === "cases"} className={`chip${view === "cases" ? " active" : ""}`}
-            onClick={() => setView("cases")}>Advisor cases</button>
-          <button role="tab" aria-selected={view === "eval"} className={`chip${view === "eval" ? " active" : ""}`}
-            onClick={() => setView("eval")}>Evaluation Lab</button>
-          {STUDY_MODE && (
-            <button role="tab" aria-selected={view === "study"} className={`chip${view === "study" ? " active" : ""}`}
-              onClick={() => setView("study")}>Study</button>
-          )}
-        </nav>
+        </button>
+        {/* Borrowers see only the conversation. Staff views and the evidence get their own small nav. */}
+        {view === "call" ? <span className="nav-spacer" /> : (
+          <nav className="views" role="tablist" aria-label="Staff and evidence views">
+            <button role="tab" aria-selected={view === "feed"} className={`chip${view === "feed" ? " active" : ""}`}
+              onClick={() => setView("feed")}>Pre-screens</button>
+            <button role="tab" aria-selected={view === "cases"} className={`chip${view === "cases" ? " active" : ""}`}
+              onClick={() => setView("cases")}>Advisor cases</button>
+            <button role="tab" aria-selected={view === "eval"} className={`chip${view === "eval" ? " active" : ""}`}
+              onClick={() => setView("eval")}>Evaluation Lab</button>
+            {STUDY_MODE && (
+              <button role="tab" aria-selected={view === "study"} className={`chip${view === "study" ? " active" : ""}`}
+                onClick={() => setView("study")}>Study</button>
+            )}
+          </nav>
+        )}
         <div className="topbar-actions">
           {staffView && !locked && (
             <div className={`status ${status}`} role="status">
@@ -139,12 +141,15 @@ export default function App() {
               {statusText}
             </div>
           )}
-          <button type="button" className="btn outline" onClick={() => setView("feed")}>
-            For advisors
-          </button>
-          <button type="button" className="btn primary cta" onClick={() => setView("call")}>
-            Talk to Saathi
-          </button>
+          {view === "call" ? (
+            <button type="button" className="btn link-quiet" onClick={() => setView("feed")}>
+              For advisors
+            </button>
+          ) : (
+            <button type="button" className="btn primary cta" onClick={() => setView("call")}>
+              Talk to Saathi
+            </button>
+          )}
         </div>
       </header>
 
@@ -212,6 +217,14 @@ export default function App() {
       </main>
       </>
       )}
+      <footer className="site-footer">
+        <span>Loan-Saathi gives an estimated pre-screening, not a lender approval.</span>
+        {view !== "eval" && (
+          <button type="button" className="link-quiet" onClick={() => setView("eval")}>
+            How Saathi was tested → Evaluation Lab
+          </button>
+        )}
+      </footer>
     </div>
   );
 }
