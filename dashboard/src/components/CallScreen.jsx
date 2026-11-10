@@ -22,21 +22,6 @@ const ORDER = ["loan_amount", "tenure_months", "monthly_income", "work", "years_
   "late_over_month", "overdue_now", "housing", "age"];
 const YES_NO = new Set(["ever_refused", "ever_late", "late_last_year", "late_over_month", "overdue_now"]);
 
-// Readable names for the server's conversation states (converse.py).
-const STATE_LABELS = {
-  COLLECTING_PROFILE: "Collecting answers",
-  VERIFYING_INFORMATION: "Waiting for confirmation",
-  CORRECTION_REQUIRED: "Correcting an answer",
-  CONFIRMED: "Confirmed",
-  ASSESSING_RISK: "Assessing risk",
-  CHECKING_AFFORDABILITY: "Checking affordability",
-  SHOWING_RESULT: "Result",
-  NEXT_STEPS: "Next steps",
-  COMPLETED: "Completed",
-  ERROR_RECOVERY: "Recovering",
-  HUMAN_HANDOFF: "Saved for a loan advisor",
-  WHAT_IF: "Trying options",
-};
 const MONEY = new Set(["loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding"]);
 const rupees = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
@@ -69,7 +54,7 @@ function callPhase(call, busy, live = false, hearing = false) {
   if (!call) return busy === "starting" ? { id: "listen", word: "Connecting", text: "Starting your call" } : null;
   if (hearing && busy !== "thinking") return { id: "listen", word: "Hearing you", text: "Saathi answers when you pause" };
   if (live && busy === "speaking") return { id: "listen", word: "Saathi is speaking", text: "Just speak to interrupt" };
-  if (busy === "listening") return { id: "listen", word: "Listening", text: "Tap the mic again when you finish" };
+  if (busy === "listening") return { id: "listen", word: "Listening", text: "Tap the circle again when you finish" };
   if (busy === "transcribing") return { id: "listen", word: "Listening", text: "Turning your speech into text" };
   if (busy === "thinking") return { id: "understand", word: "Understanding", text: "Reading what you said" };
   if (call.done) return null;
@@ -94,7 +79,8 @@ const BUSY_TEXT = {
 
 export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, studyMode = false }) {
   const [lang, setLang] = useState("hi");
-  const [consent, setConsent] = useState(false); // stored only with an explicit yes (DPDP)
+  const consent = false; // nothing is stored until the caller says yes in the call room (DPDP)
+  const [consentAsked, setConsentAsked] = useState(false);
   const [call, setCall] = useState(null);
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(null);
@@ -327,7 +313,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           mic.current = null;
           setLive(false);
           setHearing(false);
-          setVoiceNote("Live listening stopped. Tap the mic to talk again.");
+          setVoiceNote("Live listening stopped. Tap the circle to talk again.");
         },
       });
       setLive(true);
@@ -337,7 +323,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
       console.warn("[web call] live mic unavailable, using tap-to-talk", err);
       mic.current = null;
       setLive(false);
-      setVoiceNote("Live listening isn't available here, so tap the mic to talk (or type).");
+      setVoiceNote("Live listening isn't available here, so tap the circle to talk (or type).");
       return false;
     }
   };
@@ -362,7 +348,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
         recorder.current = null;
         if (seconds < 0.5) {
           setBusy(null);
-          setError("That was too short. Tap the mic, speak, then tap again.");
+          setError("That was too short. Tap the circle, speak, then tap it again.");
           return;
         }
         let heard = "";
@@ -372,7 +358,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
         } catch (err) {
           setBusy(null);
           setSttFailures((n) => n + 1);
-          fail(err, "I couldn't hear that clearly. Please tap the mic and try again, or type your answer.");
+          fail(err, "I couldn't hear that clearly. Please tap the circle and try again, or type your answer.");
           return;
         }
         if (!heard.trim()) {
@@ -399,6 +385,23 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   };
 
   sendRef.current = send;
+  const orbState = hearing ? "hearing" : busy === "speaking" ? "speaking"
+    : ["thinking", "starting", "transcribing"].includes(busy) ? "thinking"
+      : live || busy === "listening" ? "listening" : "idle";
+  const lastSaathi = [...messages].reverse().find((m) => m.who === "saathi")?.text || "";
+
+  const endCall = () => {  // back to the landing page; nothing about the call stays on screen
+    stopLive();
+    stopSpeaking();
+    recorder.current?.cancel();
+    recorder.current = null;
+    setCall(null);
+    setMessages([]);
+    setBusy(null);
+    setError("");
+    setVoiceNote("");
+    setConsentAsked(false);
+  };
   const active = call && !call.done;
   const result = call?.result;
   const answers = call?.answers || {};
@@ -426,36 +429,24 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             Talk to Saathi in your own words. It will understand your financial situation, check affordability, and
             help you explore safer options.
           </p>
-          <div className="hero-actions">
-            <button type="button" className="wave-cta" onClick={() => begin({ hands: true })}>
-              <span className="wave-badge" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="#fff">
-                  <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" />
-                </svg>
+          <div className="landing-cta">
+            <button type="button" className="talk-button" onClick={() => begin({ hands: true })}>
+              <span className="talk-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="30" height="30"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" /></svg>
               </span>
               Talk to Saathi
             </button>
-            <button type="button" className="btn outline type-cta" onClick={() => begin({ typing: true })}>
-              Type instead
+            <button type="button" className="link-quiet" onClick={() => begin({ typing: true })}>
+              or type instead
             </button>
           </div>
-          <div className="hero-options">
-            <div className="hero-langs" role="group" aria-label="Language">
-              {[["hi", "Hinglish"], ["en", "English"]].map(([id, label]) => (
-                <button key={id} type="button" aria-pressed={lang === id} onClick={() => setLang(id)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <label className="toggle">
-              <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
-              Speak replies aloud
-            </label>
+          <div className="hero-langs" role="group" aria-label="Language">
+            {[["hi", "Hinglish"], ["en", "English"]].map(([id, label]) => (
+              <button key={id} type="button" aria-pressed={lang === id} onClick={() => setLang(id)}>
+                {label}
+              </button>
+            ))}
           </div>
-          <label className="toggle consent">
-            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-            Save my answers for 30 days, so a loan advisor can follow up. Leave this unticked and nothing is stored.
-          </label>
           {error && <p className="call-error" role="alert">{error}</p>}
           <p className="hero-disclaimer">This is an estimated pre-screening, not a lender approval.</p>
         </section>
@@ -466,33 +457,61 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   return (
     <main className="layout call-layout">
       <section className="panel call-panel">
-        <div className="call-head">
-          <div>
-            <h2>
-              Talk to Saathi
-              {call?.state && <span className="state-pill">{STATE_LABELS[call.state] || call.state}</span>}
-            </h2>
-            <p className="muted small">
-              Answer a few questions by voice or text. Saathi reads your details back before estimating anything.
-              {call ? (call.consent ? " Your answers are kept for 30 days." : " Your answers aren't being saved.")
-                : null}
-            </p>
-          </div>
-          <div className="call-controls">
-            <select value={lang} onChange={(e) => setLang(e.target.value)} disabled={!!active} aria-label="Language">
-              <option value="hi">Hinglish</option>
-              <option value="en">English</option>
-            </select>
-            <label className="toggle">
-              <input type="checkbox" checked={voiceOn} onChange={(e) => setVoiceOn(e.target.checked)} />
-              Speak replies
-            </label>
-            <button className="btn primary" onClick={() => begin()}
-              disabled={(busy !== null && busy !== "speaking") || (studyMode && !studyInfo)}>
-              {call ? "New call" : "Start call"}
+        <div className="room-head">
+          <p className="room-title">
+            {active ? <span className="live-dot" aria-hidden="true" /> : null}
+            {active ? "Live call with Saathi" : call ? "Call ended" : "Talk to Saathi"}
+            <small>{lang === "en" ? "English" : "Hinglish"}{call ? (call.consent ? " · saved for 30 days" : " · not saved") : ""}</small>
+          </p>
+          <div className="room-tools">
+            <button type="button" className={`tool${voiceOn ? " on" : ""}`} aria-pressed={voiceOn}
+              onClick={() => { setVoiceOn(!voiceOn); if (voiceOn) stopSpeaking(); }}>
+              {voiceOn ? "Speaker on" : "Speaker off"}
             </button>
+            {call ? (
+              <button type="button" className="btn end-call" onClick={endCall}>
+                {active ? "End call" : "Back"}
+              </button>
+            ) : (
+              <button className="btn primary" onClick={() => begin({ hands: true })}
+                disabled={(busy !== null && busy !== "speaking") || (studyMode && !studyInfo)}>
+                Start call
+              </button>
+            )}
           </div>
         </div>
+
+        <div className={`room-stage orb-${orbState}`}>
+          <button type="button" className="orb" onClick={toggleMic}
+            disabled={!active || (!live && busy !== null && busy !== "listening" && busy !== "speaking")}
+            aria-label={live ? "Saathi is listening. Tap to mute" : busy === "listening" ? "Stop recording and send"
+              : "Tap to speak"}
+            aria-pressed={live || busy === "listening"}>
+            <span className="orb-ring" aria-hidden="true" />
+            <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" /></svg>
+          </button>
+          <p className="orb-word" aria-live="polite">{phase ? phase.word : active ? (live ? "Listening" : "Tap to speak")
+            : call ? "Call ended" : ""}</p>
+          <p className="orb-text">{phase ? phase.text : active && !live ? "Tap the circle, speak, then tap again" : ""}</p>
+          {lastSaathi ? <p className="caption">{lastSaathi}</p> : null}
+        </div>
+
+        {active && call && !call.consent && !consentAsked ? (
+          <div className="consent-card" role="group" aria-label="Saving your answers">
+            <p>Save your answers for 30 days, so a loan advisor can follow up if you need one? Either way, the call
+              carries on.</p>
+            <div>
+              <button type="button" className="btn primary"
+                onClick={() => { setConsentAsked(true); send(lang === "en" ? "Yes, save my answers" : "Haan, save karo", "consent:yes"); }}>
+                Yes, save
+              </button>
+              <button type="button" className="btn"
+                onClick={() => { setConsentAsked(true); send(lang === "en" ? "No, don't save" : "Nahi, save mat karo", "consent:no"); }}>
+                No thanks
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="chat" aria-live="polite">
           {!call && !busy && (
@@ -572,13 +591,6 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
         )}
         {voiceNote && <p className="muted small call-note">{voiceNote}</p>}
 
-        {phase && (
-          <p className={`call-status phase-${phase.id}`} aria-live="polite">
-            <i aria-hidden="true" />
-            <b>{phase.word}</b>
-            <span>{phase.text}</span>
-          </p>
-        )}
         <form
           className="composer"
           onSubmit={(e) => {
@@ -586,25 +598,12 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             send(text);
           }}
         >
-          <button
-            type="button"
-            className={`mic${busy === "listening" ? " on" : ""}${live ? " live" : ""}${hearing ? " hearing" : ""}`}
-            onClick={toggleMic}
-            disabled={!active || (!live && busy !== null && busy !== "listening" && busy !== "speaking")}
-            aria-label={live ? "Live listening is on. Tap to pause it" : busy === "listening"
-              ? "Stop recording and send" : "Speak your answer"}
-            aria-pressed={live || busy === "listening"}
-          >
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-              <path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z" />
-            </svg>
-          </button>
           <input
             ref={inputRef}
             aria-label="Your answer"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={active ? "Type your answer…" : call ? "Call finished. Start a new call to try again" : "Tap Start call first"}
+            placeholder={active ? "…or type your answer" : call ? "Call ended. Tap Back to start again" : "Start a call first"}
             disabled={!active || busy === "listening"}
             maxLength={1000}
           />

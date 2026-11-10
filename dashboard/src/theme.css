@@ -467,3 +467,68 @@ h1, h2, h3, h4 { font-family: var(--font); }
 }
 @media (max-width: 860px) { .topbar > .nav-spacer { display: none; } }
 .brand-home { justify-self: start; }
+
+/* =====================================================================================
+   Landing: one button. Call room: an orb that shows what is happening, live captions, controls.
+   ===================================================================================== */
+.landing-cta { display: grid; justify-items: center; gap: 12px; margin-top: 18px; }
+.talk-button { display: inline-flex; align-items: center; gap: 16px; padding: 12px 34px 12px 12px; border-radius: 999px;
+  border: none; cursor: pointer; font: inherit; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;
+  color: #fff; background: var(--violet-700); box-shadow: 0 12px 30px rgba(76, 29, 149, 0.3);
+  transition: transform .15s, box-shadow .15s, background .15s; }
+.talk-button:hover { transform: translateY(-1px); background: var(--ink-hover); box-shadow: 0 16px 34px rgba(76, 29, 149, 0.36); }
+.talk-button:focus-visible { outline: 3px solid var(--violet-400); outline-offset: 4px; }
+.talk-icon { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.18); }
+.landing-cta .link-quiet { font-size: 15px; }
+
+.call-panel { overflow: hidden; }
+.room-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px;
+  padding: 14px 22px; border-bottom: 1px solid var(--line); }
+.room-title { margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 18px; font-weight: 800; }
+.room-title small { font-size: 13px; font-weight: 600; color: var(--muted); }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 4px var(--good-bg); }
+.room-tools { display: flex; gap: 8px; align-items: center; }
+.tool { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; font: inherit;
+  font-size: 13.5px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.tool.on { color: var(--violet-700); border-color: var(--violet-200); background: var(--violet-50); }
+.btn.end-call { border-color: var(--bad); color: var(--bad); font-weight: 700; }
+.btn.end-call:hover:not(:disabled) { background: var(--bad); color: #fff; border-color: var(--bad); }
+
+.room-stage { display: grid; justify-items: center; gap: 6px; padding: 30px 22px 22px; text-align: center;
+  background: linear-gradient(180deg, var(--violet-50), #fff); border-bottom: 1px solid var(--line); }
+.orb { position: relative; width: 132px; height: 132px; border-radius: 50%; border: none; cursor: pointer;
+  display: grid; place-items: center; color: #fff; background: var(--violet-700);
+  box-shadow: 0 14px 34px rgba(76, 29, 149, 0.28); transition: transform .2s, background .2s; }
+.orb:disabled { cursor: default; }
+.orb:focus-visible { outline: 3px solid var(--violet-400); outline-offset: 6px; }
+.orb svg { position: relative; z-index: 1; }
+.orb-ring { position: absolute; inset: -12px; border-radius: 50%; border: 3px solid transparent; pointer-events: none; }
+.orb-idle .orb { background: var(--violet-100); color: var(--violet-700); box-shadow: none; }
+.orb-listening .orb-ring { border-color: var(--violet-200); animation: orb-breathe 2.4s ease-in-out infinite; }
+.orb-hearing .orb { transform: scale(1.04); }
+.orb-hearing .orb-ring { border-color: var(--violet-400); inset: -16px; animation: orb-breathe 0.9s ease-in-out infinite; }
+.orb-thinking .orb-ring { border: 3px dashed var(--violet-400); animation: orb-spin 2.2s linear infinite; }
+.orb-speaking .orb { background: var(--violet-500); }
+.orb-speaking .orb-ring { border-color: var(--violet-200); animation: orb-wave 1.1s ease-out infinite; }
+@keyframes orb-breathe { 50% { transform: scale(1.06); opacity: .7; } }
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+@keyframes orb-wave { 0% { transform: scale(.95); opacity: 1; } 100% { transform: scale(1.18); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .orb-ring { animation: none !important; } .orb { transition: none; } }
+.orb-word { margin: 16px 0 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+.orb-text { margin: 0; font-size: 14px; color: var(--muted); min-height: 1.4em; }
+.caption { margin: 14px 0 0; max-width: 60ch; font-size: 18px; line-height: 1.55; color: var(--text); }
+
+.consent-card { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px;
+  margin: 14px 22px 0; padding: 14px 16px; border: 1px solid var(--violet-200); border-radius: 14px; background: var(--violet-50); }
+.consent-card p { margin: 0; font-size: 14.5px; max-width: 60ch; }
+.consent-card div { display: flex; gap: 8px; }
+
+@media (max-width: 560px) {
+  .talk-button { font-size: 19px; padding: 10px 26px 10px 10px; }
+  .talk-icon { width: 50px; height: 50px; }
+  .room-head { padding: 12px 16px; }
+  .room-stage { padding: 22px 16px 18px; }
+  .orb { width: 112px; height: 112px; }
+  .caption { font-size: 16.5px; }
+  .consent-card { margin: 12px 16px 0; }
+}
