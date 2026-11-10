@@ -169,4 +169,24 @@ assert listed[case["id"]]["corrections"] == case["corrections"] and listed[case[
 assert advisor.result_flags(None, {}) == []
 print("ok 11 - the workspace is saved with the case")
 
+# ---- 7. a live-site regression: Devanagari advisor requests, and asking after the call ended ----
+sid7 = new("hi")
+until_summary(sid7, {**ANSWERS, "monthly_income": "40,000", "other_loans_outstanding": "36 lakh"})
+t = say(sid7, "haan", "confirm")
+assert t["state"] == cv.RESULT and t["result"]["decision"] == "not_eligible_now", t["state"]
+t = say(sid7, "nahi")                                    # "no thanks": next steps
+assert t["state"] in (cv.NEXT_STEPS, cv.COMPLETED), t["state"]
+assert "paying down" not in t["reply"] and "existing loans" not in t["reply"], "no English tips in Hinglish"
+t = say(sid7, "मैं एक लोन एडवाइजर से बात करना चाहती हूँ")
+assert t["advisor_case"], ("Devanagari advisor request", t["reply"])
+case_id = t["advisor_case"]
+t = say(sid7, "मुझे बात करनी है लोन एडवाइजर से")
+assert case_id in t["reply"] and t["advisor_case"] == case_id, "asking again points to the same case"
+sid8 = new("hi")
+say(sid8, "3 lakh")
+cv.SESSIONS[sid8]["state"] = cv.COMPLETED                # a call that has already ended
+t = say(sid8, "सलाहकार से बात करनी है")
+assert t["advisor_case"] and "case" in t["reply"].lower(), t["reply"]
+print("ok 12 - advisor requests in Devanagari, and after the call ended, still save a case")
+
 print("All handoff tests passed.")

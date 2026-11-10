@@ -375,6 +375,19 @@ _TIPS = {
     "LATE_OVER_MONTH": "paying every EMI on time for a few months",
     "OVERDUE_NOW": "clearing the overdue EMI first",
 }
+# The same tips for Hinglish replies (the web call speaks these, so no English inside Hinglish).
+_TIPS_HI = {
+    "ANNUITY_TO_INCOME": "chhota loan ya lamba samay, taaki EMI kam ho",
+    "DEBT_TO_INCOME": "pehle kuch maujooda loan band karna",
+    "BUREAU_ACTIVE_DEBT": "pehle maujooda loans ka baaki kam karna",
+    "BUREAU_ACTIVE_LOANS": "chhote loan se shuru karke har EMI samay par bharna, taaki loan history bane",
+    "YEARS_EMPLOYED": "abhi ke kaam mein kuch aur samay ke baad dobara apply karna",
+    "NOT_EMPLOYED": "aamdani ka niyamit zariya dikhana",
+    "EVER_LATE": "kuch mahine har EMI samay par bharna",
+    "LATE_LAST_YEAR": "kuch mahine har EMI samay par bharna",
+    "LATE_OVER_MONTH": "kuch mahine har EMI samay par bharna",
+    "OVERDUE_NOW": "pehle bakaya EMI chukana",
+}
 
 
 # ---------- core ----------
@@ -500,6 +513,7 @@ def decide(applicant, risk=None, context=None):
     ups = [t for _, t in up_items]
     downs = [t for _, t in down_items]
     tips = [_TIPS[f] for f, _ in up_items if f in _TIPS]
+    tips_hi = [_TIPS_HI[f] for f, _ in up_items if f in _TIPS_HI]
 
     requested = applicant["loan_amount"]
     tenure = int(afford["tenure_months"]) if afford else 24
@@ -516,6 +530,7 @@ def decide(applicant, risk=None, context=None):
         heavy = "existing loans add up to more than 2 years of income"
         ups = [heavy] + [u for u in ups if "existing loans" not in u]
         tips = ["paying down existing loans first"] + [t for t in tips if "existing loans" not in t]
+        tips_hi = ["pehle maujooda loans ka baaki kam karna"] + [t for t in tips_hi if "maujooda loan" not in t]
 
     if band == "high" or not can_afford or policy:
         decision = "not_eligible_now"
@@ -558,6 +573,7 @@ def decide(applicant, risk=None, context=None):
         "reasons_against": "; ".join(ups),
         "reasons_for": "; ".join(downs),
         "tips": "; ".join(tips[:2]),
+        "tips_hi": "; ".join(dict.fromkeys(tips_hi[:2])),
         "missing_fields": "",
         "policy_rule": policy,
         "reply_hint": hint,

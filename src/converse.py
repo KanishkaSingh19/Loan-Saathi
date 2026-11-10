@@ -237,7 +237,8 @@ HUMAN = re.compile(
     r"\b(human|insaan|insan|real person|actual person|customer care|customer support|helpline)\b|"
     r"kisi (insaan|aadmi|vyakti|person) se|(agent|officer|manager|executive|advisor|adviser) se baat|"
     r"(talk|speak) to (a |an |the )?(loan )?(person|human|agent|officer|someone|real|advisor|adviser)|"
-    r"इंसान|किसी से बात", re.I)
+    r"\bloan (advisor|adviser)\b|\b(advisor|adviser) (chahiye|se milna|se milwa)|"
+    r"इंसान|किसी से बात|एडवाइज़र|एडवाइजर|एडवाइसर|सलाहकार|अधिकारी से बात|एजेंट से बात|व्यक्ति से बात", re.I)
 FIRST = re.compile(r"\b(pehla|pehle|pahla|pahle|first|purana|old|earlier)\b|पहल", re.I)
 SECOND = re.compile(r"\b(doosra|dusra|doosre|dusre|second|naya|nayi|new|latest|abhi wala|baad wala|later)\b|दूसर|नया", re.I)
 BOTH = re.compile(r"\b(total|dono|both|jod|jodo|add|sum|milakar|mila ke)\b|दोनों|कुल", re.I)
@@ -399,6 +400,8 @@ SAY = {
                           "pade toh loan advisor aage madad kar sake? Dono tarah se baat jaari rahegi.",
                     "en": f"May we keep your answers for {RETENTION_DAYS} days, so a loan advisor can follow up if "
                           "needed? Either way, we can carry on."},
+    "handoff_done": {"hi": "Aapka summary pehle hi loan advisor ke liye case {case} mein save hai. Dhanyavaad!",
+                     "en": "Your summary is already saved for a loan advisor as case {case}. Thank you!"},
     "consent_yes": {"hi": f"Theek hai, aapke jawaab {RETENTION_DAYS} din ke liye save rahenge.",
                     "en": f"Okay, your answers will be kept for {RETENTION_DAYS} days."},
     "consent_no": {"hi": "Theek hai, aapke jawaab save nahi honge.",
@@ -1164,6 +1167,11 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
     s["updated"] = time.time()
     s.update(changed=set(), clarify=None, just_corrected=None, problem_value=None)
     if s["state"] in FINISHED:
+        wants_person = action == "handoff" or (not action and text and HUMAN.search(text))
+        if wants_person and advisor and not s.get("advisor_case"):
+            return _late_handoff(s, advisor, text)
+        if wants_person and s.get("advisor_case"):
+            return SAY["handoff_done"][s["lang"]].format(case=s["advisor_case"])
         if s["state"] == HANDOFF:
             transition(s, COMPLETED, "call over")
         return SAY["finished"][s["lang"]]
@@ -1199,6 +1207,27 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
                RESULT: _after_result, NEXT_STEPS: _after_next_steps, RECOVERY: _recovering,
                WHAT_IF: _what_if}[s["state"]]
     reply = await handler(s, env, text, action)
+    s["history"].append(("Saathi", reply))
+    return reply
+
+
+def _late_handoff(s, advisor, text):
+    """An advisor request after the call has ended: save the case without reopening the call."""
+    lang = s["lang"]
+    s["history"].append(("Caller", text or "[handoff]"))
+    s["consent"] = True              # asking for an advisor is asking us to keep the summary
+    s.setdefault("consent_via", "advisor request")
+    try:
+        case = advisor(s, text)
+    except Exception as e:  # noqa: BLE001
+        print(f"[converse {s['id']}] advisor case failed: {type(e).__name__}: {e}", flush=True)
+        reply = SAY["handoff_failed"][lang]
+    else:
+        s["advisor_case"] = case["id"]
+        s.setdefault("trail", []).append({"from": s["state"], "to": s["state"], "why": "advisor requested after the call",
+                                          "ts": round(time.time(), 3)})
+        key = "handoff_notified" if (case.get("notification") or {}).get("delivered") else "handoff"
+        reply = SAY[key][lang].format(case=case["id"])
     s["history"].append(("Saathi", reply))
     return reply
 
@@ -1760,7 +1789,7 @@ async def _after_next_steps(s, env, text, action):
 def _next_steps(r, lang):
     """Deterministic next steps for each decision."""
     d = r["decision"]
-    tips = r.get("tips", "")
+    tips = r.get("tips_hi" if lang == "hi" else "tips", "") or r.get("tips", "")
     if lang == "hi":
         if d in ("pre_approved", "needs_review", "counter_offer"):
             return ("Aage ke steps: Aadhaar card, PAN card aur pichhle 3 mahine ka bank statement taiyaar rakhiye. "
@@ -1845,7 +1874,7 @@ def _language(text, gemini_says, current):
 def _fallback_result(r, lang):
     d = r["decision"]
     amt, emi, n = r.get("offer_amount_text", ""), r.get("offer_emi_text", ""), r.get("tenure_months", "")
-    tips = r.get("tips", "")
+    tips = r.get("tips_hi" if lang == "hi" else "tips", "") or r.get("tips", "")
     if lang == "hi":
         if d == "pre_approved":
             return (f"Achhi khabar! Is pre-screening ke hisaab se aap {amt} ke loan ki aage ki jaanch ke liye "
