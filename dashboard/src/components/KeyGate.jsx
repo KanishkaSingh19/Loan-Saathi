@@ -14,8 +14,8 @@ export default function KeyGate({ retry, onSubmit }) {
       <h2>Open the live dashboard</h2>
       <p className="muted">
         {retry
-          ? "That key didn't work. Check the WEBHOOK_KEY in your .env file."
-          : "Paste the WEBHOOK_KEY from your .env file. It is kept in this browser tab only."}
+          ? "That key didn't work. Check WEBHOOK_KEY in your .env file, or in your host's environment settings."
+          : "Paste WEBHOOK_KEY from your .env file (on Render: the service's Environment tab). It is kept in this browser tab only."}
       </p>
       <input
         type="password"
