@@ -566,6 +566,12 @@ def dashboard_redirect():
     return RedirectResponse("/dashboard/")
 
 
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    """A hosted Space opens at '/': send visitors to the dashboard."""
+    return RedirectResponse("/dashboard/")
+
+
 @app.get("/health")
 def health():
     scoring._load()

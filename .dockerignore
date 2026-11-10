@@ -1,7 +1,8 @@
 .env
 .venv/
 data/
-dashboard/
+dashboard/node_modules/
+dashboard/dist/
 *.csv
 *.zip
 **/__pycache__/

@@ -1,5 +1,5 @@
 ---
-title: Loan Saathi API
+title: Loan Saathi
 emoji: 🏦
 colorFrom: indigo
 colorTo: green
@@ -8,5 +8,7 @@ app_port: 7860
 pinned: false
 ---
 
-Webhook API for Loan Saathi, a voice loan pre-screening agent built on Gnani Agent Builder.
+Loan-Saathi: voice loan pre-screening for first-time borrowers in India (Hindi, Hinglish, English).
+This Space serves the dashboard, the web call with live Gnani speech, the Evaluation Lab and the API.
+Every data route needs the webhook key; answers are stored only with the caller's consent.
 Source: https://github.com/KanishkaSingh19/Loan-Saathi
