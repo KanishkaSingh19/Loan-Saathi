@@ -504,8 +504,9 @@ def _sha(path):
 
 
 def _code_commit():
-    if os.environ.get("GIT_COMMIT"):
-        return os.environ["GIT_COMMIT"][:12]
+    for var in ("GIT_COMMIT", "RENDER_GIT_COMMIT"):  # set by the host on Render
+        if os.environ.get(var):
+            return os.environ[var][:7]
     try:
         import subprocess
         return subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True,
