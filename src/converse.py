@@ -402,6 +402,8 @@ SAY = {
                           "needed? Either way, we can carry on."},
     "handoff_done": {"hi": "Aapka summary pehle hi loan advisor ke liye case {case} mein save hai. Dhanyavaad!",
                      "en": "Your summary is already saved for a loan advisor as case {case}. Thank you!"},
+    "lang_switched": {"hi": "Theek hai, ab main Hinglish mein baat karunga.",
+                      "en": "Sure, I'll speak in English."},
     "consent_yes": {"hi": f"Theek hai, aapke jawaab {RETENTION_DAYS} din ke liye save rahenge.",
                     "en": f"Okay, your answers will be kept for {RETENTION_DAYS} days."},
     "consent_no": {"hi": "Theek hai, aapke jawaab save nahi honge.",
@@ -1176,6 +1178,12 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
             transition(s, COMPLETED, "call over")
         return SAY["finished"][s["lang"]]
     s["history"].append(("Caller", text or f"[{action}]"))
+    wanted = language_request(text, action)
+    if wanted:  # "talk in English please": switch, say so, and ask the same thing again
+        s["lang"] = wanted
+        reply = SAY["lang_switched"][wanted] + _repeat_question(s)
+        s["history"].append(("Saathi", reply))
+        return reply
     if text and not action:
         s["lang"] = _language(text, None, s["lang"])
     env = {"decide": decide, "build_applicant": build_applicant, "save": save, "assess": assess,
@@ -1855,6 +1863,48 @@ HI_WORDS = re.compile(r"\b(hai|hain|hoon|hu|mujhe|mera|meri|mere|chahiye|kamaata
                       r"rahi|karta|karti|ghar|kiraye|dukaan|apna|apni|toh|bhi|aur|kitna|kitne|baaki|kist)\b", re.I)
 EN_WORDS = re.compile(r"\b(i|am|my|is|the|a|an|want|need|earn|have|for|and|of|to|do|it|yes|per|month|months|"
                       r"years|what|how|much|own|live|work|loan|loans|rent|with)\b", re.I)
+
+
+# "Can you talk in English please" / "इंग्लिश में बात करो" / "Hindi mein boliye": an explicit request to switch.
+# Speech-to-text set to Hindi writes English words in Devanagari, so both scripts count.
+_EN_NAME = r"(?<![a-z])(?:english|inglish|angrezi|angreji)|इंग्लिश|इंगलिश|अंग्रेज़ी|अंग्रेजी"
+_HI_NAME = r"hindi|hinglish|हिंदी|हिन्दी|हिंग्लिश"
+_VERB = r"talk|speak|reply|answer|continue|switch|change|baat|bol\w*|टॉक|स्पीक|बात|बोल\w*"
+_AFTER = r"please|pls|mein|me|में|प्लीज|bolo|boliye|baat|बात|बोलो|बोलिए|mai"
+
+
+def _switch(name):
+    """A request to change language: a talking verb near the name, the name followed by mein/please/bolo,
+    or a sentence ending "in <name>". Not "I work in an English school"."""
+    return re.compile(rf"(?:{_VERB})\W+(?:\w+\W+){{0,3}}?(?:in\s+|इन\s+)?(?:{name})|"
+                      rf"(?:{name})\s*(?:{_AFTER})(?:\W|$)|\b(?:in|इन)\s+(?:{name})\s*[.!?।]*\s*$", re.I)
+
+
+SWITCH_TO = {"en": _switch(_EN_NAME), "hi": _switch(_HI_NAME)}
+
+
+def language_request(text, action=""):
+    """'en' or 'hi' when the caller asks to change language (button or words), else None."""
+    if action in ("lang:en", "lang:hi"):
+        return action[5:]
+    if action or not text or norm.amounts(text):
+        return None
+    for lang, pat in SWITCH_TO.items():
+        if pat.search(text):
+            return lang
+    return None
+
+
+def _repeat_question(s):
+    """What Saathi was waiting for, in the call's (new) language."""
+    lang = s["lang"]
+    if s["pending"]:
+        return ""
+    if s["state"] == COLLECTING and s.get("asking") in BY_KEY:
+        return " " + BY_KEY[s["asking"]][lang]
+    if s["state"] == VERIFYING:
+        return " " + _spoken_summary(s)
+    return ""
 
 
 def _language(text, gemini_says, current):

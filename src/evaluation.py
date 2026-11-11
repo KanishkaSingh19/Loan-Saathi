@@ -206,6 +206,7 @@ CATALOG = [
         ("Live streaming speech-to-text", [("test_voice.py", "live STT relay")]),
         ("Streaming replies (speech starts on the first chunk)", [("test_voice.py", "streaming TTS")]),
         ("Numbers spoken naturally", [("test_voice.py", "numbers are spoken the way people say them")]),
+        ("Switching language mid-call", [("test_voice.py", "'talk in English' (either script)")]),
         ("Latency recorded from real calls", [("test_voice.py", "measured browser turns are stored")]),
         ("Speech-to-text failure", [("test_evaluation.py", "speech-to-text failures"),
                                     ("test_advisor.py", "clear recovery: repeat prompts, server glitches")]),

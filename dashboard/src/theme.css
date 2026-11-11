@@ -548,3 +548,6 @@ h1, h2, h3, h4 { font-family: var(--font); }
   .hero, .room-enter, .reveal { transition: none !important; animation: none !important; }
   .reveal { opacity: 1; transform: none; }
 }
+.room-langs { box-shadow: none; padding: 3px; }
+.room-langs button { padding: 6px 12px; font-size: 13px; }
+.room-langs button:disabled { opacity: .6; cursor: default; }

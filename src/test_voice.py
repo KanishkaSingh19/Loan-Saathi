@@ -207,4 +207,21 @@ cv._gemini = real_gemini
 assert cv.check({"literal_ok": set(), "answers": {}}, "tenure_months", "6", "six months") == ("ok", 6)
 print("ok - Gemini regressions: one amount answers one question, ranges are asked, 'six months' stays 6")
 
+# ---- switching language mid-call (a live-site report: "can you talk in English please" in Devanagari) ----
+t = c.post("/v1/converse", headers=H, json={"language": "hi"}).json()
+sid = t["session_id"]
+t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "क्या कैन यू टॉक इन इंग्लिश प्लीज"}).json()
+assert t["language"] == "en" and t["reply"] == "Sure, I'll speak in English. How much loan do you need?", t["reply"]
+assert t["state"] == cv.COLLECTING and t["answers"] == {} and t["asking"] == "loan_amount"
+t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "3 lakh"}).json()
+assert t["answers"]["loan_amount"] == 300000 and t["language"] == "en"
+t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "Hinglish mein bolo", "action": "lang:hi"}).json()
+assert t["language"] == "hi" and t["reply"].startswith("Theek hai, ab main Hinglish mein baat karunga.")
+assert "chukana" in t["reply"], "the same question again, in Hinglish"
+assert t["answers"]["loan_amount"] == 300000, "switching language changes no answer"
+for said in ("I work in an English school", "meri English teacher wali job hai", "my income is 40000 in english"):
+    assert cv.language_request(said) is None, said
+assert cv.language_request("हिंदी में बात करो") == "hi" and cv.language_request("speak english") == "en"
+print("ok - 'talk in English' (either script) or the switch changes language and re-asks; answers stay")
+
 print("All voice tests passed.")

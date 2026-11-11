@@ -111,6 +111,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const [live, setLive] = useState(false);       // hands-free: streaming mic open for the whole call
   const [hearing, setHearing] = useState(false); // the caller is speaking right now (Gnani heard speech)
   const mic = useRef(null);
+  const micLang = useRef("");                    // the language live listening was opened with
   const playback = useRef(null);                 // the reply playing now (stoppable for barge-in)
   const speakingText = useRef("");
   const bargedIn = useRef(false);
@@ -318,6 +319,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const startLive = async (callLang) => {
     if (mic.current) return true;
     try {
+      micLang.current = callLang;
       mic.current = await openLiveMic({
         apiKey, lang: callLang, onEvent: (e) => onLiveEvent(e),
         onClose: () => {
@@ -345,6 +347,19 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setLive(false);
     setHearing(false);
   };
+
+  // The call's language can change mid-call ("talk in English please", or the switch in the header).
+  // Follow it, and reconnect live listening so speech-to-text hears the new language.
+  useEffect(() => {
+    if (call?.language && call.language !== langRef.current) setLang(call.language);
+  }, [call?.language]);
+  useEffect(() => {
+    if (mic.current && micLang.current !== lang) {
+      stopLive();
+      startLive(lang);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
 
   const toggleMic = async () => {
     setError("");
@@ -472,9 +487,23 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           <p className="room-title">
             {active ? <span className="live-dot" aria-hidden="true" /> : null}
             {active ? "Live call with Saathi" : call ? "Call ended" : "Talk to Saathi"}
-            <small>{lang === "en" ? "English" : "Hinglish"}{call ? (call.consent ? " · saved for 30 days" : " · not saved") : ""}</small>
+            <small>{call ? (call.consent ? "Saved for 30 days" : "Not saved") : ""}</small>
           </p>
           <div className="room-tools">
+            <div className="hero-langs room-langs" role="group" aria-label="Language">
+              {[["hi", "Hinglish"], ["en", "English"]].map(([id, label]) => (
+                <button key={id} type="button" aria-pressed={lang === id}
+                  disabled={active && busy !== null && busy !== "speaking"}
+                  onClick={() => {
+                    if (id === lang) return;
+                    setLang(id);
+                    // Mid-call: Saathi switches and asks the same question again in that language.
+                    if (active) send(id === "en" ? "English, please" : "Hinglish mein bolo", `lang:${id}`);
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <button type="button" className={`tool${voiceOn ? " on" : ""}`} aria-pressed={voiceOn}
               onClick={() => { setVoiceOn(!voiceOn); if (voiceOn) stopSpeaking(); }}>
               {voiceOn ? "Speaker on" : "Speaker off"}
