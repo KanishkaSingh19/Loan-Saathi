@@ -77,8 +77,15 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
 # Groq (OpenAI-compatible) is tried first when its key is set; Gemini is the fallback; our parser is last.
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "").strip() or "llama-3.3-70b-versatile"
+# GROQ_DISABLED=1 keeps a configured key unused (the test suites set it: live calls are slow, rate-limited
+# and not deterministic). An empty GROQ_API_KEY can't do that on Windows, where "" unsets the variable for
+# child processes and .env's key comes back.
+GROQ_API_KEY = "" if os.environ.get("GROQ_DISABLED", "").strip() == "1" else os.environ.get("GROQ_API_KEY", "").strip()
+# One or more Groq models, tried in order. Each has its own free-tier rate limit (8,000 tokens a minute on
+# the free plan, a few extraction turns), so a second model is extra capacity before Gemini and the parser.
+GROQ_MODELS = [m.strip() for m in (os.environ.get("GROQ_MODEL", "").strip()
+                                   or "qwen/qwen3.8-27b,openai/gpt-oss-20b").split(",") if m.strip()]
+GROQ_MODEL = GROQ_MODELS[0]
 # Comma-separated origins allowed to call the API from a browser, e.g. the Vercel dashboard.
 ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 # Where new advisor cases are announced: any URL that accepts a JSON POST, e.g. a Slack or Microsoft
@@ -1072,7 +1079,7 @@ def llm_router():
     turn from the current settings, so changing a key needs no restart."""
     providers = []
     if GROQ_API_KEY:
-        providers.append(llm_mod.GroqProvider(GROQ_API_KEY, GROQ_MODEL))
+        providers += [llm_mod.GroqProvider(GROQ_API_KEY, m) for m in GROQ_MODELS]
     if GEMINI_API_KEY:
         providers.append(llm_mod.GeminiProvider(GEMINI_API_KEY, GEMINI_MODEL,
                                                 send=lambda *a: converse._gemini(*a)))

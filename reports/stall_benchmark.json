@@ -1,0 +1,32 @@
+{
+ "before (main ec4c83d)": {
+  "turn_ms": [
+   8017,
+   8003,
+   8013
+  ],
+  "answers": {
+   "loan_amount": 300000.0,
+   "tenure_months": 24.0,
+   "monthly_income": 40000.0
+  },
+  "ts": 1794501278.3784573,
+  "src": "git archive of main at ec4c83d (--src)",
+  "method": "Every outgoing HTTP POST mocked to stall 30 s; Gemini key set, no Groq key; three Hinglish turns through /v1/converse."
+ },
+ "after (improvements)": {
+  "turn_ms": [
+   3025,
+   3034,
+   3016
+  ],
+  "answers": {
+   "loan_amount": 300000.0,
+   "tenure_months": 24.0,
+   "monthly_income": 40000.0
+  },
+  "ts": 1794501294.747076,
+  "src": "src",
+  "method": "Every outgoing HTTP POST mocked to stall 30 s; Gemini key set, no Groq key; three Hinglish turns through /v1/converse."
+ }
+}

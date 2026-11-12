@@ -6,6 +6,13 @@ import httpx
 from .base import InvalidJSON, LLMError, Provider, parse_json
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# Reasoning models think before they answer; extraction needs none of it, and every thinking token counts
+# against the free tier's tokens-per-minute limit. By model-name prefix.
+REASONING = {"openai/gpt-oss": "low", "qwen/qwen3": "none"}
+
+
+def reasoning_effort(model):
+    return next((v for prefix, v in REASONING.items() if str(model).startswith(prefix)), None)
 
 
 class GroqProvider(Provider):
@@ -25,8 +32,11 @@ class GroqProvider(Provider):
             ],
             "response_format": {"type": "json_object"},
             "temperature": 0.2,
-            "max_tokens": 400,
+            "max_tokens": 800,
         }
+        effort = reasoning_effort(self.model)
+        if effort:
+            body["reasoning_effort"] = effort
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             r = await client.post(self.url, json=body, headers={"Authorization": f"Bearer {self.api_key}"})
         if not r.is_success:

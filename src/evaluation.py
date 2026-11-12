@@ -369,6 +369,15 @@ def _stats(values):
     return {"median": round(median), "p90": v[min(len(v) - 1, int(round(0.9 * (len(v) - 1))))], "n": len(v)}
 
 
+def test_env():
+    """The suites' environment: no live Groq calls (they are slow, rate-limited and not deterministic). Set
+    LIVE_LLM_TESTS=1 to let suites use the real GROQ_API_KEY from .env."""
+    env = dict(os.environ)
+    if not env.get("LIVE_LLM_TESTS"):
+        env["GROQ_DISABLED"] = "1"
+    return env
+
+
 def measurements(live=None):
     """Latency (scripted benchmark and real browser turns) and extraction accuracy (parser and Gemini)."""
     stages = [("speech_end_to_first_audio_ms", "Caller stops → first audio of the reply"),
@@ -380,7 +389,13 @@ def measurements(live=None):
     if bench:
         latency["benchmark"] = {"ts": bench["ts"], "turns": bench["turns"], "method": bench["method"],
                                 "summary": bench["summary"], "source": "reports/latency_benchmark.json",
-                                "gemini_turns": sum(1 for r in bench["rows"] if r.get("llm") == "gemini")}
+                                "gemini_turns": sum(1 for r in bench["rows"] if r.get("llm") == "gemini"),
+                                "llm_turns": {p: sum(1 for r in bench["rows"] if r.get("llm") == p)
+                                              for p in sorted({r.get("llm") or "fallback" for r in bench["rows"]})}}
+    stall = _report("stall_benchmark.json")
+    if stall:  # the language model hanging (mocked): how long a turn waits before the parser answers
+        latency["stall"] = {label: {"turn_ms": r["turn_ms"], "ts": r["ts"]} for label, r in stall.items()}
+        latency["stall_source"] = "reports/stall_benchmark.json (src/bench_stall.py)"
     live = [r for r in (live or []) if r.get("mode") == "live"]
     latency["browser"] = ({k: _stats(r.get(k) for r in live) for k, _ in stages} | {"turns": len(live)}
                           if live else None)
@@ -440,7 +455,7 @@ def run(out=RUN_FILE):
             continue
         t0 = time.time()
         r = subprocess.run([sys.executable, "-I", "-X", "utf8", "-W", "ignore", str(p)], capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=900, cwd=ROOT)
+                           text=True, encoding="utf-8", errors="replace", timeout=900, cwd=ROOT, env=test_env())
         lines = [ln.strip() for ln in r.stdout.splitlines() if OK_LINE.match(ln.strip())]
         suites[p.name] = {"passed": r.returncode == 0, "ok_lines": lines, "seconds": round(time.time() - t0, 1)}
         print(f"{'PASS' if r.returncode == 0 else 'FAIL'} {p.name} ({len(lines)} checks)", flush=True)
@@ -451,7 +466,7 @@ def run(out=RUN_FILE):
         name = f"tests/{p.name}"
         t0 = time.time()
         r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:warnings", name], capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=600, cwd=ROOT)
+                           text=True, encoding="utf-8", errors="replace", timeout=600, cwd=ROOT, env=test_env())
         m = re.search(r"(\d+) passed", r.stdout)
         suites[name] = {"passed": r.returncode == 0, "ok_lines": [], "tests": int(m.group(1)) if m else 0,
                         "seconds": round(time.time() - t0, 1)}

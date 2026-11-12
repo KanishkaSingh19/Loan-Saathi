@@ -136,6 +136,12 @@ def test_groq_provider_sends_json_mode_and_parses_fenced_content(monkeypatch):
     assert seen["body"]["response_format"] == {"type": "json_object"} and seen["body"]["model"] == "llama-test"
     assert seen["headers"]["Authorization"] == "Bearer gsk_test" and seen["url"].endswith("/chat/completions")
     assert '"type": "object"' in seen["body"]["messages"][0]["content"], "the schema rides in the system prompt"
+    assert "reasoning_effort" not in seen["body"]
+    run(llm.GroqProvider("gsk_test", "qwen/qwen3.8-27b").complete("sys", "user", {}))
+    assert seen["body"]["reasoning_effort"] == "none"
+    run(llm.GroqProvider("gsk_test", "openai/gpt-oss-20b").complete("sys", "user", {}))
+    assert seen["body"]["reasoning_effort"] == "low"
+
 
 
 # ---- the server's order ----
@@ -143,7 +149,12 @@ def test_server_router_is_groq_then_gemini(monkeypatch):
     import server
     monkeypatch.setattr(server, "GROQ_API_KEY", "gsk")
     monkeypatch.setattr(server, "GEMINI_API_KEY", "gem")
+    monkeypatch.setattr(server, "GROQ_MODELS", ["only-one"])
     assert [p.name for p in server.llm_router().providers] == ["groq", "gemini"]
+    monkeypatch.setattr(server, "GROQ_MODELS", ["qwen/qwen3.8-27b", "openai/gpt-oss-20b"])
+    providers = server.llm_router().providers
+    assert [(p.name, getattr(p, "model", None)) for p in providers] == [
+        ("groq", "qwen/qwen3.8-27b"), ("groq", "openai/gpt-oss-20b"), ("gemini", server.GEMINI_MODEL)]
     monkeypatch.setattr(server, "GROQ_API_KEY", "")
     assert [p.name for p in server.llm_router().providers] == ["gemini"]
     monkeypatch.setattr(server, "GEMINI_API_KEY", "")
@@ -194,3 +205,20 @@ def test_extraction_records_which_provider_answered():
     run(cv.turn(s, "3 lakh", server.decide, server.build_applicant, lambda *a: None, llm=router))
     assert s["answers"]["loan_amount"] == 300000 and s["llm"][-1] == "groq"
     assert s["llm_trail"][-1]["provider"] == "groq" and s["llm_trail"][-1]["purpose"] == "extract"
+
+
+def test_groq_disabled_keeps_a_configured_key_unused():
+    import subprocess
+    import sys
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    code = "import sys; sys.path.insert(0, 'src'); import server; print(repr(server.GROQ_API_KEY))"
+    env = {**__import__("os").environ, "GROQ_API_KEY": "gsk_configured", "GROQ_DISABLED": "1", "WEBHOOK_KEY": "k",
+           "DATABASE_URL": ""}
+    out = subprocess.run([sys.executable, "-I", "-X", "utf8", "-c", code], cwd=root, env=env, capture_output=True,
+                         text=True, timeout=120)
+    assert out.stdout.strip().splitlines()[-1] == "''", out.stderr[-500:]
+    env["GROQ_DISABLED"] = "0"
+    out = subprocess.run([sys.executable, "-I", "-X", "utf8", "-c", code], cwd=root, env=env, capture_output=True,
+                         text=True, timeout=120)
+    assert out.stdout.strip().splitlines()[-1] == "'gsk_configured'", out.stderr[-500:]

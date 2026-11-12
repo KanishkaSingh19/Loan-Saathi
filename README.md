@@ -23,8 +23,11 @@ with their sources; anything not measured says *Not currently measured*.
   and retrained the model monotone in debt: **0 of 1,680** now (`models/validation_report.json`).
 - **Live voice, measured.** Gnani streaming STT hears the caller and ends the turn on its own; Gnani streaming
   TTS starts speaking on the first chunk; the caller can interrupt. Caller stops → first audio of the reply:
-  **median 3.09 s, 90th percentile 3.41 s** over 13 scripted Hinglish turns (`reports/latency_benchmark.json`;
-  a synthetic caller voice on one machine, so a real phone line will be slower). Gemini is the slowest stage.
+  **median 2.17 s, 90th percentile 3.36 s** over 13 scripted Hinglish turns, all 13 replies by Groq
+  (`reports/latency_benchmark.json`, 12 Nov 2026; a synthetic caller voice on one machine, so a real phone
+  line will be slower). The same script with Gemini on 10 Nov: median 3.09 s, 90th percentile 3.41 s; the
+  transcript → reply stage went from a 1.64 s to a 0.81 s median. If the language model hangs, a turn now
+  waits 3.0 s for the parser instead of 8.0 s (`src/bench_stall.py`, mocked stall, `reports/stall_benchmark.json`).
 - **Extraction accuracy, with the misses shown.** 64 hand-written answers ("dedh lakh", "ढाई लाख",
   "meri salary 35 hazaar hai", "2-3 lakh") with the correct outcome for each. The first run scored 59/64 and
   found four parser bugs ("six months" stored as 72 months, among others); after fixing them, 64/64 on the
