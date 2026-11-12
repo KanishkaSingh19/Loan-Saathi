@@ -106,6 +106,8 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **Why it is built this way**: `docs/decisions.md` records each design decision, what was turned down,
+  and where it is enforced.
 - **The rules live in one file**: `config/policy.yaml` holds every lending rule on top of the model (FOIR
   limit 50%, comfortable 40%, debt limit 24 months of income, assumed 18% interest, accepted tenure and age
   ranges, amount limits, retention). `src/policy.py` checks it at start-up and refuses to start on a missing
@@ -114,8 +116,8 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
 - **A shorter call, same decisions**: the questions the decision rules read come first (loan, tenure,
   income, other loans); a question only the risk model reads (work, years, history, housing, age) is asked
   only while some answer to it could still move the risk band, checked by scoring every possible answer in
-  one batch (about 0.1 s). `src/bench_call_length.py`: caller turns to the result, mean 13.7 → 12.3 over 200
-  seeded random applicants and 12.2 → 10.8 over the 12 study personas, with the same decision, band and
+  one batch (about 0.1 s). `src/bench_call_length.py`: caller turns to the result, mean 13.71 → 12.35 over 200
+  seeded random applicants and 12.17 → 10.83 over the 12 study personas, with the same decision, band and
   offer for all 215 applicants (`reports/call_length.json`). It also caught a parser bug in the full call:
   the housing answer "sarkari quarter" was overwriting the work, now fixed.
 - **No identifiers reach the LLM**: `src/pii.py` masks phone numbers, Aadhaar, PAN, IFSC, account and card
