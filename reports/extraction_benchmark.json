@@ -1,5 +1,5 @@
 {
- "ts": 1794507239.0085962,
+ "ts": 1794510137.9593806,
  "mode": "parser",
  "about": "Hand-written answers to Saathi's questions with the correct outcome for each, written by the developers (not real caller transcripts). 'expect' is a number, 'read_back' (Saathi should confirm before storing), 'choose' (two values: Saathi should ask which), 'not_stored' (refused or not an answer), or 'contains:<text>'. A list means any of those outcomes is correct.",
  "cases": 64,

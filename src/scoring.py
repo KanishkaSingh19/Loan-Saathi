@@ -116,14 +116,21 @@ def _debt_floor(applicant, model):
     owed = applicant.get("active_loans_outstanding") or 0
     if owed <= 0:
         return 0.0
-    rows = []
+    X, _ = _to_rows(_floor_variants(applicant))
+    return float(np.max(_calibrate(model.predict(X))))
+
+
+def _floor_variants(applicant):
+    """The same applicant at each lower debt level the debt floor compares against."""
+    owed = applicant.get("active_loans_outstanding") or 0
+    out = []
     for f in DEBT_FLOOR_FRACTIONS:
         a = dict(applicant)
         a["active_loans_outstanding"] = owed * f
         if f == 0.0:
             a["active_loans"] = applicant.get("active_loans") or 1  # same loans, nothing owed
-        rows.append(_to_row(a)[0])
-    return float(np.max(_calibrate(model.predict(pd.concat(rows, ignore_index=True)))))
+        out.append(a)
+    return out
 
 
 def _calibrate(p):
@@ -145,10 +152,7 @@ def estimate_emi(amount, months, annual_rate=ANNUAL_RATE):
     return amount * r / (1 - (1 + r) ** -months)
 
 
-def _to_row(a):
-    """Applicant dict -> one-row DataFrame in the model's feature space."""
-    _, meta = _load()
-    warnings = []
+def _raw_row(a):
     loan = a.get("loan_amount")
     emi = a.get("emi")
     if loan and not emi:
@@ -158,8 +162,7 @@ def _to_row(a):
     yrs = a.get("years_employed")
     k = _units_per_rupee
     goods = a.get("purchase_price") or loan
-
-    raw = {
+    return {
         "AMT_INCOME_TOTAL": income * k if income else np.nan,
         "AMT_CREDIT": loan * k if loan else np.nan,
         "AMT_ANNUITY": emi * k if emi else np.nan,
@@ -180,19 +183,35 @@ def _to_row(a):
         "LATE_OVER_MONTH": _num_or_nan(a.get("late_over_month")),
         "OVERDUE_NOW": _num_or_nan(a.get("overdue_now")),
     }
-    df = add_debt_ratio(add_derived(pd.DataFrame([raw])))
+
+
+def _to_rows(applicants):
+    """Applicant dicts -> a DataFrame in the model's feature space (one row each), plus warnings per row.
+    Built in one go: pandas costs ~40 ms per frame, so many rows at once are about as cheap as one."""
+    _, meta = _load()
+    warnings = [[] for _ in applicants]
+    df = add_debt_ratio(add_derived(pd.DataFrame([_raw_row(a) for a in applicants])))
     for field, col in FIELD_TO_COLUMN.items():
         cats = meta["categorical"][col]
-        val = a.get(field, "Cash loans" if field == "loan_type" else None)
-        if val is not None and val not in cats:
-            warnings.append(f"{field}={val!r} is not a known value; treated as unknown")
-            val = None
-        df[col] = pd.Categorical([val], categories=cats)
+        vals = []
+        for i, a in enumerate(applicants):
+            val = a.get(field, "Cash loans" if field == "loan_type" else None)
+            if val is not None and val not in cats:
+                warnings[i].append(f"{field}={val!r} is not a known value; treated as unknown")
+                val = None
+            vals.append(val)
+        df[col] = pd.Categorical(vals, categories=cats)
     feats = meta["features"]  # whatever the trained model uses, so older models keep working
     for c in feats:
         if c not in VOICE_CATEGORICAL:
             df[c] = df[c].astype("float64")
     return df[feats], warnings
+
+
+def _to_row(a):
+    """Applicant dict -> one-row DataFrame in the model's feature space."""
+    X, warnings = _to_rows([a])
+    return X, warnings[0]
 
 
 def _num_or_nan(v):
@@ -239,6 +258,30 @@ def _fmt(col, v):
     if col in ("OWNS_CAR", "OWNS_REALTY", "NOT_EMPLOYED"):
         return "yes" if v else "no"
     return str(v) if not isinstance(v, float) else f"{v:g}"
+
+
+def risk_probability(applicant):
+    """The risk score() reports (debt floor included), without the explanations."""
+    return risk_probabilities([applicant])[0]
+
+
+def risk_probabilities(applicants):
+    """risk_probability for many applicants in one model call (converse's short call tries every possible
+    answer to the remaining questions before asking one)."""
+    model, meta = _load()
+    floor_on = "BUREAU_ACTIVE_DEBT" not in meta.get("monotone_up", [])
+    rows, spans = [], []
+    for a in applicants:
+        start = len(rows)
+        rows.append(a)
+        if floor_on and (a.get("active_loans_outstanding") or 0) > 0:
+            rows += _floor_variants(a)
+        spans.append((start, len(rows)))
+    if not rows:
+        return []
+    X, _ = _to_rows(rows)
+    p = _calibrate(model.predict(X))
+    return [float(np.max(p[i:j])) if j - i > 1 else float(p[i]) for i, j in spans]
 
 
 def score(applicant, n_reasons=3, min_impact=0.003):

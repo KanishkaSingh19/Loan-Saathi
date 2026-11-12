@@ -13,6 +13,7 @@ os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""
 os.environ["GEMINI_API_KEY"] = ""
 
+os.environ["SHORT_CALL"] = "0"  # this suite scripts the full, fixed question order
 import converse as cv  # noqa: E402
 import scoring  # noqa: E402
 import server  # noqa: E402

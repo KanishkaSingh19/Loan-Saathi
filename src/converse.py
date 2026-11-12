@@ -763,17 +763,97 @@ def _skip(key, answers):
 
 
 ASK_HISTORY = True  # the repayment-history questions; older test suites switch them off to keep their flows
+# Short call: the questions the decision rules read come first (loan, tenure, income, other loans); the ones
+# only the risk model reads (work, years, history, housing, age) are asked only while some answer to them
+# could still move the risk band. Older scripted suites switch it off to keep the full fixed order.
+SHORT_CALL = os.environ.get("SHORT_CALL", "1").strip() != "0"
+RULE_FIELDS = ("loan_amount", "tenure_months", "monthly_income", "other_loans_count", "other_loans_emi",
+               "other_loans_outstanding")
+# Follow-ups and the question they follow ("how many years in this work?" needs the work first).
+PARENT = {"years_in_work": "work", "ever_late": "past_loans", "late_last_year": "ever_late",
+          "late_over_month": "ever_late", "overdue_now": "past_loans"}
+# Answers a caller could give to each model-only question, spanning its range (and "not answered").
+PROBES = {
+    "work": ["kirana dukaan", "private naukri", "driver", "kheti", "dihadi mazdoori", "sarkari naukri", "retired",
+             "berozgar", "student", "teacher", "security guard"],
+    "years_in_work": ["3 mahine", "1 saal", "3 saal", "8 saal", "20 saal"],
+    "past_loans": ["0", "1", "3", "8"],
+    "ever_refused": ["haan", "nahi"], "ever_late": ["haan", "nahi"], "late_last_year": ["haan", "nahi"],
+    "late_over_month": ["haan", "nahi"], "overdue_now": ["haan", "nahi"],
+    "housing": ["apna ghar", "kiraye pe", "parivaar ke saath", "sarkari quarter"],
+    "age": ["18", "21", "26", "35", "45", "58", "70"],
+}
+
+
+def _open(s, k):
+    return not ((not ASK_HISTORY and k in HISTORY) or k in s["answers"] or k in s["skipped"]
+                or _skip(k, s["answers"]))
 
 
 def next_field(s):
-    for f in FIELDS:
-        k = f["key"]
-        if not ASK_HISTORY and k in HISTORY:
-            continue
-        if k in s["answers"] or k in s["skipped"] or _skip(k, s["answers"]):
-            continue
-        return k
-    return "done"
+    if not SHORT_CALL:
+        return next((f["key"] for f in FIELDS if _open(s, f["key"])), "done")
+    rule = [k for k in KEYS if k in RULE_FIELDS and _open(s, k)]
+    if rule:
+        return rule[0]
+    return _model_question(s)
+
+
+def _band_probe(s, remaining):
+    """For each remaining model-only field: the risk band with each possible answer (others unanswered), and
+    the band with every field at its riskiest and at its safest answer together. None if we can't score."""
+    build = s.get("_build_applicant")
+    if build is None:
+        return None
+    import scoring
+    base = {k: str(v) for k, v in s["answers"].items()}
+    tries = [(k, v) for k in remaining for v in PROBES.get(k, [])]
+    # Two model calls in all: every single answer (and none) in one batch, then all-riskiest / all-safest.
+    ps = scoring.risk_probabilities([build(base)] + [build({**base, k: v}) for k, v in tries])
+    p_now, by_field = ps[0], {}
+    for (k, v), pk in zip(tries, ps[1:]):
+        by_field.setdefault(k, []).append((pk, v))
+    worst = {k: max(t)[1] for k, t in by_field.items()}
+    best = {k: min(t)[1] for k, t in by_field.items()}
+    swing = {k: {scoring.band_of(x) for x, _ in t} | {scoring.band_of(p_now)} for k, t in by_field.items()}
+    p_worst, p_best = scoring.risk_probabilities([build({**base, **worst}), build({**base, **best})])
+    bands = {scoring.band_of(p_now), scoring.band_of(p_worst), scoring.band_of(p_best)}.union(*swing.values())
+    return {"bands": bands, "swing": swing}
+
+
+def _model_question(s):
+    """The next model-only question, or "done" once no answer to any of them could move the risk band. Those
+    are then recorded as not needed (skipped, so the model reads them as not answered)."""
+    remaining = [k for k in KEYS if k not in RULE_FIELDS and _open(s, k)]
+    if not remaining:
+        return "done"
+    key = json.dumps([sorted((k, str(v)) for k, v in s["answers"].items()), remaining])
+    cached = s.get("_probe_cache")
+    if cached and cached[0] == key:
+        probe = cached[1]
+    else:
+        try:
+            probe = _band_probe(s, remaining)
+        except Exception as e:  # noqa: BLE001  (never lose a call over the shortcut: ask everything)
+            print(f"[converse {s['id']}] band probe failed, asking every question: {type(e).__name__}: {e}",
+                  flush=True)
+            probe = None
+        s["_probe_cache"] = (key, probe)
+    if probe is None:
+        return remaining[0]
+    if len(probe["bands"]) == 1:
+        s.setdefault("not_needed", [])
+        for k in remaining:
+            s["skipped"].add(k)
+            if k not in s["not_needed"]:
+                s["not_needed"].append(k)
+        return "done"
+    # The first remaining question (in the usual order) whose answer alone can move the band; if none can
+    # alone but together they could, the first one left. A follow-up never comes before its question.
+    k = next((k for k in remaining if len(probe["swing"].get(k, ())) > 1), remaining[0])
+    while PARENT.get(k) in remaining:
+        k = PARENT[k]
+    return k
 
 
 # ---------- Gemini ----------
@@ -1113,7 +1193,7 @@ def public(s):
             "fields": {k: {"value": v, "status": s["status"].get(k, "validated"), "said": s["said"].get(k, "")}
                        for k, v in s["answers"].items()},
             "summary": summary(s), "pending": pending, "correcting": s["correcting"],
-            "buttons": buttons(s), "skipped": sorted(s["skipped"]),
+            "buttons": buttons(s), "skipped": sorted(s["skipped"]), "not_needed": list(s.get("not_needed", [])),
             "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
             "simulation": s.get("simulation"), "advisor_case": s.get("advisor_case"),
             "new_call": bool(s.get("new_call")),
@@ -1139,6 +1219,9 @@ def _set(s, k, v, said, status="validated"):
     s["changed"].add(k)
     if k == "work":
         s["work_category"] = norm.work_category(v)
+    if k in RULE_FIELDS and s.get("not_needed"):
+        s["skipped"].difference_update(s["not_needed"])  # asked again only if they could now move the band
+        s["not_needed"] = []
     if k == "other_loans_count" and v == 0:  # no loans: their EMI and debt are 0 by definition
         for d in ("other_loans_emi", "other_loans_outstanding"):
             s["answers"].pop(d, None)
@@ -1396,6 +1479,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
            "safety": safety, "simulator": simulator, "advisor": advisor, "api_key": api_key, "model": model,
            "llm": llm}
     s["_advisor"] = advisor  # used by _handoff, which some paths reach without env
+    s["_build_applicant"] = build_applicant  # used by the short call's band probe (next_field)
 
     # Consent can change at any point: "save mat karo" stops storage, "save karo" allows it.
     choice = (action == "consent:no" or (not action and NO_SAVE.search(text or ""))) and "no" or \
@@ -1646,7 +1730,8 @@ def fallback_candidates(text, asked):
         if NO_LOANS.search(c) and not norm.amounts(c):
             found.setdefault("other_loans_count", "0")  # "koi loan nahi hai", whatever was asked
             used = True
-        if not used and asked != "work" and not money and norm.work_known(c) and not WANTS_LOAN.search(c):
+        # (Never a housing answer: "sarkari quarter" is where they live, not a government job.)
+        if not used and asked != "work" and not money and norm.work_known(c) and not WANTS_LOAN.search(c)                 and not (asked == "housing" and HOUSING_WORDS.search(c)):
             found.setdefault("work", c)  # "...and I work as a driver": work named while answering something else
             used = True
         if not used:
@@ -1717,6 +1802,8 @@ async def _collecting(s, env, text, action):
     s["claims"] = {k: valid(k, raw) for k, raw, _ in candidates if k in MONEY}
     problem = None
     for k, raw, words in candidates:
+        if k != asked and k in ("work", "housing") and k in s["answers"]:
+            continue  # a side mention never replaces a free-text answer already given (corrections do)
         p = offer(s, k, raw, words, "collect")
         if p and k == asked:
             problem = (k, p)

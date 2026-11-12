@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.environ.update({"WEBHOOK_KEY": "privacy-test-key", "DB_PATH": str(Path(tempfile.mkdtemp()) / "test.db"),
                    "DATABASE_URL": "", "GEMINI_API_KEY": "", "RETENTION_DAYS": "30"})
 
+os.environ["SHORT_CALL"] = "0"  # this suite scripts the full, fixed question order
 import converse as cv  # noqa: E402
 import server  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

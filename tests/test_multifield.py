@@ -95,3 +95,16 @@ def test_the_reported_call_moves_on_to_the_next_unanswered_question():
     t = answer("work", "kirana dukaan chalata hoon 6 saal se, ek bike loan hai 3000 EMI, 40 hazaar baaki hai")
     assert t["asking"] == "past_loans", (t["asking"], t["reply"])
     assert "kitne saal se" not in t["reply"] and "koi aur loan chal raha" not in t["reply"].lower()
+
+
+def test_a_housing_answer_never_becomes_the_work():
+    prefill = {**PREFILL, "work": "driver", "years_in_work": 3, "other_loans_count": 0, "past_loans": 0,
+               "ever_refused": 0}
+    t = answer("housing", "sarkari quarter", "hi", prefill)
+    assert t["answers"]["work"] == "driver" and t["answers"]["housing"] == "sarkari quarter", t["answers"]
+
+
+def test_a_side_mention_of_work_never_replaces_the_work_already_given():
+    prefill = {**PREFILL, "work": "driver", "years_in_work": 3}
+    t = answer("other_loans_count", "nahi, main kirana dukaan bhi chalata hoon", "hi", prefill)
+    assert t["answers"]["work"] == "driver", t["answers"]

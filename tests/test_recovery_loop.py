@@ -19,6 +19,11 @@ os.environ.setdefault("DB_PATH", str(Path(tempfile.mkdtemp()) / "test.db"))
 os.environ["DATABASE_URL"] = ""
 
 import converse as cv  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def full_question_order(monkeypatch):
+    monkeypatch.setattr(cv, "SHORT_CALL", False)  # these tests script the full, fixed question order
 import server  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 

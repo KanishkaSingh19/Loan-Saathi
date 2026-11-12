@@ -16,6 +16,7 @@ os.environ.update({"WEBHOOK_KEY": "wa-test-key", "DB_PATH": str(Path(tempfile.mk
                    "WHATSAPP_TOKEN": "fake-token", "WHATSAPP_PHONE_NUMBER_ID": "123", "WHATSAPP_VERIFY_TOKEN": "verify-me",
                    "WHATSAPP_APP_SECRET": "app-secret"})
 
+os.environ["SHORT_CALL"] = "0"  # this suite scripts the full, fixed question order
 import converse as cv  # noqa: E402
 import server  # noqa: E402
 import whatsapp  # noqa: E402
