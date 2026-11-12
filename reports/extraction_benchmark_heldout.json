@@ -1,0 +1,662 @@
+{
+ "ts": 1794510266.2317111,
+ "mode": "parser",
+ "set": "heldout",
+ "source": "tests/extraction_heldout.json",
+ "about": "Held-out answers: written on 13 Nov 2026 after the parser was frozen at commit d30a500, without running the parser on them first, and never used to tune it. New phrasings, not variants of the dev set (tests/extraction_cases.json, which the parser was fixed against). Hand-written by the developers, not real caller transcripts. Same outcome rules as the dev set: a number, 'read_back', 'choose', 'not_stored' or 'contains:<text>'; a list means any of those is correct.",
+ "cases": 54,
+ "correct": 51,
+ "gemini_turns": 0,
+ "by_kind": {
+  "Devanagari": {
+   "cases": 5,
+   "correct": 3
+  },
+  "Devanagari sentence": {
+   "cases": 2,
+   "correct": 2
+  },
+  "English sentence": {
+   "cases": 4,
+   "correct": 4
+  },
+  "English words": {
+   "cases": 5,
+   "correct": 4
+  },
+  "Hindi fractions": {
+   "cases": 2,
+   "correct": 2
+  },
+  "Hindi words": {
+   "cases": 4,
+   "correct": 4
+  },
+  "Indian digit grouping": {
+   "cases": 1,
+   "correct": 1
+  },
+  "ambiguous range": {
+   "cases": 2,
+   "correct": 2
+  },
+  "code-mixed sentence": {
+   "cases": 7,
+   "correct": 7
+  },
+  "digits": {
+   "cases": 1,
+   "correct": 1
+  },
+  "housing": {
+   "cases": 2,
+   "correct": 2
+  },
+  "invalid": {
+   "cases": 3,
+   "correct": 3
+  },
+  "k suffix": {
+   "cases": 1,
+   "correct": 1
+  },
+  "months": {
+   "cases": 3,
+   "correct": 3
+  },
+  "none": {
+   "cases": 2,
+   "correct": 2
+  },
+  "not an answer": {
+   "cases": 1,
+   "correct": 1
+  },
+  "work": {
+   "cases": 4,
+   "correct": 4
+  },
+  "years": {
+   "cases": 2,
+   "correct": 2
+  },
+  "yes/no": {
+   "cases": 3,
+   "correct": 3
+  }
+ },
+ "wrong": [
+  {
+   "field": "loan_amount",
+   "lang": "en",
+   "said": "fifty thousand rupees",
+   "expect": 50000,
+   "kind": "English words",
+   "got": "read_back",
+   "correct": false,
+   "llm": "fallback"
+  },
+  {
+   "field": "years_in_work",
+   "lang": "hi",
+   "said": "पंद्रह साल से",
+   "expect": 15,
+   "kind": "Devanagari",
+   "got": "not_stored",
+   "correct": false,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_emi",
+   "lang": "hi",
+   "said": "बारह सौ",
+   "expect": 1200,
+   "kind": "Devanagari",
+   "got": "not_stored",
+   "correct": false,
+   "llm": "fallback"
+  }
+ ],
+ "rows": [
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "paune do lakh",
+   "expect": 175000,
+   "kind": "Hindi fractions",
+   "got": 175000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "dhai lakh rupaye ka loan",
+   "expect": 250000,
+   "kind": "Hindi fractions",
+   "got": 250000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "mujhe sirf 75 hazaar chahiye",
+   "expect": 75000,
+   "kind": "code-mixed sentence",
+   "got": 75000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "en",
+   "said": "around two and a half lakh",
+   "expect": 250000,
+   "kind": "English words",
+   "got": 250000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "en",
+   "said": "I'm looking for 1,20,000",
+   "expect": 120000,
+   "kind": "Indian digit grouping",
+   "got": 120000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "₹ 90000",
+   "expect": 90000,
+   "kind": "digits",
+   "got": 90000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "साढ़े तीन लाख चाहिए",
+   "expect": 350000,
+   "kind": "Devanagari sentence",
+   "got": 350000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "एक लाख बीस हज़ार",
+   "expect": 120000,
+   "kind": "Devanagari",
+   "got": 120000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "en",
+   "said": "fifty thousand rupees",
+   "expect": 50000,
+   "kind": "English words",
+   "got": "read_back",
+   "correct": false,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "pandrah hazar",
+   "expect": 15000,
+   "kind": "Hindi words",
+   "got": 15000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "do se teen lakh",
+   "expect": "choose",
+   "kind": "ambiguous range",
+   "got": "choose",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "loan_amount",
+   "lang": "hi",
+   "said": "kuch bhi chalega",
+   "expect": "not_stored",
+   "kind": "not an answer",
+   "got": "not_stored",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "tenure_months",
+   "lang": "hi",
+   "said": "teen saal mein",
+   "expect": 36,
+   "kind": "years",
+   "got": 36.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "tenure_months",
+   "lang": "hi",
+   "said": "chhe mahine",
+   "expect": 6,
+   "kind": "months",
+   "got": 6.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "tenure_months",
+   "lang": "en",
+   "said": "two years",
+   "expect": 24,
+   "kind": "English words",
+   "got": 24.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "tenure_months",
+   "lang": "en",
+   "said": "24 months",
+   "expect": 24,
+   "kind": "months",
+   "got": 24.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "tenure_months",
+   "lang": "hi",
+   "said": "ढाई साल",
+   "expect": 30,
+   "kind": "Devanagari",
+   "got": 30.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "tenure_months",
+   "lang": "hi",
+   "said": "ek saal",
+   "expect": 12,
+   "kind": "years",
+   "got": 12.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "tenure_months",
+   "lang": "hi",
+   "said": "100 saal",
+   "expect": "not_stored",
+   "kind": "invalid: out of range",
+   "got": "not_stored",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "hi",
+   "said": "mahine ke 18 hazaar milte hain",
+   "expect": 18000,
+   "kind": "code-mixed sentence",
+   "got": 18000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "hi",
+   "said": "salary pachchis hazaar",
+   "expect": 25000,
+   "kind": "Hindi words",
+   "got": 25000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "en",
+   "said": "my take home is 32,500",
+   "expect": 32500,
+   "kind": "English sentence",
+   "got": 32500.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "hi",
+   "said": "har mahine lagbhag 45 hazaar",
+   "expect": 45000,
+   "kind": "code-mixed sentence",
+   "got": 45000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "hi",
+   "said": "तीस हज़ार रुपये महीना",
+   "expect": 30000,
+   "kind": "Devanagari sentence",
+   "got": 30000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "en",
+   "said": "about 22k per month",
+   "expect": 22000,
+   "kind": "k suffix",
+   "got": 22000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "hi",
+   "said": "15 se 20 hazaar",
+   "expect": "choose",
+   "kind": "ambiguous range",
+   "got": "choose",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "monthly_income",
+   "lang": "en",
+   "said": "I earn nothing right now",
+   "expect": "not_stored",
+   "kind": "invalid: zero",
+   "got": "not_stored",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "work",
+   "lang": "hi",
+   "said": "main darzi hoon",
+   "expect": "contains:darzi",
+   "kind": "work",
+   "got": "main darzi hoon",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "work",
+   "lang": "en",
+   "said": "I run a small tea stall",
+   "expect": "contains:tea",
+   "kind": "work",
+   "got": "I run a small tea stall",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "work",
+   "lang": "hi",
+   "said": "सब्ज़ी का ठेला लगाता हूँ",
+   "expect": "contains:ठेला",
+   "kind": "work",
+   "got": "सब्ज़ी का ठेला लगाता हूँ",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "work",
+   "lang": "en",
+   "said": "I'm a security guard at a mall",
+   "expect": "contains:security",
+   "kind": "work",
+   "got": "I'm a security guard at a mall",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "years_in_work",
+   "lang": "hi",
+   "said": "aath saal ho gaye",
+   "expect": 8,
+   "kind": "Hindi words",
+   "got": 8.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "years_in_work",
+   "lang": "en",
+   "said": "for twelve years",
+   "expect": 12,
+   "kind": "English words",
+   "got": 12.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "years_in_work",
+   "lang": "hi",
+   "said": "6 mahine",
+   "expect": 0.5,
+   "kind": "months",
+   "got": 0.5,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "years_in_work",
+   "lang": "hi",
+   "said": "पंद्रह साल से",
+   "expect": 15,
+   "kind": "Devanagari",
+   "got": "not_stored",
+   "correct": false,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_count",
+   "lang": "en",
+   "said": "no other loans",
+   "expect": 0,
+   "kind": "none",
+   "got": 0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_count",
+   "lang": "hi",
+   "said": "haan do chal rahe hain",
+   "expect": 2,
+   "kind": "code-mixed sentence",
+   "got": 2,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_count",
+   "lang": "hi",
+   "said": "कोई लोन नहीं है",
+   "expect": 0,
+   "kind": "Devanagari",
+   "got": 0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_count",
+   "lang": "en",
+   "said": "just one, a bike loan",
+   "expect": 1,
+   "kind": "English sentence",
+   "got": 1,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_emi",
+   "lang": "hi",
+   "said": "dono milake 6 hazaar",
+   "expect": 6000,
+   "kind": "code-mixed sentence",
+   "got": 6000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_emi",
+   "lang": "en",
+   "said": "around 4,500 a month",
+   "expect": 4500,
+   "kind": "English sentence",
+   "got": 4500.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_emi",
+   "lang": "hi",
+   "said": "बारह सौ",
+   "expect": 1200,
+   "kind": "Devanagari",
+   "got": "not_stored",
+   "correct": false,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_outstanding",
+   "lang": "hi",
+   "said": "abhi 80 hazaar baaki",
+   "expect": 80000,
+   "kind": "code-mixed sentence",
+   "got": 80000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "other_loans_outstanding",
+   "lang": "en",
+   "said": "about three lakh left",
+   "expect": 300000,
+   "kind": "English words",
+   "got": 300000.0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "past_loans",
+   "lang": "hi",
+   "said": "teen baar loan liya hai",
+   "expect": 3,
+   "kind": "code-mixed sentence",
+   "got": 3,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "past_loans",
+   "lang": "en",
+   "said": "this is my first loan",
+   "expect": 0,
+   "kind": "none",
+   "got": 0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "ever_refused",
+   "lang": "en",
+   "said": "no, never",
+   "expect": 0,
+   "kind": "yes/no",
+   "got": 0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "ever_refused",
+   "lang": "hi",
+   "said": "haan ek baar reject hua tha",
+   "expect": 1,
+   "kind": "yes/no",
+   "got": 1,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "ever_late",
+   "lang": "hi",
+   "said": "kabhi nahi",
+   "expect": 0,
+   "kind": "yes/no",
+   "got": 0,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "housing",
+   "lang": "hi",
+   "said": "kiraye ke makaan mein",
+   "expect": "contains:kiraye",
+   "kind": "housing",
+   "got": "kiraye ke makaan mein",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "housing",
+   "lang": "en",
+   "said": "I live with my parents",
+   "expect": "contains:parents",
+   "kind": "housing",
+   "got": "I live with my parents",
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "age",
+   "lang": "hi",
+   "said": "chalis saal",
+   "expect": 40,
+   "kind": "Hindi words",
+   "got": 40,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "age",
+   "lang": "en",
+   "said": "I'm 28 years old",
+   "expect": 28,
+   "kind": "English sentence",
+   "got": 28,
+   "correct": true,
+   "llm": "fallback"
+  },
+  {
+   "field": "age",
+   "lang": "hi",
+   "said": "150",
+   "expect": "not_stored",
+   "kind": "invalid: out of range",
+   "got": "not_stored",
+   "correct": true,
+   "llm": "fallback"
+  }
+ ]
+}

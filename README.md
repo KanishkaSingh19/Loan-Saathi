@@ -28,7 +28,13 @@ with their sources; anything not measured says *Not currently measured*.
   line will be slower). The same script with Gemini on 10 Nov: median 3.09 s, 90th percentile 3.41 s; the
   transcript → reply stage went from a 1.64 s to a 0.81 s median. If the language model hangs, a turn now
   waits 3.0 s for the parser instead of 8.0 s (`src/bench_stall.py`, mocked stall, `reports/stall_benchmark.json`).
-- **Extraction accuracy, with the misses shown.** 64 hand-written answers ("dedh lakh", "ढाई लाख",
+- **Extraction accuracy on unseen answers: 51 of 54.** A held-out set (`tests/extraction_heldout.json`) was
+  written and committed after the parser was frozen, before any run, and is never used to tune it. First and
+  only run, parser alone: 51/54 (`reports/extraction_benchmark_heldout.json`). Misses: Devanagari number
+  words for years ("पंद्रह साल से") and hundreds ("बारह सौ"), plus "fifty thousand rupees", which Saathi reads
+  back to confirm (it does that on purpose for "-ty thousand", which is often misheard); that expectation was
+  written stricter than the dev set's rule and is left as committed.
+- **Extraction accuracy, with the misses shown (dev set).** 64 hand-written answers ("dedh lakh", "ढाई लाख",
   "meri salary 35 hazaar hai", "2-3 lakh") with the correct outcome for each. The first run scored 59/64 and
   found four parser bugs ("six months" stored as 72 months, among others); after fixing them, 64/64 on the
   same cases, so that is not an independent figure (`reports/extraction_benchmark*.json`).

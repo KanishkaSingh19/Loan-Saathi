@@ -2,6 +2,7 @@
 
     python -I -X utf8 src/bench_extraction.py            # Saathi's own parser (no Gemini)
     python -I -X utf8 src/bench_extraction.py --gemini   # with Gemini, if GEMINI_API_KEY is set
+    python -I -X utf8 src/bench_extraction.py --set heldout   # the held-out cases (never used for tuning)
 
 Each case starts a call whose earlier answers are already filled in and which is asking the case's
 question, sends the answer once through /v1/converse, and compares what happened (value stored,
@@ -19,6 +20,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 GEMINI = "--gemini" in sys.argv
+# --set dev (default): tests/extraction_cases.json, the cases the parser was fixed against.
+# --set heldout: tests/extraction_heldout.json, written after the parser was frozen and never used to tune it.
+SET = sys.argv[sys.argv.index("--set") + 1] if "--set" in sys.argv else "dev"
+if SET not in ("dev", "heldout"):
+    sys.exit("--set must be dev or heldout")
+CASES = {"dev": "extraction_cases.json", "heldout": "extraction_heldout.json"}[SET]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ["WEBHOOK_KEY"] = "bench-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "bench.db")
@@ -64,7 +71,7 @@ def correct(got, expect):
 def main():
     if GEMINI and not server.GEMINI_API_KEY:
         sys.exit("GEMINI_API_KEY is not set: run without --gemini, or set the key.")
-    cases = json.loads((ROOT / "tests" / "extraction_cases.json").read_text(encoding="utf-8"))
+    cases = json.loads((ROOT / "tests" / CASES).read_text(encoding="utf-8"))
     c = TestClient(server.app)
     rows = []
     def ask(case):
@@ -99,16 +106,16 @@ def main():
         by_kind[group] += 1
         right_kind[group] += r["correct"]
     report = {
-        "ts": time.time(), "mode": "gemini" if GEMINI else "parser",
+        "ts": time.time(), "mode": "gemini" if GEMINI else "parser", "set": SET, "source": f"tests/{CASES}",
         "about": cases["about"], "cases": len(rows), "correct": sum(r["correct"] for r in rows),
         "gemini_turns": sum(1 for r in rows if r["llm"] == "gemini"),
         "by_kind": {k: {"cases": by_kind[k], "correct": right_kind[k]} for k in sorted(by_kind)},
         "wrong": [r for r in rows if not r["correct"]], "rows": rows,
     }
-    out = ROOT / "reports" / f"extraction_benchmark{'_gemini' if GEMINI else ''}.json"
+    out = ROOT / "reports" / f"extraction_benchmark{'_heldout' if SET == 'heldout' else ''}{'_gemini' if GEMINI else ''}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=1, ensure_ascii=False, default=str), encoding="utf-8")
-    print(f"\n{report['correct']} of {report['cases']} correct ({report['mode']}); "
+    print(f"\n{report['correct']} of {report['cases']} correct ({report['mode']}, {SET} set); "
           f"Gemini answered {report['gemini_turns']} turns")
 
 

@@ -183,7 +183,9 @@ function Measurements({ m, nm }) {
 
       <h4>Extraction accuracy</h4>
       <dl className="ev-metrics">
-        {[["parser", "Saathi's own parser (no language model)"], ["gemini", "With Gemini"]].map(([k, label]) => (
+        {[["parser", "Saathi's own parser, dev set (the cases it was fixed against)"],
+          ["parser_heldout", "Saathi's own parser, held-out set (written after it was frozen, never used to tune it)"],
+          ["gemini", "With Gemini"]].map(([k, label]) => (
           <div className="ev-metric" key={k}>
             <dt>{label}</dt>
             <dd>

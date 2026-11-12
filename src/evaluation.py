@@ -410,7 +410,8 @@ def measurements(live=None):
     latency["browser"] = ({k: _stats(r.get(k) for r in live) for k, _ in stages} | {"turns": len(live)}
                           if live else None)
     extraction = {}
-    for mode, name in (("parser", "extraction_benchmark.json"), ("gemini", "extraction_benchmark_gemini.json")):
+    for mode, name in (("parser", "extraction_benchmark.json"), ("parser_heldout", "extraction_benchmark_heldout.json"),
+                       ("gemini", "extraction_benchmark_gemini.json")):
         r = _report(name)
         if r:
             extraction[mode] = {"ts": r["ts"], "cases": r["cases"], "correct": r["correct"], "by_kind": r["by_kind"],
