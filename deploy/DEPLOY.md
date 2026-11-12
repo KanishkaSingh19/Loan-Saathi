@@ -15,6 +15,46 @@ Limits to know about:
 - Neon's free database pauses when idle and wakes on the first query (a second or less).
 - Vercel Hobby is for non-commercial use, which fits a challenge entry.
 
+## Where it runs now: Render
+The live site runs on Render from `render.yaml` (a Blueprint), not Hugging Face: Docker Spaces turned
+out to need a paid plan. The Blueprint has two free services:
+
+| Service | What | URL |
+|---|---|---|
+| `loan-saathi` (web, Docker) | API, live voice (`/ws/stt`), and the dashboard at `/dashboard/` | `https://loan-saathi.onrender.com` |
+| `loan-saathi-web` (static) | The same dashboard, built once and served from Render's CDN | `https://loan-saathi-web.onrender.com` |
+
+Why both: a free web service sleeps after 15 minutes idle and takes 30 to 60 seconds to wake, and
+until then nothing loads. The static site loads at once, even while the API sleeps, and the landing
+page pings `GET /health` as soon as it opens, so the API is usually awake by the time the caller
+taps **Talk to Saathi**. `/dashboard/` on the API keeps working (locally and on Render) for anyone
+who wants one service.
+
+### Static dashboard (fast first load)
+The build reads two settings:
+- `VITE_API_BASE`: the API's public URL, no trailing slash (e.g. `https://loan-saathi.onrender.com`).
+  It is baked into the page, so it is public, not a secret. Empty means same origin (the API serves
+  the dashboard itself, or the Vite dev proxy).
+- The build serves from the site root when `VERCEL`, `NETLIFY` or `STATIC_SITE` is set (Vercel and
+  Netlify set theirs automatically; Render's static site sets `STATIC_SITE=1` in `render.yaml`);
+  otherwise it builds for `/dashboard/`.
+
+The API must allow the static site's origin: set `ALLOWED_ORIGINS` on the API service to the
+static site's URL (comma-separate several, e.g. Render plus Netlify). `render.yaml` already sets it
+to `https://loan-saathi-web.onrender.com`; if Render gives the static site a different URL (the name
+was taken), change both `ALLOWED_ORIGINS` and, if the API's URL differs, `VITE_API_BASE`.
+
+Hosts:
+- **Render**: in the Blueprint (`render.yaml`, service `loan-saathi-web`). After a Blueprint sync it
+  is created and rebuilt on every push.
+- **Netlify**: New site from Git, Base directory `dashboard` (`dashboard/netlify.toml` has the
+  build command and output folder). Add `VITE_API_BASE` under Site settings → Environment.
+- **Vercel**: section 3 below (`dashboard/vercel.json`).
+
+Check it: open the static site, then the browser's network tab should show `/health` on the API
+(opaque, by design: it only wakes the server) and, on Talk to Saathi, `POST /v1/converse` answered
+with `access-control-allow-origin` set to the static site's URL.
+
 ## 1. Database: Neon
 1. Sign up at neon.tech and create a project (pick the Singapore or Mumbai region if offered,
    to be close to the Space and to callers).

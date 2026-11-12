@@ -1,10 +1,20 @@
 // Empty VITE_API_BASE means same origin (served by the FastAPI server, the tunnel, or the Vite
 // proxy). On Vercel, set it to the API's public URL, e.g. https://<user>-loan-saathi.hf.space
-const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/+$/, "");
+const API_BASE = (import.meta.env?.VITE_API_BASE || "").replace(/\/+$/, "");
 const STORAGE_KEY = "saathi_key";
 
 export function apiBase() {
   return API_BASE;
+}
+
+/** Wakes a sleeping free-tier API while the caller reads the landing page. Fire and forget: "no-cors"
+ * means no CORS error even before ALLOWED_ORIGINS is set; the request still reaches the server. */
+export function wakeServer(fetchImpl = globalThis.fetch) {
+  try {
+    return Promise.resolve(fetchImpl(`${API_BASE}/health`, { mode: "no-cors", cache: "no-store" })).catch(() => null);
+  } catch {
+    return Promise.resolve(null);
+  }
 }
 
 export function loadKey() {

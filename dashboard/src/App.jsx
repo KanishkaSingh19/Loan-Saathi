@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadKey, saveKey, sendPrescreen, Unauthorized } from "./api";
+import { loadKey, saveKey, sendPrescreen, Unauthorized, wakeServer } from "./api";
 import { usePrescreens } from "./usePrescreens";
 import { FILTERS, SAMPLES } from "./constants";
 import KeyGate from "./components/KeyGate";
@@ -29,6 +29,9 @@ export default function App() {
   const [view, setView] = useState("call");
   const logout = useCallback(() => setKey(""), []);
   const knownIds = useRef(null);
+
+  // The API may be asleep (free hosting): start waking it while the landing page is read.
+  useEffect(() => { wakeServer(); }, []);
 
   // One feed of pre-screens and post-call logs, newest first.
   const items = useMemo(
