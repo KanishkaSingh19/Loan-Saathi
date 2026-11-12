@@ -100,6 +100,10 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **No identifiers reach the LLM**: `src/pii.py` masks phone numbers, Aadhaar, PAN, IFSC, account and card
+  numbers, email, date of birth, a PIN code and a name the caller gives ("mera naam …") before any text goes
+  to Groq or Gemini, and before our parser reads it (a phone number is not an amount). Amounts, counts and
+  years pass unchanged; the trail records how many of each kind were masked, never the values.
 - Typing works too, for testing without speech keys. Every finished call appears in the live feed.
 
 Agent Builder (the phone agent) can't use Gemini (it offers Gnani's Pampa, OpenAI and Claude), so

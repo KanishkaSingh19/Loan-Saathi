@@ -41,6 +41,7 @@ import httpx
 
 import llm as llm_mod
 import normalize as norm
+import pii
 import simulate as sim_mod
 from scoring import inr
 
@@ -840,6 +841,12 @@ async def _llm(s, env, purpose, system, user, schema):
     s["_llm_used_this_turn"] = True
     t0 = time.monotonic()
     entry = {"ts": round(time.time(), 3), "state": s["state"], "purpose": purpose}
+    # Personal identifiers (phone, Aadhaar, PAN, account numbers, a name...) never reach a provider; the trail
+    # records how many of each kind were masked, never the values.
+    system, _ = pii.mask(system)
+    user, masked = pii.mask(user)
+    if masked:
+        entry["masked"] = masked
     try:
         out, provider = await _router(env).call(system, user, schema, prompt_version=PROMPT_VERSION)
     except Exception as e:
@@ -1490,6 +1497,9 @@ async def _extract(s, env, text, asked):
     """Candidate answers [(field, value, caller's words)] and Gemini's reply, if any."""
     out = []
     g = {"reply": "", "asking": "", "used": "fallback"}
+    # Identifiers are masked for every reader of this text: the LLM, our parser (a phone number is not an
+    # amount) and the quote kept as evidence.
+    text, _ = pii.mask(text)
     if _llm_available(env) and text:
         try:
             res, provider = await _llm(s, env, "extract", SYSTEM_PROMPT, json.dumps({
@@ -1505,7 +1515,7 @@ async def _extract(s, env, text, asked):
             for a in res.get("answers") or []:
                 if not isinstance(a, dict) or a.get("field") not in BY_KEY:
                     continue
-                if quoted(a.get("quote", ""), text):
+                if quoted(a.get("quote", ""), text) and not pii.has_token(a.get("quote")):
                     out.append((a["field"], a.get("value"), a.get("quote")))
                 else:
                     print(f"[converse {s['id']}] dropped unquoted answer {a.get('field')}={a.get('value')!r}", flush=True)

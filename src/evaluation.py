@@ -132,6 +132,10 @@ SAFEGUARDS = [
     {"name": "Language-model fallback", "where": ("converse", "LLM_DEADLINE_S"),
      "what": "Groq first, then Gemini, under one hard deadline per use; if neither answers in time, Saathi's own "
              "parser and scripted questions carry the call. A turn waits on the LLM at most once."},
+    {"name": "Identifiers masked before any LLM", "where": ("pii", "mask"),
+     "what": "Phone, Aadhaar, PAN, IFSC, account and card numbers, email, date of birth, PIN code and a name the "
+             "caller gives are masked before any text reaches Groq or Gemini; amounts and counts pass unchanged. "
+             "A quote containing a masked span is never stored."},
     {"name": "Assessment failure recovery", "where": ("converse", "_enter_recovery"),
      "what": "If the assessment fails (for example the risk model can't load), the call goes to error recovery; "
              "no result is made up."},
@@ -212,6 +216,7 @@ CATALOG = [
                                     ("test_advisor.py", "clear recovery: repeat prompts, server glitches")]),
         ("Language-model fallback", [("test_safety.py", "a slow Gemini is cut off at the deadline"),
                                      ("tests/test_llm.py", None)]),
+        ("Identifiers masked before the language model", [("tests/test_pii.py", None)]),
         ("Misunderstood answers", [("test_advisor.py", "recovery offers the advisor"),
                                    ("test_states.py", "live-run regressions")]),
         ("WhatsApp: text, buttons and voice notes", [("test_whatsapp.py", "a full pre-screen over WhatsApp"),

@@ -25,6 +25,8 @@ os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "bench.db")
 os.environ["DATABASE_URL"] = ""
 if not GEMINI:
     os.environ["GEMINI_API_KEY"] = ""
+# Groq never answers here: "parser" must mean the parser alone, and "--gemini" measures Gemini alone.
+os.environ["GROQ_DISABLED"] = "1"
 
 import converse as cv  # noqa: E402
 import server  # noqa: E402
