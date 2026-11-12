@@ -1,0 +1,46 @@
+# Loan-Saathi's lending policy: the fixed rules that sit on top of the risk model. Every number here is a
+# business choice, not something the model learned; change it here, not in the code. src/policy.py loads and
+# checks this file at start-up and refuses to start if a value is missing or out of range.
+#
+# Not here, on purpose: the risk-band thresholds (low / medium / high). They are chosen when the model is
+# trained (src/train.py) and stored with it in models/voice_model_meta.json, so they always match the model.
+
+affordability:
+  # All EMIs together (existing + the new loan) may use at most this share of monthly income (FOIR).
+  max_foir: 0.5
+  # The "safer option" and the comfortable end of the suggested range: all EMIs within this share.
+  comfort_foir: 0.4
+  # Interest assumed when Loan-Saathi estimates an EMI (yearly, flat across lenders).
+  assumed_annual_rate: 0.18
+  # Repayment period used when the caller doesn't give one (months).
+  default_tenure_months: 24
+
+debt:
+  # Owing more than this many months of income on other loans means "not right now", whatever the model says.
+  limit_months: 24
+
+tenure_months:
+  # Repayment periods Saathi accepts (months). Outside this range the answer is refused with a reason.
+  min: 3
+  max: 120
+
+age:
+  # Ages this pre-screening is for (years). Outside it the answer is refused with a reason.
+  min: 18
+  max: 100
+
+amounts:
+  # Rupee limits per answer: below `min` is refused; above `read_back_above` Saathi confirms before
+  # storing; above `refuse_above` it is refused as implausible. null means no read-back threshold.
+  loan_amount: {min: 1000, read_back_above: 5000000, refuse_above: 100000000}
+  monthly_income: {min: 1000, read_back_above: 500000, refuse_above: 10000000}
+  other_loans_emi: {min: 0, read_back_above: null, refuse_above: 10000000}
+  other_loans_outstanding: {min: 0, read_back_above: null, refuse_above: 1000000000}
+
+simulator:
+  # The what-if simulator's "higher burden" example: this many times the request.
+  higher_factor: 1.5
+
+retention:
+  # Days a saved call is kept before it is purged (the RETENTION_DAYS environment variable overrides it).
+  days: 30

@@ -48,6 +48,7 @@ import converse  # noqa: E402
 import evaluation  # noqa: E402
 import llm as llm_mod  # noqa: E402
 import normalize as norm  # noqa: E402
+from policy import POLICY  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
 import spoken  # noqa: E402
@@ -403,7 +404,7 @@ _TIPS_HI = {
 
 # ---------- core ----------
 
-DEBT_LIMIT_MONTHS = 24  # see decide(): more owed than this many months of income -> not eligible now
+DEBT_LIMIT_MONTHS = POLICY["debt_limit_months"]  # decide(): owing more months of income -> not eligible now
 
 def build_applicant(body):
     income_type, occupation = norm.work(body.get("work"))

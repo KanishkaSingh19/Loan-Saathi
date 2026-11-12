@@ -11,14 +11,16 @@ lender, no real interest rate (EMIs use the model's assumed 18% a year, and say 
 """
 import math
 
+import policy
 import scoring
+from policy import POLICY
 from scoring import inr
 
 LABEL = "Simulation only — not a lender offer or approval."
-MIN_LOAN, MAX_LOAN = 1_000, 10_00_00_000
-MIN_TENURE, MAX_TENURE = 3, 120
-COMFORT_FOIR = 0.4      # the "safer option": all EMIs within 40% of income
-HIGHER_FACTOR = 1.5     # the "higher burden" example: half as much again as the request
+MIN_LOAN, MAX_LOAN = POLICY["limits"]["loan_amount"][0], POLICY["limits"]["loan_amount"][2]
+MIN_TENURE, MAX_TENURE = POLICY["tenure_min"], POLICY["tenure_max"]
+COMFORT_FOIR = POLICY["comfort_foir"]    # the "safer option": all EMIs within this share of income
+HIGHER_FACTOR = POLICY["higher_factor"]  # the "higher burden" example: this many times the request
 SOURCE = {"simulation": "Your simulation",
           "calc": "Calculated by Loan-Saathi at an assumed 18% yearly interest",
           "rules": "Based on affordability rules",
@@ -50,7 +52,8 @@ def check_inputs(loan, tenure):
     if loan > MAX_LOAN:
         raise InvalidSimulation(f"The loan amount can be at most {inr(MAX_LOAN)}.")
     if not MIN_TENURE <= tenure <= MAX_TENURE:
-        raise InvalidSimulation("The tenure must be between 3 months and 10 years (120 months).")
+        raise InvalidSimulation(f"The tenure must be between {policy.months_text(MIN_TENURE)} and "
+                                f"{policy.months_text(MAX_TENURE)} ({MAX_TENURE} months).")
     return math.floor(loan), tenure
 
 

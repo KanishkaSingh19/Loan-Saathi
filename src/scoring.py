@@ -33,10 +33,11 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from features import EMPLOYED_SENTINEL, VOICE_CATEGORICAL, add_debt_ratio, add_derived
+from policy import POLICY
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
-ANNUAL_RATE = 0.18  # assumed interest when we have to estimate an EMI
-DEFAULT_TENURE = 24
+ANNUAL_RATE = POLICY["annual_rate"]  # assumed interest when we have to estimate an EMI (config/policy.yaml)
+DEFAULT_TENURE = POLICY["default_tenure"]
 TYPICAL_MONTHLY_INCOME_RS = 25_000
 
 FIELD_TO_COLUMN = {
@@ -336,7 +337,7 @@ def score(applicant, n_reasons=3, min_impact=0.003):
     }
 
 
-MAX_FOIR = 0.5  # all EMIs together at most half of monthly income (common Indian lending rule)
+MAX_FOIR = POLICY["max_foir"]  # all EMIs together at most this share of monthly income (config/policy.yaml)
 
 
 def loan_for_emi(emi, months, annual_rate=ANNUAL_RATE):

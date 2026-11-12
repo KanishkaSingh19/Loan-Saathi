@@ -15,6 +15,7 @@ review", never "approved".
 import math
 
 import scoring
+from policy import POLICY
 from scoring import inr
 
 SOURCES = {
@@ -26,7 +27,7 @@ SOURCES = {
     "estimate": "Estimated from your existing debt (EMI not given)",
     "default": "Not given: Loan-Saathi's default used",
 }
-COMFORT_FOIR = 0.4  # lower end of the suggested range: all EMIs within 40% of income
+COMFORT_FOIR = POLICY["comfort_foir"]  # lower end of the suggested range (config/policy.yaml)
 DECISION_LABELS = {
     "pre_approved": "Eligible for further review",
     "needs_review": "Eligible for advisor review",
@@ -108,8 +109,8 @@ def safety_pre(applicant, context=None):
     for key, label in (("existing_emi", "existing EMI"), ("active_loans_outstanding", "existing debt")):
         if a.get(key) is not None and a[key] < 0:
             bad.append(label)
-    if a.get("age") is not None and not 18 <= a["age"] <= 100:
-        bad.append("age (18 to 100)")
+    if a.get("age") is not None and not POLICY["age_min"] <= a["age"] <= POLICY["age_max"]:
+        bad.append(f"age ({POLICY['age_min']} to {POLICY['age_max']})")
     checks.append(_check("validated", "Financial values validated", "fail" if bad else "pass",
                          f"Please check: {', '.join(bad)}." if bad else "Every value is within a sensible range."))
 

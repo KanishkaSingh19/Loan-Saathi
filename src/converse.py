@@ -42,6 +42,8 @@ import httpx
 import llm as llm_mod
 import normalize as norm
 import pii
+import policy
+from policy import POLICY
 import simulate as sim_mod
 from scoring import inr
 
@@ -190,17 +192,14 @@ FIRST_TIME = re.compile(r"\b(none|never|first|pehli baar|pehla|koi nahi|kabhi na
 CRITICAL = MONEY + ("tenure_months", "other_loans_count")  # the financial profile spoken back
 CARD = CRITICAL + ("work",)  # shown on the "Here's what I understood" card (income source included)
 SUMMABLE = ("monthly_income", "other_loans_emi", "other_loans_outstanding")  # "both" can mean a total
-DEFAULT_TENURE = 24
+DEFAULT_TENURE = POLICY["default_tenure"]
 MAX_TRIES = 3
 MAX_CORRECTIONS = 6
 
-# (minimum, read back above, refuse above)
-LIMITS = {
-    "loan_amount": (1_000, 50_00_000, 10_00_00_000),
-    "monthly_income": (1_000, 5_00_000, 1_00_00_000),
-    "other_loans_emi": (0, None, 1_00_00_000),
-    "other_loans_outstanding": (0, None, 1_00_00_00_000),
-}
+# (minimum, read back above, refuse above), from config/policy.yaml
+LIMITS = dict(POLICY["limits"])
+TENURE_RANGE = (POLICY["tenure_min"], POLICY["tenure_max"])
+AGE_RANGE = (POLICY["age_min"], POLICY["age_max"])
 
 LABELS = {
     "en": {"loan_amount": "requested loan", "tenure_months": "repayment period",
@@ -306,7 +305,7 @@ MENTIONS = [(k, re.compile(p, re.I)) for k, p in MENTIONS]
 
 # Data protection (India's DPDP Act): answers are stored only with the caller's yes, and deleted after
 # RETENTION_DAYS (server.purge_expired). Without consent the call still works, in memory only.
-RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS") or 30)
+RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS") or POLICY["retention_days"])
 PRIVACY = {
     "hi": {True: f"Aapke jawaab sirf is jaanch ke liye {RETENTION_DAYS} din tak save rahenge, phir mita diye "
                  "jaayenge; 'save mat karo' bolkar aap ise rok sakte hain. ",
@@ -456,10 +455,12 @@ PROBLEMS = {
     "negative": {"hi": "{label} minus mein nahi ho sakti. ", "en": "Your {label} can't be negative. "},
     "too_small": {"hi": "{label} kam se kam {min} honi chahiye. ", "en": "The {label} needs to be at least {min}. "},
     "too_large": {"hi": "{value} {label} ke liye bahut zyada lagta hai. ", "en": "{value} looks too large for your {label}. "},
-    "tenure_range": {"hi": "Loan 3 mahine se 10 saal ke beech chukaya ja sakta hai. ",
-                     "en": "The loan can be repaid over 3 months to 10 years. "},
-    "age_range": {"hi": "Is pre-screening ke liye umar 18 se 100 saal ke beech honi chahiye. ",
-                  "en": "This pre-screening is for ages 18 to 100. "},
+    "tenure_range": {"hi": f"Loan {policy.months_text(TENURE_RANGE[0], 'hi')} se "
+                           f"{policy.months_text(TENURE_RANGE[1], 'hi')} ke beech chukaya ja sakta hai. ",
+                     "en": f"The loan can be repaid over {policy.months_text(TENURE_RANGE[0])} to "
+                           f"{policy.months_text(TENURE_RANGE[1])}. "},
+    "age_range": {"hi": f"Is pre-screening ke liye umar {AGE_RANGE[0]} se {AGE_RANGE[1]} saal ke beech honi chahiye. ",
+                  "en": f"This pre-screening is for ages {AGE_RANGE[0]} to {AGE_RANGE[1]}. "},
 }
 RESULT_FOLLOWUP = {
     "pre_approved": {"hi": " Kya main aage ke steps bataun? Aap 'agar 2 lakh loon' jaise sawaal bhi pooch sakte hain.",
@@ -619,7 +620,7 @@ def valid(key, value):
         return n if n is not None and 0 <= n < 70 else None
     if key == "age":
         n = norm.number(v)
-        return int(n) if n and 18 <= n <= 100 else None
+        return int(n) if n and AGE_RANGE[0] <= n <= AGE_RANGE[1] else None
     if key == "work":
         # Free text, so almost anything is a description; never "hmm", "pata nahi" or a bare yes/no.
         words = re.sub(r"[^\w\s]", " ", str(v).lower()).split()
@@ -632,7 +633,7 @@ def valid(key, value):
         return v if HOUSING_WORDS.search(v) else None  # norm.housing() defaults on any input
     if key == "tenure_months":
         n = norm.months(v)
-        return n if n and 3 <= n <= 120 else None
+        return n if n and TENURE_RANGE[0] <= n <= TENURE_RANGE[1] else None
     if key == "past_loans":
         n = norm.number(v)
         if (n is None and (FIRST_TIME.search(v) or norm.boolean(v) is False)) or _none_said(v):
@@ -696,14 +697,14 @@ def check(s, key, raw, words):
             n = own
         if n is None:
             return ("invalid", "unclear", None)
-        if not 3 <= n <= 120:
+        if not TENURE_RANGE[0] <= n <= TENURE_RANGE[1]:
             return ("invalid", "tenure_range", n)
         if own is not None and own != n:
             return ("confirm", n, "number")
         return ("ok", n)
     if key == "age":
         n = norm.number(raw)
-        if n is not None and not 18 <= n <= 100:
+        if n is not None and not AGE_RANGE[0] <= n <= AGE_RANGE[1]:
             return ("invalid", "age_range", n)
     n = valid(key, raw)
     if n is None:

@@ -106,6 +106,11 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **The rules live in one file**: `config/policy.yaml` holds every lending rule on top of the model (FOIR
+  limit 50%, comfortable 40%, debt limit 24 months of income, assumed 18% interest, accepted tenure and age
+  ranges, amount limits, retention). `src/policy.py` checks it at start-up and refuses to start on a missing
+  or out-of-range value; changing a rule there changes the decision (`tests/test_policy.py`). The risk-band
+  thresholds stay with the trained model (`models/voice_model_meta.json`), so they always match it.
 - **A shorter call, same decisions**: the questions the decision rules read come first (loan, tenure,
   income, other loans); a question only the risk model reads (work, years, history, housing, age) is asked
   only while some answer to it could still move the risk band, checked by scoring every possible answer in
