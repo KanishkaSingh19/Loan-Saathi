@@ -1,6 +1,6 @@
 {
- "ts": 1794494134.1482935,
- "commit": "5547015",
+ "ts": 1794495264.939397,
+ "commit": "bc7597a + uncommitted changes",
  "python": "3.12.10",
  "suites": {
   "test_access.py": {
@@ -54,12 +54,12 @@
     "ok - lakh/crore values parse correctly; very large ones are read back",
     "ok - invalid values are refused with a reason and never reach the assessment"
    ],
-   "seconds": 28.7
+   "seconds": 28.3
   },
   "test_converse.py": {
    "passed": true,
    "ok_lines": [],
-   "seconds": 15.3
+   "seconds": 15.2
   },
   "test_evaluation.py": {
    "passed": true,
@@ -70,7 +70,7 @@
     "ok - every listed safeguard exists in the code",
     "ok - every listed check exists in its suite; failed or unrun suites never show as passed"
    ],
-   "seconds": 10.4
+   "seconds": 10.0
   },
   "test_handoff.py": {
    "passed": true,
@@ -88,7 +88,7 @@
     "ok 11 - the workspace is saved with the case",
     "ok 12 - advisor requests in Devanagari, and after the call ended, still save a case"
    ],
-   "seconds": 29.8
+   "seconds": 29.7
   },
   "test_history.py": {
    "passed": true,
@@ -102,7 +102,7 @@
     "ok - 'an EMI was paid late in the last 12 months' and the tip appear; completeness lists the history",
     "ok - full call with history: read-back shows it, assessment runs, advisor case includes it"
    ],
-   "seconds": 26.1
+   "seconds": 25.8
   },
   "test_model.py": {
    "passed": true,
@@ -111,7 +111,7 @@
     "ok - interim debt floor: on only for unconstrained models, never lowers risk",
     "ok - calibration map applied when present, identity when training didn't keep one"
    ],
-   "seconds": 5.7
+   "seconds": 5.9
   },
   "test_operations.py": {
    "passed": true,
@@ -121,7 +121,7 @@
     "ok - cases go open -> in review -> closed (and reopen), with names, notes and history",
     "ok - study: persona ground truth, first-pass and final accuracy, timings, survey, report, CSV"
    ],
-   "seconds": 20.6
+   "seconds": 20.5
   },
   "test_privacy.py": {
    "passed": true,
@@ -133,7 +133,7 @@
     "ok - phone pre-screens are stored only when the caller agreed",
     "ok - data older than 30 days is deleted from every table; recent data stays"
    ],
-   "seconds": 14.9
+   "seconds": 14.7
   },
   "test_safety.py": {
    "passed": true,
@@ -150,7 +150,7 @@
     "ok 9 - contradictions are asked about (web call) or pause the assessment (phone)",
     "ok 10 - closed by default: without WEBHOOK_KEY every /v1 route refuses (503), wrong key 401"
    ],
-   "seconds": 12.8
+   "seconds": 12.7
   },
   "test_simulate.py": {
    "passed": true,
@@ -180,7 +180,7 @@
   "test_speech_api.py": {
    "passed": true,
    "ok_lines": [],
-   "seconds": 6.1
+   "seconds": 5.9
   },
   "test_stages.py": {
    "passed": true,
@@ -188,7 +188,7 @@
     "ok - a full call walks EXTRACT -> VALIDATE -> CONFIRM -> ASSESS -> EXPLAIN -> SIMULATE -> HANDOFF",
     "ok - ASSESS, LISTEN, recovery and early handoff map to their stages"
    ],
-   "seconds": 12.0
+   "seconds": 11.8
   },
   "test_states.py": {
    "passed": true,
@@ -215,7 +215,7 @@
     "ok - human handoff from any point",
     "ok - live-run regressions: spoken halves, tenure numbers, language drift, wide quotes, early corrections, multi-field fallback, what-if at the summary, plain retry"
    ],
-   "seconds": 61.0
+   "seconds": 61.5
   },
   "test_voice.py": {
    "passed": true,
@@ -244,7 +244,7 @@
     "ok - unsupported messages get a plain answer; buttons and lists fit WhatsApp's limits",
     "ok - daily advisor digest: open cases only, delivered only when an advisor channel confirms"
    ],
-   "seconds": 6.6
+   "seconds": 6.4
   },
   "tests/test_llm.py": {
    "passed": true,
@@ -252,7 +252,19 @@
    "tests": 0,
    "seconds": 7.6
   },
+  "tests/test_multifield.py": {
+   "passed": true,
+   "ok_lines": [],
+   "tests": 0,
+   "seconds": 7.1
+  },
   "tests/test_normalize.py": {
+   "passed": true,
+   "ok_lines": [],
+   "tests": 0,
+   "seconds": 1.4
+  },
+  "tests/test_source_hygiene.py": {
    "passed": true,
    "ok_lines": [],
    "tests": 0,
