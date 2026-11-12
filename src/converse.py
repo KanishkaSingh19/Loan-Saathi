@@ -710,6 +710,8 @@ def fmt(key, v, lang="en"):
         return str(int(v))
     if key in HISTORY_FLAGS:
         return ("Haan" if v else "Nahi") if lang == "hi" else ("Yes" if v else "No")
+    if key == "work":
+        return norm.work_label(v, lang)  # the category, read back; the caller's own words stay in s["said"]
     return str(v)
 
 
@@ -896,9 +898,15 @@ def summary(s):
     rows = []
     for k in KEYS:
         if k in s["answers"]:
-            rows.append({"field": k, "label": TITLES[k], "value": s["answers"][k],
-                         "text": fmt(k, s["answers"][k]), "status": s["status"].get(k, "validated"),
-                         "critical": k in CRITICAL, "card": k in CARD})
+            row = {"field": k, "label": TITLES[k], "value": s["answers"][k],
+                   "text": fmt(k, s["answers"][k]), "status": s["status"].get(k, "validated"),
+                   "critical": k in CRITICAL, "card": k in CARD}
+            if k == "work":  # the category, with the caller's own words kept beside it as evidence
+                row["category"] = norm.work_category(s["answers"][k])
+                row["said"] = s["said"].get(k) or s["answers"][k]
+                if row["category"] != "other":
+                    row["text"] = f'{row["text"]} \u2014 "{s["answers"][k]}"'
+            rows.append(row)
         elif k == "tenure_months" and "loan_amount" in s["answers"] and k in s["skipped"]:
             rows.append({"field": k, "label": TITLES[k], "value": None, "critical": True, "card": True,
                          "text": f"not given ({DEFAULT_TENURE} months will be used)", "status": "default"})
@@ -917,7 +925,7 @@ def _spoken_summary(s):
                 f" over {fmt('tenure_months', a['tenure_months'], lang)}"
         parts.append(f"loan {inr(a['loan_amount'])}{t}" if hi else f"a loan of {inr(a['loan_amount'])}{t}")
     if "monthly_income" in a:
-        source = f" ({a['work']})" if a.get("work") else ""
+        source = f" ({norm.work_label(a['work'], lang)})" if a.get("work") else ""
         parts.append(f"kamaai {inr(a['monthly_income'])} mahina{source}" if hi
                      else f"monthly income {inr(a['monthly_income'])}{source}")
     n = a.get("other_loans_count")
@@ -999,6 +1007,8 @@ def _set(s, k, v, said, status="validated"):
     s["said"][k] = said
     s["skipped"].discard(k)
     s["changed"].add(k)
+    if k == "work":
+        s["work_category"] = norm.work_category(v)
     if k == "other_loans_count" and v == 0:  # no loans: their EMI and debt are 0 by definition
         for d in ("other_loans_emi", "other_loans_outstanding"):
             s["answers"].pop(d, None)

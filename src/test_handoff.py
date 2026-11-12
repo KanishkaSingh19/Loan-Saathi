@@ -97,7 +97,7 @@ assert x["outcome"] == result["assessment"]["outcome"]["title"]
 prof = {r["label"]: r for r in case["financial_profile"]}
 assert prof["Income"]["text"] == "₹40,000/month" and prof["Income"]["status"] == "Confirmed by applicant"
 assert case["request"] == {"loan": "₹3,00,000", "tenure": "36 months"}
-assert {r["label"]: r["text"] for r in case["applicant"]}["Work"] == "kirana shop"
+assert {r["label"]: r["text"] for r in case["applicant"]}["Work"] == 'Shop owner / self-employed — "kirana shop"'
 assert cv.SESSIONS[sid]["result"] == result, "the handoff never changes the result"
 print("ok 4 - handoff keeps the confirmed profile and the assessment")
 

@@ -69,7 +69,7 @@ def no_result(t):
 sid = new()
 t = answer_until_summary(sid)
 assert t["state"] == cv.VERIFYING and t["asking"] == "confirm", t
-assert t["reply"].startswith("Here's what I understood") and "₹3,00,000" in t["reply"] and "kirana shop" in t["reply"]
+assert t["reply"].startswith("Here's what I understood") and "₹3,00,000" in t["reply"] and "Shop owner / self-employed" in t["reply"]
 card = {r["field"]: r for r in t["summary"] if r["card"]}
 assert set(card) >= {"loan_amount", "tenure_months", "monthly_income", "other_loans_emi",
                      "other_loans_outstanding", "work"}, set(card)
