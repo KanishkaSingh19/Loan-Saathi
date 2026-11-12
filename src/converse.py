@@ -229,6 +229,8 @@ HOUSING_WORDS = re.compile(
     r"quarter|government|sarkari|hostel|\bpg\b|घर|किराय|किराए|किराये|कमरा|परिवार|माता|पिता|अपन|क्वार्टर", re.I)
 WRONG_WORDS = re.compile(r"\b(galat|wrong|incorrect|mistake|change|badal\w*|sahi nahi|theek nahi)\b|"
                          r"गलत|ग़लत|बदल|सही नहीं", re.I)
+FILLER = {"hmm", "hm", "umm", "um", "uh", "haan", "ha", "ji", "acha", "achha", "ok", "okay", "theek", "hai", "yes",
+          "no", "nahi", "nahin", "na", "kya", "what", "sorry", "hello", "huh"}
 DONT_KNOW = re.compile(
     r"pata nahi|nahi pata|maloom nahi|aap (bataiye|batao|batayein|decide|dekh)|you decide|"
     r"not sure|don'?t know|koi bhi|kuch bhi|jo (theek|sahi) (ho|lage)|whatever|any tenure|पता नहीं", re.I)
@@ -332,6 +334,7 @@ CLARIFY = {
 }
 SAY = {
     "sorry": {"hi": "Maaf kijiye, main samajh nahi paaya. ", "en": "Sorry, I couldn't understand that. "},
+    "repeat_short": {"hi": "Kya aap apni {label} phir se bata sakte hain? ", "en": "Could you repeat your {label}? "},
     "repeat": {"hi": "Kya aap apni {label} phir se bata sakte hain? Jaise '40 hazaar' ya '₹40,000'.",
                "en": "Could you repeat your {label}? For example, '40 thousand' or '₹40,000'."},
     "glitch": {"hi": "Maaf kijiye, mere taraf kuch gadbad hui. Kya aap apni pichhli baat phir se bata sakte hain?",
@@ -605,6 +608,11 @@ def valid(key, value):
         n = norm.number(v)
         return int(n) if n and 18 <= n <= 100 else None
     if key == "work":
+        # Free text, so almost anything is a description; never "hmm", "pata nahi" or a bare yes/no.
+        words = re.sub(r"[^\w\s]", " ", str(v).lower()).split()
+        if not norm.work_known(v) and (not words or DONT_KNOW.search(str(v)) or all(w in FILLER for w in words)
+                                       or (len(words) <= 2 and norm.boolean(v) is not None)):
+            return None
         income_type, _ = norm.work(v)
         return v if income_type else None
     if key == "housing":
@@ -942,6 +950,85 @@ def _spoken_summary(s):
     return SAY["summary_intro"][lang] + "; ".join(parts) + "." + SAY["summary_ask"][lang]
 
 
+# ---------- recovery: spell out the options, then offer to skip or an advisor ----------
+
+RECOVER_AFTER = 2  # failed answers to one question before we offer to skip it (or, if required, an advisor)
+
+
+def _b(label_en, label_hi, say_en, say_hi):
+    return {"en": (label_en, say_en), "hi": (label_hi, say_hi)}
+
+
+YES_NO = [_b("Yes", "Haan", "Yes", "Haan"), _b("No", "Nahi", "No", "Nahi")]
+# After one failed answer: the question again with its options or examples spelled out, and (for fields
+# with a short list of answers) buttons on the web call. Buttons only send words the caller could have
+# said; the answer still goes through the same parser, quote and read-back as speech.
+HELP = {
+    "loan_amount": {"en": "For example '50 thousand', '1 lakh' or '2.5 lakh'.",
+                    "hi": "Jaise '50 hazaar', '1 lakh' ya 'dhai lakh'."},
+    "tenure_months": {"en": "For example '12 months', '2 years' or '3 years'. If you're not sure, say 'you decide'.",
+                      "hi": "Jaise '12 mahine', '2 saal' ya '3 saal'. Pakka na ho toh 'aap bataiye' boliye.",
+                      "buttons": [_b("1 year", "1 saal", "1 year", "1 saal"), _b("2 years", "2 saal", "2 years", "2 saal"),
+                                  _b("3 years", "3 saal", "3 years", "3 saal"),
+                                  _b("You decide", "Aap bataiye", "You decide", "Aap bataiye")]},
+    "monthly_income": {"en": "A rough figure is fine, for example '15 thousand' or '40 thousand'.",
+                       "hi": "Andaaza bhi chalega, jaise '15 hazaar' ya '40 hazaar'."},
+    "work": {"en": "For example: your own shop or business, a salaried job, driving, farming, or daily-wage work.",
+             "hi": "Jaise: apni dukaan ya business, salary wali naukri, driver, kheti, ya dihadi mazdoori.",
+             "buttons": [_b("Own shop / business", "Dukaan / business", "I run my own shop", "Apni dukaan hai"),
+                         _b("Salaried job", "Naukri", "I have a salaried job", "Naukri karta hoon"),
+                         _b("Driver", "Driver", "I am a driver", "Driver hoon"),
+                         _b("Farming", "Kheti", "I am a farmer", "Kheti karta hoon"),
+                         _b("Daily-wage work", "Mazdoori", "Daily-wage labour", "Dihadi mazdoori")]},
+    "years_in_work": {"en": "For example '6 months', '2 years' or '10 years'.",
+                      "hi": "Jaise '6 mahine', '2 saal' ya '10 saal'."},
+    "other_loans_count": {"en": "Say 'no' if you have none, or how many: one, two, three.",
+                          "hi": "Koi nahi hai toh 'nahi' boliye, warna kitne: ek, do, teen.",
+                          "buttons": [_b("None", "Koi nahi", "No other loans", "Koi loan nahi"),
+                                      _b("1", "1", "One loan", "Ek loan hai"), _b("2", "2", "Two loans", "Do loan hain"),
+                                      _b("3", "3", "Three loans", "Teen loan hain")]},
+    "other_loans_emi": {"en": "The monthly total, for example '3,000' or '5 thousand'.",
+                        "hi": "Mahine ki kul kist, jaise '3000' ya '5 hazaar'."},
+    "other_loans_outstanding": {"en": "A rough figure is fine, for example '50 thousand' or '1 lakh'.",
+                                "hi": "Andaaza bhi chalega, jaise '50 hazaar' ya '1 lakh'."},
+    "past_loans": {"en": "Say 'none' if this is your first loan, or how many: one, two, three.",
+                   "hi": "Pehli baar hai toh 'koi nahi' boliye, warna kitne: ek, do, teen.",
+                   "buttons": [_b("First loan", "Pehli baar", "None, this is my first", "Koi nahi, pehli baar"),
+                               _b("1", "1", "One", "Ek"), _b("2", "2", "Two", "Do"), _b("3", "3", "Three", "Teen")]},
+    "ever_refused": {"en": "Please say yes or no.", "hi": "Kripya haan ya nahi boliye.", "buttons": YES_NO},
+    "ever_late": {"en": "Please say yes or no.", "hi": "Kripya haan ya nahi boliye.", "buttons": YES_NO},
+    "late_last_year": {"en": "Please say yes or no.", "hi": "Kripya haan ya nahi boliye.", "buttons": YES_NO},
+    "late_over_month": {"en": "Please say yes or no.", "hi": "Kripya haan ya nahi boliye.", "buttons": YES_NO},
+    "overdue_now": {"en": "Please say yes or no.", "hi": "Kripya haan ya nahi boliye.", "buttons": YES_NO},
+    "housing": {"en": "Please choose one: your own house, a rented place, or living with family.",
+                "hi": "Inmein se ek boliye: apna ghar, kiraye ka ghar, ya parivaar ke saath.",
+                "buttons": [_b("Own house", "Apna ghar", "My own house", "Apna ghar"),
+                            _b("Rented", "Kiraye pe", "On rent", "Kiraye pe"),
+                            _b("With family", "Parivaar ke saath", "With my family", "Parivaar ke saath")]},
+    "age": {"en": "Please tell me your age in years, for example '32'.",
+            "hi": "Apni umar saal mein bataiye, jaise '32'."},
+}
+SKIP_WORDS = re.compile(r"\b(skip|chhodo|chhod do|chod do|chodo|aage badho|aage chalo|next|pass|rehne do)\b|"
+                        r"छोड़|आगे बढ़|रहने दो", re.I)
+SAY.update({
+    "offer_skip": {"en": "No problem, this question is optional. Shall we skip it? "
+                         "Or, if you prefer, I can pass your answers to a loan advisor.",
+                   "hi": "Koi baat nahi, yeh sawaal zaroori nahi hai. Kya ise chhod dein? "
+                         "Ya chahein toh main aapki jaankari loan advisor ko de sakta hoon."},
+    "skipped_ok": {"en": "Okay, let's skip that. ", "hi": "Theek hai, ise chhod dete hain. "},
+    "retry_question": {"en": "Okay, let's try once more. ", "hi": "Theek hai, ek baar aur koshish karte hain. "},
+})
+
+
+def _repeat_money(k, lang):
+    """'Could you repeat your monthly income? For example '15 thousand' or '40 thousand'.'"""
+    return SAY["repeat_short"][lang].format(label=LABELS[lang][k]) + HELP[k][lang]
+
+
+def _help_buttons(k, lang):
+    return [{"label": b[lang][0], "action": "answer", "text": b[lang][1]} for b in HELP.get(k, {}).get("buttons", [])]
+
+
 def buttons(s):
     """Tap targets for the call screen. Each sends `action` (and `text`, for the transcript)."""
     hi = s["lang"] == "hi"
@@ -958,6 +1045,20 @@ def buttons(s):
             return out
         return [{"label": "Yes", "action": "yes", "text": "Haan" if hi else "Yes"},
                 {"label": "No", "action": "no", "text": "Nahi" if hi else "No"}]
+    if s["state"] == COLLECTING and s.get("skip_offer") and s.get("skip_offer") == s.get("asking"):
+        return [{"label": "Skip it" if not hi else "Chhod dein", "action": "skip",
+                 "text": "Chhod dijiye" if hi else "Skip it"},
+                {"label": "Try again" if not hi else "Phir se", "action": "retry",
+                 "text": "Phir se poochiye" if hi else "Ask me again"},
+                {"label": "Talk to a loan advisor", "action": "handoff",
+                 "text": "Loan advisor se baat karni hai" if hi else "I'd like to talk to a loan advisor"}]
+    if s["state"] == COLLECTING and s.get("help_for") and s.get("help_for") == s.get("asking"):
+        return _help_buttons(s["asking"], s["lang"])
+    if s["state"] == RECOVERY:
+        return [{"label": "Try again" if not hi else "Phir se", "action": "yes",
+                 "text": "Haan, phir se koshish karte hain" if hi else "Yes, let's try again"},
+                {"label": "Talk to a loan advisor", "action": "handoff",
+                 "text": "Loan advisor se baat karni hai" if hi else "I'd like to talk to a loan advisor"}]
     if s["state"] == VERIFYING:
         return [{"label": "Confirm", "action": "confirm", "text": "Haan, sab sahi hai" if hi else "Yes, that's correct"},
                 {"label": "Change", "action": "change", "text": "Kuch badalna hai" if hi else "I need to change something"}]
@@ -1227,7 +1328,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
     text = (text or "").strip()[:1000]
     action = (action or "").strip()
     s["updated"] = time.time()
-    s.update(changed=set(), clarify=None, just_corrected=None, problem_value=None)
+    s.update(changed=set(), clarify=None, just_corrected=None, problem_value=None, help_for=None)
     if s["state"] in FINISHED:
         wants_person = action == "handoff" or (not action and text and HUMAN.search(text))
         if wants_person and advisor and not s.get("advisor_case"):
@@ -1497,6 +1598,22 @@ def fallback_candidates(text, asked):
 
 async def _collecting(s, env, text, action):
     asked = s.get("asking") if s.get("asking") in BY_KEY else next_field(s)
+    if action == "answer":  # a help button: exactly the words on it, treated like typed text
+        action = ""
+    if s.get("skip_offer") and s["skip_offer"] != asked:
+        s["skip_offer"] = None
+    if s.get("skip_offer") == asked and not s["pending"]:
+        if action == "skip" or (not action and (SKIP_WORDS.search(text) or (_yes(text, "") and not
+                                                                            valid(asked, text)))):
+            s["skip_offer"] = None
+            s["skipped"].add(asked)
+            return _advance(s, env, SAY["skipped_ok"][s["lang"]])
+        if action == "retry" or (not action and _no(text, "") and not valid(asked, text)):
+            s["skip_offer"] = None
+            s["asking"] = asked
+            s["help_for"] = asked
+            return SAY["retry_question"][s["lang"]] + BY_KEY[asked][s["lang"]] + " " + HELP[asked][s["lang"]]
+        s["skip_offer"] = None  # anything else: they may simply be answering it
     if s["pending"]:
         k = s["pending"][0]["field"]
         prefix, problem = _resolve_pending(s, text, action)
@@ -1577,22 +1694,34 @@ def _advance(s, env, prefix="", problem=None, g=None):
     if nxt != "done":
         if s["state"] == CORRECTION:
             transition(s, COLLECTING, "correction needs new answers")
-        if BY_KEY[nxt].get("need") and s["tries"].get(nxt, 0) >= MAX_TRIES:
+        specific = problem and problem[0] == nxt and problem[1] in PROBLEMS and problem[1] != "unclear"
+        # A precise refusal ("can't be negative") tells the caller what to fix: allow one more go.
+        if BY_KEY[nxt].get("need") and s["tries"].get(nxt, 0) >= (MAX_TRIES if specific else RECOVER_AFTER):
             return _enter_recovery(s, COLLECTING, f"could not understand {nxt}")
         s["asking"] = nxt
+        fails = s["tries"].get(nxt, 0) if nxt == s.get("asked_before") and not s.get("clarify") else 0
         if cross and cross[0] == nxt:
             return prefix + cross[1] + BY_KEY[nxt][lang]
         if s.get("clarify") == nxt:
             return prefix + CLARIFY[nxt][lang]
+        if fails >= RECOVER_AFTER and nxt not in s.setdefault("skip_offered", []) and not specific:
+            s["skip_offered"].append(nxt)
+            s["skip_offer"] = nxt
+            return prefix + SAY["sorry"][lang] + SAY["offer_skip"][lang]
+        if fails == 1 and nxt in HELP and nxt not in MONEY and not specific:
+            s["help_for"] = nxt
+            return prefix + SAY["sorry"][lang] + BY_KEY[nxt][lang] + " " + HELP[nxt][lang]
+        if specific and nxt in HELP and HELP[nxt].get("buttons"):
+            s["help_for"] = nxt
         if problem and problem[0] == nxt:
             if problem[1] == "unclear" and nxt in MONEY:
-                return prefix + SAY["sorry"][lang] + SAY["repeat"][lang].format(label=LABELS[lang][nxt])
+                return prefix + SAY["sorry"][lang] + _repeat_money(nxt, lang)
             return prefix + _problem_text(s, nxt, problem[1]) + BY_KEY[nxt][lang]
         if g and g["used"] != "fallback" and g["asking"] == nxt and g["reply"] and not prefix \
                 and _question_ok(g["reply"], s):
             return g["reply"]
         if nxt == s.get("asked_before") and not prefix and nxt in MONEY:
-            return SAY["sorry"][lang] + SAY["repeat"][lang].format(label=LABELS[lang][nxt])
+            return SAY["sorry"][lang] + _repeat_money(nxt, lang)
         return prefix + BY_KEY[nxt][lang]
 
     if s["state"] in (COLLECTING, CORRECTION):

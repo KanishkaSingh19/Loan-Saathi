@@ -608,7 +608,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           <div className="quick-replies" role="group" aria-label="Quick replies">
             {call.buttons.map((b) => (
               <button
-                key={b.action}
+                key={`${b.action}:${b.label}`}
                 type="button"
                 className={`btn${["confirm", "yes"].includes(b.action) ? " primary" : ""}`}
                 onClick={() => send(b.text, b.action)}

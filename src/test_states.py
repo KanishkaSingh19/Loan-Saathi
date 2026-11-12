@@ -336,7 +336,7 @@ ok("income corrected below the EMI is questioned")
 
 # ---------- missing critical fields ----------
 sid = new()
-for _ in range(cv.MAX_TRIES):
+for _ in range(cv.RECOVER_AFTER):
     t = say(sid, "pata nahi")
 assert t["state"] == cv.RECOVERY and "loan_amount" not in t["answers"], t
 t = say(sid, "haan, phir se")
@@ -411,7 +411,7 @@ t = say(sid, "what if I take 2 lakh?")
 assert t["state"] == cv.VERIFYING and t["answers"]["loan_amount"] == 300000 and "after the assessment" in t["reply"]
 # A retry after error recovery asks plainly.
 sid = new()
-for _ in range(cv.MAX_TRIES):
+for _ in range(cv.RECOVER_AFTER):
     say(sid, "pata nahi")
 t = say(sid, "yes, try again")
 assert t["state"] == cv.COLLECTING and not t["reply"].startswith("Sorry"), t["reply"]

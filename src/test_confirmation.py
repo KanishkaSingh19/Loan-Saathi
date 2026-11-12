@@ -134,7 +134,7 @@ ok("contradictory income: both values shown, the caller picks")
 
 # ---- 5. missing required field ----
 sid = new()
-for _ in range(cv.MAX_TRIES):
+for _ in range(cv.RECOVER_AFTER):
     t = say(sid, "I don't know")
 assert "loan_amount" not in t["answers"] and t["state"] == cv.RECOVERY, t["state"]
 no_result(t)

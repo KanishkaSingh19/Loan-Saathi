@@ -162,7 +162,7 @@ print("ok - clear recovery: repeat prompts, server glitches, no stack traces")
 
 # Recovery menu: "save my summary" goes to an advisor.
 sid = start()
-for _ in range(cv.MAX_TRIES):
+for _ in range(cv.RECOVER_AFTER):
     t = say(sid, "pata nahi")
 assert t["state"] == cv.RECOVERY and "loan advisor" in t["reply"], t
 t = say(sid, "please save my summary")
