@@ -222,6 +222,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setBusy(null);
     await say(reply);
     setBusy(null);
+    if (state.new_call) await begin({ hands: !!mic.current });  // "start a new check": a fresh call
   };
 
   const begin = async ({ typing = false, hands = false } = {}) => {
@@ -254,7 +255,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
 
   const send = async (said, action = "") => {
     const clean = said.trim();
-    if ((!clean && !action) || !call || call.done) return;
+    // After the call, the caller can still use the options Saathi offers (what-if, advisor, new check).
+    if ((!clean && !action) || !call || (call.done && !(call.buttons?.length > 0))) return;
     if (!retry) setMessages((m) => [...m, { who: "caller", text: clean }]);
     setText("");
     setError("");
@@ -429,11 +431,12 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setConsentAsked(false);
   };
   const active = call && !call.done;
+  const open = call && (!call.done || call.buttons?.length > 0);  // ended, but options are still on offer
   const result = call?.result;
   const answers = call?.answers || {};
   const asking = call?.asking;
   const fields = call?.fields || {};
-  const buttonsOn = active && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
+  const buttonsOn = open && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
   const verifying = call?.state === "VERIFYING_INFORMATION";
   const phase = callPhase(call, busy, live, hearing);
   const cardRows = verifying ? (call.summary || []).filter((r) => r.card ?? r.critical) : [];
@@ -611,7 +614,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                 key={`${b.action}:${b.label}`}
                 type="button"
                 className={`btn${["confirm", "yes"].includes(b.action) ? " primary" : ""}`}
-                onClick={() => send(b.text, b.action)}
+                onClick={() => (b.action === "new_call" ? begin({ hands: !!mic.current }) : send(b.text, b.action))}
               >
                 {b.label}
               </button>
@@ -643,11 +646,12 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             aria-label="Your answer"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={active ? "…or type your answer" : call ? "Call ended. Tap Back to start again" : "Start a call first"}
-            disabled={!active || busy === "listening"}
+            placeholder={active ? "…or type your answer" : open ? "…or type, e.g. ‘what if 2 lakh’"
+              : call ? "Call ended. Tap Back to start again" : "Start a call first"}
+            disabled={!open || busy === "listening"}
             maxLength={1000}
           />
-          <button type="submit" className="btn" disabled={!active || !text.trim() || (busy && busy !== "speaking")}>
+          <button type="submit" className="btn" disabled={!open || !text.trim() || (busy && busy !== "speaking")}>
             Send
           </button>
         </form>

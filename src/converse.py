@@ -80,7 +80,7 @@ TRANSITIONS = {
     NEXT_STEPS: {COMPLETED, HANDOFF, WHAT_IF},
     RECOVERY: {COLLECTING, VERIFYING, HANDOFF, COMPLETED},
     HANDOFF: {COMPLETED},
-    COMPLETED: set(),
+    COMPLETED: {WHAT_IF},  # back to "what if I take 2 lakh?" after saying goodbye (needs a result)
 }
 STATES = tuple(TRANSITIONS)
 
@@ -436,6 +436,18 @@ SAY = {
     "bye": {"hi": "Koi baat nahi. Jab chahein dobara baat kijiye. Dhanyavaad!",
             "en": "No problem. Talk to me again any time. Thank you!"},
     "finished": {"hi": "Aapka pre-screening ho gaya hai. Dhanyavaad!", "en": "Your pre-screening is complete. Thank you!"},
+    # After the call: what the caller can still do (shown as buttons too), instead of a dead end.
+    "after_options_result": {"hi": " Aap chahein toh alag rakam ya samay ka asar dekh sakte hain, loan advisor se baat "
+                                   "kar sakte hain, ya naya check shuru kar sakte hain.",
+                             "en": " If you like, you can try a different amount or time, talk to a loan advisor, "
+                                   "or start a new check."},
+    "after_options": {"hi": " Aap chahein toh loan advisor se baat kar sakte hain, ya naya check shuru kar sakte hain.",
+                      "en": " If you like, you can talk to a loan advisor or start a new check."},
+    "after_options_saved": {"hi": " Aap chahein toh naya check shuru kar sakte hain.",
+                            "en": " If you like, you can start a new check."},
+    "whatif_prompt": {"hi": "Zaroor. Koi rakam ya samay boliye, jaise 'agar 2 lakh loon' ya '3 saal mein'.",
+                      "en": "Sure. Tell me an amount or a time, for example 'what if I take 2 lakh' or 'over 3 years'."},
+    "new_call": {"hi": "Theek hai, naya check shuru karte hain.", "en": "Okay, let's start a new check."},
     "more": {"hi": " Aur kuch poochna ho, ya loan advisor se baat karni ho, toh bataiye.",
              "en": " If you have another question or want to talk to a loan advisor, just say so."},
 }
@@ -1033,7 +1045,16 @@ def buttons(s):
     """Tap targets for the call screen. Each sends `action` (and `text`, for the transcript)."""
     hi = s["lang"] == "hi"
     if s["state"] in FINISHED:
-        return []
+        out = []
+        if s["state"] == COMPLETED and s.get("result") and s.get("applicant") and not s.get("advisor_case"):
+            out.append({"label": "Try a different amount" if not hi else "Alag rakam dekhein", "action": "whatif",
+                        "text": "Alag rakam ya samay dekhna hai" if hi else "I'd like to try a different amount"})
+        if not s.get("advisor_case"):
+            out.append({"label": "Talk to a loan advisor", "action": "handoff",
+                        "text": "Loan advisor se baat karni hai" if hi else "I'd like to talk to a loan advisor"})
+        out.append({"label": "Start a new check" if not hi else "Naya check", "action": "new_call",
+                    "text": "Naya check shuru karna hai" if hi else "Start a new check"})
+        return out
     if s["pending"]:
         p = s["pending"][0]
         if p["kind"] == "choose":
@@ -1088,6 +1109,7 @@ def public(s):
             "buttons": buttons(s), "skipped": sorted(s["skipped"]),
             "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
             "simulation": s.get("simulation"), "advisor_case": s.get("advisor_case"),
+            "new_call": bool(s.get("new_call")),
             "consent": s.get("consent", True),
             "stage": stage(s),
             "trail": [f"{t['from']} -> {t['to']}" for t in s["trail"][-20:]],
@@ -1334,10 +1356,26 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
         if wants_person and advisor and not s.get("advisor_case"):
             return _late_handoff(s, advisor, text)
         if wants_person and s.get("advisor_case"):
-            return SAY["handoff_done"][s["lang"]].format(case=s["advisor_case"])
+            return SAY["handoff_done"][s["lang"]].format(case=s["advisor_case"]) + _after_options(s)
         if s["state"] == HANDOFF:
             transition(s, COMPLETED, "call over")
-        return SAY["finished"][s["lang"]]
+        if action == "new_call" or (not action and text and NEW_CALL.search(text)):
+            s["history"].append(("Caller", text or "[new_call]"))
+            s["new_call"] = True  # the call screen starts a fresh call (new session, nothing carried over)
+            return SAY["new_call"][s["lang"]]
+        if _can_reopen_what_if(s, simulator) and (action == "whatif" or (not action and text and
+                                                                         _looks_like_what_if(text))):
+            s["history"].append(("Caller", text or "[whatif]"))
+            transition(s, WHAT_IF, "caller came back for a what-if")
+            s["asking"] = "whatif"
+            if action == "whatif" or not text:
+                reply = SAY["whatif_prompt"][s["lang"]]
+            else:
+                env = {"simulator": simulator}
+                reply = _try_what_if(s, env, text, "") or SAY["whatif_prompt"][s["lang"]]
+            s["history"].append(("Saathi", reply))
+            return reply
+        return SAY["finished"][s["lang"]] + _after_options(s)
     s["history"].append(("Caller", text or f"[{action}]"))
     wanted = language_request(text, action)
     if wanted:  # "talk in English please": switch, say so, and ask the same thing again
@@ -1379,6 +1417,28 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
     reply = await handler(s, env, text, action)
     s["history"].append(("Saathi", reply))
     return reply
+
+
+NEW_CALL = re.compile(r"\b(new (call|check)|start (again|over)|naya (check|call)|nayi (call|baat)|dobara shuru|"
+                      r"phir se shuru|shuru se)\b|नया|दोबारा शुरू", re.I)
+
+
+def _can_reopen_what_if(s, simulator):
+    return s["state"] == COMPLETED and bool(s.get("result")) and bool(s.get("applicant")) and bool(simulator)
+
+
+def _looks_like_what_if(text):
+    loan, tenure = whatif_request(text)
+    return loan is not None or tenure is not None or bool(WHAT_IF_WORDS.search(text) or MAX_EMI.search(text)
+                                                          or LOW_EMI.search(text))
+
+
+def _after_options(s):
+    """What the caller can still do once the call is over."""
+    lang = s["lang"]
+    if s.get("advisor_case"):
+        return SAY["after_options_saved"][lang]
+    return SAY["after_options_result" if s.get("result") else "after_options"][lang]
 
 
 def _late_handoff(s, advisor, text):
@@ -1748,7 +1808,7 @@ async def _recovering(s, env, text, action):
     if _no(text, action) and not _yes(text, action):
         transition(s, COMPLETED, "caller stopped")
         s["asking"] = "done"
-        return SAY["bye"][s["lang"]]
+        return SAY["bye"][s["lang"]] + _after_options(s)
     if back == COLLECTING:
         transition(s, COLLECTING, "retry")
         k = next_field(s)
@@ -1995,7 +2055,7 @@ async def _what_if(s, env, text, action):
     if _no(text, action) and not _yes(text, action):
         transition(s, COMPLETED, "caller finished")
         s["asking"] = "done"
-        return SAY["bye"][lang]
+        return SAY["bye"][lang] + _after_options(s)
     if _yes(text, action) or re.search(r"next|aage|steps", text or "", re.I):
         transition(s, NEXT_STEPS, "caller wants next steps")
         return _next_steps(s["result"], lang) + SAY["more"][lang]
@@ -2010,7 +2070,7 @@ async def _after_result(s, env, text, action):
     if _no(text, action) and not _yes(text, action):
         transition(s, COMPLETED, "caller declined next steps")
         s["asking"] = "done"
-        return SAY["bye"][lang]
+        return SAY["bye"][lang] + _after_options(s)
     transition(s, NEXT_STEPS, "caller wants next steps")
     return _next_steps(s["result"], lang) + SAY["more"][lang]
 
@@ -2021,7 +2081,7 @@ async def _after_next_steps(s, env, text, action):
         return reply
     transition(s, COMPLETED, "call finished")
     s["asking"] = "done"
-    return SAY["finished"][s["lang"]]
+    return SAY["finished"][s["lang"]] + _after_options(s)
 
 
 def _next_steps(r, lang):

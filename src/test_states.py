@@ -84,12 +84,15 @@ for bad in (cv.RESULT, cv.CONFIRMED, cv.ASSESSING, cv.COMPLETED, cv.START):
         pass
 assert s["state"] == cv.COLLECTING  # a refused move changes nothing
 done = {"state": cv.COMPLETED, "trail": []}
-for target in cv.STATES:
+for target in cv.STATES:  # COMPLETED reopens only into the what-if simulator: never collecting or assessing again
+    if target == cv.WHAT_IF:
+        continue
     try:
         cv.transition(done, target)
-        raise AssertionError("COMPLETED is final")
+        raise AssertionError(f"COMPLETED -> {target} must be refused")
     except cv.InvalidTransition:
         pass
+assert cv.TRANSITIONS[cv.COMPLETED] == {cv.WHAT_IF}
 assert all(set(v) <= set(cv.STATES) for v in cv.TRANSITIONS.values())
 assert cv.CONFIRMED in cv.TRANSITIONS[cv.VERIFYING] and cv.CONFIRMED not in cv.TRANSITIONS[cv.COLLECTING]
 assert cv.TRANSITIONS[cv.CONFIRMED] == {cv.ASSESSING, cv.RECOVERY}  # nothing skips the risk model
