@@ -671,7 +671,7 @@ def check(s, key, raw, words):
         n = norm.months(raw)
         own = norm.months(words)
         # The caller's own words win when they name the unit ("six months" is 6 even if Gemini sent "6").
-        if own is not None and re.search(r"month|mahin|महीन|saal|sal|year|varsh|baras|साल", str(words), re.I):
+        if own is not None and re.search(r"month|mahin|महीन|saal|sal\b|year|varsh|baras|साल", str(words), re.I):
             n = own
         if n is None:
             return ("invalid", "unclear", None)
@@ -1381,9 +1381,9 @@ LOANS_COUNT = re.compile(
     rf"(?<![\d,.\w])(\d{{1,2}}|{_COUNT_WORD})\s+"
     r"(?:(?!(?:lakhs?|lacs?|hazaar|hazar|thousand|crores?|k|ka|ki|ke|rupaye|rupees|rs|लाख|हज़ार|हजार|करोड़|का|की|के)"
     r"(?:\s|$))[a-zऀ-ॿ]+\s+){0,2}?(?:other\s+|aur\s+)?(?:loans?|लोन)(?![a-zऀ-ॿ])", re.I)
-NO_LOANS = re.compile(r"koi\s+(?:aur\s+|dusra\s+|bhi\s+)?loan\s+nahi|no\s+(?:other\s+)?loans?|"
+NO_LOANS = re.compile(r"koi\s+(?:aur\s+|dusra\s+|bhi\s+)?loan\s+nahi|no\s+(?:other\s+)?loans?\b|"
                       r"(?:don'?t|do not)\s+have\s+(?:any\s+)?(?:other\s+)?loans?|कोई\s+(?:और\s+)?लोन\s+नहीं", re.I)
-LOANISH = re.compile(r"(loans?|emi|kist|kisht|repay|chukana|chukaunga|chuka|installment)|लोन|किस्त", re.I)
+LOANISH = re.compile(r"\b(loans?|emi|kist|kisht|repay|chukana|chukaunga|chuka|installment)\b|लोन|किस्त", re.I)
 WANTS_LOAN = re.compile(r"chahiye|chaahiye|chahta|chahti|chahte|need|want|lena hai|leni hai|चाहिए|चाहता|चाहती", re.I)
 # Years in work: "6 saal se", "das saal ho gaye", "for 5 years", "since 2019", "6 साल से". "Se" (since) is
 # never a repayment period.
@@ -1421,7 +1421,7 @@ def fallback_candidates(text, asked):
     (earn -> income, EMI -> EMI, owed/debt -> debt, loan -> loan); an amount with no field word answers
     the question we asked. Every value still goes through check() and the read-back like any other.
     """
-    found, leftover = {}, []
+    found, leftover, prev_clause = {}, [], ""
     for clause in (piece for c0 in CLAUSES.split(text) for piece in _segments(c0 or "")):
         c = (clause or "").strip()
         if not c:
@@ -1447,8 +1447,8 @@ def fallback_candidates(text, asked):
             used = True
         y = YEARS_SINCE.search(c)
         # "6 saal se dukaan hai" is years in work; "1 lakh for 2 years" or "2 saal se loan chal raha hai" is not.
-        if y and (money or LOANISH.search(c)) and not norm.work_known(c):
-            y = None
+        if y and (money or LOANISH.search(c) or LOANISH.search(prev_clause)) and not norm.work_known(c):
+            y = None  # also "ek loan hai, 2 saal se chal raha hai": the "since" belongs to the loan
         if y and asked != "tenure_months":
             span = y.group(1) or y.group(2)
             if norm.years(span) is not None:
@@ -1470,6 +1470,7 @@ def fallback_candidates(text, asked):
             used = True
         if not used:
             leftover.append(c)
+        prev_clause = c
     if asked in BY_KEY and asked not in found:
         if not found:
             found[asked] = text  # a plain answer to the question we asked ("kirana shop", "35", "nahi")
