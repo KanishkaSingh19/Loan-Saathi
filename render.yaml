@@ -18,6 +18,12 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: LLM_DEADLINE_S
+        value: "3"
       - key: DATABASE_URL       # Neon Postgres; leave empty to use SQLite (wiped on every restart)
         sync: false
       - key: ADVISOR_WEBHOOK_URL

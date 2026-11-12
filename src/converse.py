@@ -39,12 +39,17 @@ import uuid
 
 import httpx
 
+import llm as llm_mod
 import normalize as norm
 import simulate as sim_mod
 from scoring import inr
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-GEMINI_TIMEOUT = 8.0  # a voice turn should not hang; the scripted parser takes over
+GEMINI_TIMEOUT = 8.0  # transport limit for one Gemini HTTP call (the router's deadline is shorter)
+# One hard deadline per LLM use in a turn (Groq, then Gemini); past it, the deterministic path answers.
+LLM_DEADLINE_S = float(os.environ.get("LLM_DEADLINE_S") or 3.0)
+PROMPT_VERSION = "2026-11-12"  # part of the LLM cache key: bump when a prompt or schema changes
+_LLM_CACHE = llm_mod.ResponseCache()
 
 # ---------- states ----------
 
@@ -774,12 +779,53 @@ async def _gemini(api_key, model, system, user, schema):
     if not r.is_success:
         raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
     data = r.json()
-    text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"]
-                   if not p.get("thought"))
-    out = json.loads(text)
-    if not isinstance(out, dict):
-        raise ValueError("Gemini returned non-object JSON")
-    return out
+    try:
+        text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"]
+                       if not p.get("thought"))
+    except (KeyError, IndexError, TypeError):
+        raise llm_mod.InvalidJSON("Gemini reply had no content") from None
+    return llm_mod.parse_json(text)
+
+
+# ---------- the LLM, through the provider router ----------
+
+def _router(env):
+    """The server's router (Groq then Gemini), or, for direct callers and tests, Gemini alone."""
+    if env.get("llm") is not None:
+        return env["llm"]
+    if env.get("api_key"):
+        return llm_mod.Router([llm_mod.GeminiProvider(env["api_key"], env.get("model", ""),
+                                                      send=lambda *a: _gemini(*a))],
+                              deadline_s=LLM_DEADLINE_S, cache=_LLM_CACHE)
+    return None
+
+
+def _llm_available(env):
+    r = _router(env)
+    return bool(r and r.available)
+
+
+async def _llm(s, env, purpose, system, user, schema):
+    """One LLM use: (JSON object, provider). At most one per turn, so a turn never waits on two LLM calls
+    in a row; a second use raises LLMUnavailable and the caller takes the deterministic path. Every
+    attempt is written to the call's llm_trail (provider, purpose, milliseconds)."""
+    if s.get("_llm_used_this_turn"):
+        s.setdefault("llm_trail", []).append({"ts": round(time.time(), 3), "state": s["state"], "purpose": purpose,
+                                              "provider": "fallback", "ms": 0, "why": "one LLM call per turn"})
+        raise llm_mod.LLMUnavailable("one LLM call per turn")
+    s["_llm_used_this_turn"] = True
+    t0 = time.monotonic()
+    entry = {"ts": round(time.time(), 3), "state": s["state"], "purpose": purpose}
+    try:
+        out, provider = await _router(env).call(system, user, schema, prompt_version=PROMPT_VERSION)
+    except Exception as e:
+        s.setdefault("llm_trail", []).append({**entry, "provider": "fallback",
+                                              "ms": round((time.monotonic() - t0) * 1000),
+                                              "why": f"{type(e).__name__}: {str(e)[:160]}"})
+        raise
+    s.setdefault("llm_trail", []).append({**entry, "provider": provider,
+                                          "ms": round((time.monotonic() - t0) * 1000)})
+    return out, provider
 
 
 def _transcript(s, limit=10):
@@ -1162,8 +1208,10 @@ def _cross_checks(s):
 # ---------- the turn ----------
 
 async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini-3.5-flash-lite",
-               action="", assess=None, safety=None, simulator=None, advisor=None):
-    """Handles one caller utterance (or button press) and returns the reply to speak."""
+               action="", assess=None, safety=None, simulator=None, advisor=None, llm=None):
+    """Handles one caller utterance (or button press) and returns the reply to speak. `llm` is the server's
+    provider router (Groq, then Gemini); without it `api_key` means Gemini alone."""
+    s["_llm_used_this_turn"] = False
     text = (text or "").strip()[:1000]
     action = (action or "").strip()
     s["updated"] = time.time()
@@ -1187,7 +1235,8 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
     if text and not action:
         s["lang"] = _language(text, None, s["lang"])
     env = {"decide": decide, "build_applicant": build_applicant, "save": save, "assess": assess,
-           "safety": safety, "simulator": simulator, "advisor": advisor, "api_key": api_key, "model": model}
+           "safety": safety, "simulator": simulator, "advisor": advisor, "api_key": api_key, "model": model,
+           "llm": llm}
     s["_advisor"] = advisor  # used by _handoff, which some paths reach without env
 
     # Consent can change at any point: "save mat karo" stops storage, "save karo" allows it.
@@ -1268,9 +1317,9 @@ async def _extract(s, env, text, asked):
     """Candidate answers [(field, value, caller's words)] and Gemini's reply, if any."""
     out = []
     g = {"reply": "", "asking": "", "used": "fallback"}
-    if env["api_key"] and text:
+    if _llm_available(env) and text:
         try:
-            res = await _gemini(env["api_key"], env["model"], SYSTEM_PROMPT, json.dumps({
+            res, provider = await _llm(s, env, "extract", SYSTEM_PROMPT, json.dumps({
                 "conversation": _transcript(s),
                 "collected": s["answers"],
                 "field_just_asked": asked,
@@ -1288,9 +1337,9 @@ async def _extract(s, env, text, asked):
                 else:
                     print(f"[converse {s['id']}] dropped unquoted answer {a.get('field')}={a.get('value')!r}", flush=True)
             g = {"reply": str(res.get("reply") or "").strip(), "asking": str(res.get("asking") or ""),
-                 "used": "gemini"}
+                 "used": provider}
         except Exception as e:  # noqa: BLE001
-            print(f"[converse {s['id']}] Gemini failed, using fallback: {type(e).__name__}: {e}", flush=True)
+            print(f"[converse {s['id']}] LLM unavailable, using our parser: {type(e).__name__}: {e}", flush=True)
     if g["used"] == "fallback" and text:
         out = fallback_candidates(text, asked)
     elif text:
@@ -1433,7 +1482,7 @@ async def _collecting(s, env, text, action):
         if p and k == asked:
             problem = (k, p)
     # Gemini may miss a short direct answer ("do", "nahi"); try our parser on it too.
-    if g["used"] == "gemini" and asked in BY_KEY and asked not in s["answers"] and not s["pending"] \
+    if g["used"] != "fallback" and asked in BY_KEY and asked not in s["answers"] and not s["pending"] \
             and not s["clarify"] and text:
         p = offer(s, asked, text, text, "collect")
         if p and p != "unclear":
@@ -1487,7 +1536,7 @@ def _advance(s, env, prefix="", problem=None, g=None):
             if problem[1] == "unclear" and nxt in MONEY:
                 return prefix + SAY["sorry"][lang] + SAY["repeat"][lang].format(label=LABELS[lang][nxt])
             return prefix + _problem_text(s, nxt, problem[1]) + BY_KEY[nxt][lang]
-        if g and g["used"] == "gemini" and g["asking"] == nxt and g["reply"] and not prefix \
+        if g and g["used"] != "fallback" and g["asking"] == nxt and g["reply"] and not prefix \
                 and _question_ok(g["reply"], s):
             return g["reply"]
         if nxt == s.get("asked_before") and not prefix and nxt in MONEY:
@@ -1550,16 +1599,16 @@ async def _intent(s, env, text, action):
         return "correct", field
     if yes and not no:
         return "confirm", None
-    if env["api_key"] and text:
+    if _llm_available(env) and text:
         try:
-            out = await _gemini(env["api_key"], env["model"], INTENT_PROMPT,
-                                json.dumps({"caller_said": text}, ensure_ascii=False), INTENT_SCHEMA)
-            s["llm"].append("gemini")
+            out, provider = await _llm(s, env, "intent", INTENT_PROMPT,
+                                       json.dumps({"caller_said": text}, ensure_ascii=False), INTENT_SCHEMA)
+            s["llm"].append(provider)
             intent, k = out.get("intent"), out.get("field")
             if intent in ("confirm", "correct"):
                 return intent, k if k in BY_KEY else None
         except Exception as e:  # noqa: BLE001
-            print(f"[converse {s['id']}] Gemini intent failed: {type(e).__name__}: {e}", flush=True)
+            print(f"[converse {s['id']}] LLM intent unavailable: {type(e).__name__}: {e}", flush=True)
     return None, field
 
 
@@ -1634,7 +1683,7 @@ async def _correcting(s, env, text, action):
         problem = _apply_correction_value(s, k, text)
         return _advance(s, env, "", (k, problem) if problem else None)
     problem = offer(s, k, text, text, "correct")
-    if problem == "unclear" and env["api_key"] and text:
+    if problem == "unclear" and _llm_available(env) and text:
         candidates, _ = await _extract(s, env, text, k)
         for f, raw, words in candidates:
             if f == k:
@@ -1686,19 +1735,19 @@ async def _assess(s, env):
     s.update(result=result, prescreen_id=pid, applicant=applicant, simulation=None)
     transition(s, RESULT, result["decision"])
 
-    reply = ""
-    if env["api_key"]:
+    reply, provider = "", "fallback"
+    if _llm_available(env):
         try:
-            out = await _gemini(env["api_key"], env["model"],
-                                RESULT_PROMPT.format(language_rule=LANGUAGE_RULES[s["lang"]]),
-                                f"Guidance:\n{result['reply_hint']}", RESULT_SCHEMA)
+            out, provider = await _llm(s, env, "phrase_result",
+                                       RESULT_PROMPT.format(language_rule=LANGUAGE_RULES[s["lang"]]),
+                                       f"Guidance:\n{result['reply_hint']}", RESULT_SCHEMA)
             reply = str(out.get("reply") or "").strip()
             if reply and not _amounts_ok(reply, result):
                 print(f"[converse {s['id']}] Gemini result reply changed an amount; using fallback", flush=True)
                 reply = ""
         except Exception as e:  # noqa: BLE001
-            print(f"[converse {s['id']}] Gemini result phrasing failed: {type(e).__name__}: {e}", flush=True)
-    s["llm"].append("gemini" if reply else "fallback")
+            print(f"[converse {s['id']}] LLM result phrasing unavailable: {type(e).__name__}: {e}", flush=True)
+    s["llm"].append(provider if reply else "fallback")
     if not reply:
         reply = _fallback_result(result, s["lang"])
     return reply + RESULT_FOLLOWUP.get(result["decision"], {}).get(s["lang"], "")

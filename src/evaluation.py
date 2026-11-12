@@ -129,9 +129,9 @@ SAFEGUARDS = [
     {"name": "Debt-over-limit rule", "where": ("server", "DEBT_LIMIT_MONTHS"),
      "what": "Owing more than 24 months of income on other loans means 'not right now', whatever the model "
              "says."},
-    {"name": "Language-model fallback", "where": ("converse", "GEMINI_TIMEOUT"),
-     "what": "If Gemini is slow (hard deadline) or unavailable, Saathi's own parser and scripted questions carry "
-             "the call."},
+    {"name": "Language-model fallback", "where": ("converse", "LLM_DEADLINE_S"),
+     "what": "Groq first, then Gemini, under one hard deadline per use; if neither answers in time, Saathi's own "
+             "parser and scripted questions carry the call. A turn waits on the LLM at most once."},
     {"name": "Assessment failure recovery", "where": ("converse", "_enter_recovery"),
      "what": "If the assessment fails (for example the risk model can't load), the call goes to error recovery; "
              "no result is made up."},
@@ -210,7 +210,8 @@ CATALOG = [
         ("Latency recorded from real calls", [("test_voice.py", "measured browser turns are stored")]),
         ("Speech-to-text failure", [("test_evaluation.py", "speech-to-text failures"),
                                     ("test_advisor.py", "clear recovery: repeat prompts, server glitches")]),
-        ("Language-model fallback", [("test_safety.py", "a slow Gemini is cut off at the deadline")]),
+        ("Language-model fallback", [("test_safety.py", "a slow Gemini is cut off at the deadline"),
+                                     ("tests/test_llm.py", None)]),
         ("Misunderstood answers", [("test_advisor.py", "recovery offers the advisor"),
                                    ("test_states.py", "live-run regressions")]),
         ("WhatsApp: text, buttons and voice notes", [("test_whatsapp.py", "a full pre-screen over WhatsApp"),
@@ -443,13 +444,18 @@ def run(out=RUN_FILE):
         lines = [ln.strip() for ln in r.stdout.splitlines() if OK_LINE.match(ln.strip())]
         suites[p.name] = {"passed": r.returncode == 0, "ok_lines": lines, "seconds": round(time.time() - t0, 1)}
         print(f"{'PASS' if r.returncode == 0 else 'FAIL'} {p.name} ({len(lines)} checks)", flush=True)
-    t0 = time.time()
-    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests/test_normalize.py"], capture_output=True,
-                       text=True, encoding="utf-8", errors="replace", timeout=600, cwd=ROOT)
-    m = re.search(r"(\d+) passed", r.stdout)
-    suites["tests/test_normalize.py"] = {"passed": r.returncode == 0, "ok_lines": [],
-                                         "tests": int(m.group(1)) if m else 0, "seconds": round(time.time() - t0, 1)}
-    print(f"{'PASS' if r.returncode == 0 else 'FAIL'} tests/test_normalize.py", flush=True)
+    # The pytest files in tests/ (test_suites.py only re-runs the src/ suites above, so it is skipped here).
+    for p in sorted((ROOT / "tests").glob("test_*.py")):
+        if p.name == "test_suites.py":
+            continue
+        name = f"tests/{p.name}"
+        t0 = time.time()
+        r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:warnings", name], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=600, cwd=ROOT)
+        m = re.search(r"(\d+) passed", r.stdout)
+        suites[name] = {"passed": r.returncode == 0, "ok_lines": [], "tests": int(m.group(1)) if m else 0,
+                        "seconds": round(time.time() - t0, 1)}
+        print(f"{'PASS' if r.returncode == 0 else 'FAIL'} {name}", flush=True)
     record = {"ts": time.time(), "commit": _git_commit(), "python": platform.python_version(),
               "suites": suites, "skipped": skipped}
     out.parent.mkdir(parents=True, exist_ok=True)

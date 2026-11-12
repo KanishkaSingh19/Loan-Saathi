@@ -46,6 +46,7 @@ import advisor  # noqa: E402
 import assessment  # noqa: E402
 import converse  # noqa: E402
 import evaluation  # noqa: E402
+import llm as llm_mod  # noqa: E402
 import normalize as norm  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
@@ -75,6 +76,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 # scripted questions and our own parser.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
+# Groq (OpenAI-compatible) is tried first when its key is set; Gemini is the fallback; our parser is last.
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "").strip() or "llama-3.3-70b-versatile"
 # Comma-separated origins allowed to call the API from a browser, e.g. the Vercel dashboard.
 ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 # Where new advisor cases are announced: any URL that accepts a JSON POST, e.g. a Slack or Microsoft
@@ -1063,6 +1067,18 @@ def list_advisor_cases(limit: int = 50, x_webhook_key: str = Header(default=""))
     return {"cases": [json.loads(p) for (p,) in rows]}
 
 
+def llm_router():
+    """Groq first (if GROQ_API_KEY), then Gemini (if GEMINI_API_KEY), sharing one response cache. Built per
+    turn from the current settings, so changing a key needs no restart."""
+    providers = []
+    if GROQ_API_KEY:
+        providers.append(llm_mod.GroqProvider(GROQ_API_KEY, GROQ_MODEL))
+    if GEMINI_API_KEY:
+        providers.append(llm_mod.GeminiProvider(GEMINI_API_KEY, GEMINI_MODEL,
+                                                send=lambda *a: converse._gemini(*a)))
+    return llm_mod.Router(providers, deadline_s=converse.LLM_DEADLINE_S, cache=converse._LLM_CACHE)
+
+
 async def run_turn(s, text, action, defer, channel="web-call"):
     """One caller turn through the web-call state machine (any channel). `defer(fn, *args)` runs the
     storage writes later (a FastAPI background task, or directly from a background job)."""
@@ -1080,6 +1096,7 @@ async def run_turn(s, text, action, defer, channel="web-call"):
     try:
         return await converse.turn(s, text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
                                    action=action, assess=scoring.score, safety=assessment.safety_pre,
+                                   llm=llm_router(),
                                    simulator=lambda a, loan=None, tenure=None, scen=False:
                                    simulate_for(a, loan, tenure, WEB_CONTEXT, scen),
                                    advisor=lambda sess, question: save_case(case_from_session(sess, question)))

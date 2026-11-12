@@ -91,8 +91,12 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   figure that differs from the caller's words are read back. A new value that contradicts an earlier
   one ("actually I earn ₹60,000") is asked about, never silently overwritten. Negative or zero income,
   a tenure over 10 years and an EMI above the income are refused with a reason.
-- **It never dies on the LLM**: without a Gemini key, or if Gemini is slow or down, the call carries
-  on with scripted Hinglish/English questions and our own Hindi number parser.
+- **It never dies on the LLM**: `src/llm/` tries **Groq** first (when `GROQ_API_KEY` is set), then
+  **Gemini**, under one hard deadline per use (`LLM_DEADLINE_S`, default 3 s), with one retry on invalid
+  JSON and a small response cache. If no provider answers in time, the call carries on with scripted
+  Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
+  read-back answer needed it, the result is phrased from the script. Each call records which provider
+  answered each turn (`llm_trail`).
 - Typing works too, for testing without speech keys. Every finished call appears in the live feed.
 
 Agent Builder (the phone agent) can't use Gemini (it offers Gnani's Pampa, OpenAI and Claude), so
