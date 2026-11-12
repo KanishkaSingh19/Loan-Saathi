@@ -159,7 +159,11 @@ def number(v):
 
 
 def years(v):
-    """'6 mahine' -> 0.5, '2 saal' -> 2, '18 months' -> 1.5."""
+    """'6 mahine' -> 0.5, '2 saal' -> 2, '18 months' -> 1.5, 'since 2019' -> years since 2019."""
+    m = re.search(r"\b(19[5-9]\d|20\d\d)\b", str(v or ""))
+    if m and re.search(r"since|from|se\b|से", str(v), re.I):
+        import datetime
+        return float(max(0, datetime.date.today().year - int(m.group(1))))
     n = number(v)
     if n is None:
         return None

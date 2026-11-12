@@ -476,8 +476,10 @@ next, and the caller's latest words. Do two things:
      a yearly or daily figure to monthly (daily x 26).
    work: a short English description ("vegetable seller", "salaried driver", "retired",
      "student", "unemployed", "government job", "own kirana shop").
-   years_in_work, age: plain number of years.
-   other_loans_count: plain number; "nahi" / "koi loan nahi" -> "0".
+   years_in_work, age: plain number of years. "6 saal se dukaan hai" / "for 6 years" -> years_in_work "6"
+     (that is how long they have worked, never the repayment period).
+   other_loans_count: plain number; "nahi" / "koi loan nahi" -> "0"; "ek bike loan hai" -> "1".
+   A single message can answer several fields: return every one the caller states, whatever was asked.
    other_loans_emi is ONLY the monthly installment (kist) they pay on other loans each month.
    other_loans_outstanding is the size of those loans or what is still owed on them ("13 lakh ka
      loan hai"); if they name several, add them up. Never put a loan's size into other_loans_emi:
@@ -1349,7 +1351,8 @@ async def _extract(s, env, text, asked):
         have = {k for k, _, _ in out}
         ours = fallback_candidates(text, asked)
         for k, raw, words in ours:
-            if k not in have and k not in s["answers"] and (k in MONEY or k == "tenure_months"):
+            if k not in have and k not in s["answers"] and (k in MONEY or k in ("tenure_months", "years_in_work",
+                                                                                 "other_loans_count")):
                 out.append((k, raw, words))
         # Gemini may quote one end of a range ("35 hazaar" out of "30-35 hazaar"). When our parser's span
         # for the same money field holds more amounts than the quote, check the wider span, so a range or
@@ -1373,7 +1376,21 @@ async def _extract(s, env, text, asked):
 CLAUSES = re.compile(r"(?<!\d)[,.]|[,.](?!\d)|[;!?।]|\b(?:and|aur|but|par)\b(?!\s+(?:a\s+)?(?:half|1/2))|"
                      r"(?<!\S)और(?!\S)|(?=\b(?:i|main|mujhe|meri|mera|mere|my)\b)|"
                      r"(?=(?<!\S)(?:मुझे|मैं|मेरी|मेरा|मेरे)(?!\S))", re.I)  # not inside "40,000" or "1.5"
-LOANS_COUNT = re.compile(r"(?<![\d,.])\b(\d{1,2}|[a-z]+)\s+(?:other\s+|aur\s+)?loans?\b", re.I)
+_COUNT_WORD = "|".join(sorted((w for w, v in norm._WORDS.items() if v == int(v) and v < 50), key=len, reverse=True))
+LOANS_COUNT = re.compile(
+    rf"(?<![\d,.\w])(\d{{1,2}}|{_COUNT_WORD})\s+"
+    r"(?:(?!(?:lakhs?|lacs?|hazaar|hazar|thousand|crores?|k|ka|ki|ke|rupaye|rupees|rs|लाख|हज़ार|हजार|करोड़|का|की|के)"
+    r"(?:\s|$))[a-zऀ-ॿ]+\s+){0,2}?(?:other\s+|aur\s+)?(?:loans?|लोन)(?![a-zऀ-ॿ])", re.I)
+NO_LOANS = re.compile(r"koi\s+(?:aur\s+|dusra\s+|bhi\s+)?loan\s+nahi|no\s+(?:other\s+)?loans?|"
+                      r"(?:don'?t|do not)\s+have\s+(?:any\s+)?(?:other\s+)?loans?|कोई\s+(?:और\s+)?लोन\s+नहीं", re.I)
+LOANISH = re.compile(r"(loans?|emi|kist|kisht|repay|chukana|chukaunga|chuka|installment)|लोन|किस्त", re.I)
+WANTS_LOAN = re.compile(r"chahiye|chaahiye|chahta|chahti|chahte|need|want|lena hai|leni hai|चाहिए|चाहता|चाहती", re.I)
+# Years in work: "6 saal se", "das saal ho gaye", "for 5 years", "since 2019", "6 साल से". "Se" (since) is
+# never a repayment period.
+YEARS_SINCE = re.compile(
+    r"((?:\d+(?:\.\d+)?|[a-zऀ-ॿ]+)\s*(?:saal|sal|years?|yrs?|varsh|baras|साल|वर्ष))\s*"
+    r"(?:se\b|से|ho\s*gaye|ho\s*gaya|hogaye|from|ka\s+experience|experience|का\s+अनुभव)|"
+    r"\b(?:for|since)\s+((?:\d+(?:\.\d+)?|[a-z]+)\s*(?:years?|yrs?)|(?:19[5-9]\d|20\d\d))", re.I)
 _SCALE = r"(?:lakhs?|lacs?|k|hazaar|hazar|thousand|crores?|लाख|हज़ार|हजार|करोड़)(?![a-zऀ-ॿ])"
 AMOUNT_SPAN = re.compile(r"₹?\s*(?:\d[\d,]*(?:\.\d+)?(?:\s*" + _SCALE + r")?|[a-zऀ-ॿ]+\s+" + _SCALE + r")", re.I)
 
@@ -1422,14 +1439,34 @@ def fallback_candidates(text, asked):
             found[target] = f"{found[target]} aur {c}" if target in found else c
             used = True
         m = LOANS_COUNT.search(c)
+        if m and WANTS_LOAN.search(c):
+            m = None  # "ek loan chahiye": the loan they want, not one they already have
         if m and norm.number(m.group(1)) is not None and norm.number(m.group(1)) < 50:
             # "do loan liye hain pehle" answers the past-loans question when that is what we asked.
             found.setdefault("past_loans" if asked == "past_loans" else "other_loans_count", m.group(0))
             used = True
-        tenure = next((t.group(1) for t in TENURE_PHRASE.finditer(c) if norm.number(t.group(1)) is not None), None)
+        y = YEARS_SINCE.search(c)
+        # "6 saal se dukaan hai" is years in work; "1 lakh for 2 years" or "2 saal se loan chal raha hai" is not.
+        if y and (money or LOANISH.search(c)) and not norm.work_known(c):
+            y = None
+        if y and asked != "tenure_months":
+            span = y.group(1) or y.group(2)
+            if norm.years(span) is not None:
+                found.setdefault("years_in_work", span)  # the clause still answers work, if that was asked
+            c_for_tenure = YEARS_SINCE.sub(" ", c)
+        else:
+            c_for_tenure = c
+        tenure = next((t.group(1) for t in TENURE_PHRASE.finditer(c_for_tenure)
+                       if norm.number(t.group(1)) is not None), None)
         if tenure and (money or re.search(r"\b(loan|repay|chukana|chukane|for|mein|ke liye)\b", c, re.I)) \
                 and asked != "years_in_work" and "kaam" not in c.lower() and "work" not in c.lower():
             found.setdefault("tenure_months", tenure)
+            used = True
+        if NO_LOANS.search(c) and not norm.amounts(c):
+            found.setdefault("other_loans_count", "0")  # "koi loan nahi hai", whatever was asked
+            used = True
+        if not used and asked != "work" and not money and norm.work_known(c) and not WANTS_LOAN.search(c):
+            found.setdefault("work", c)  # "...and I work as a driver": work named while answering something else
             used = True
         if not used:
             leftover.append(c)
@@ -1438,7 +1475,11 @@ def fallback_candidates(text, asked):
             found[asked] = text  # a plain answer to the question we asked ("kirana shop", "35", "nahi")
         elif asked in ("work", "housing") and leftover:
             rest = " ".join(leftover)
-            if valid(asked, rest) and (asked == "housing" or norm.work_known(rest)):
+            # Asked about work, the words left after the other answers are the work ("sabzi bechta hoon, 10
+            # saal se"), unless they're only a yes/no or filler.
+            plain = re.sub(r"[^a-zऀ-ॿ ]", " ", rest.lower()).split()
+            if valid(asked, rest) and (asked == "housing" or norm.work_known(rest)
+                                       or (plain and not all(YES.fullmatch(w) or NO.fullmatch(w) for w in plain))):
                 found[asked] = rest  # "I run a kirana shop and earn 30,000": the shop is the work
     return [(k, v, v) for k, v in found.items()]
 
