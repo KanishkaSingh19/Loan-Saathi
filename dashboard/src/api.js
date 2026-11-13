@@ -158,6 +158,20 @@ export async function simulate(key, prescreenId, { loanAmount, tenureMonths, sce
   return res.json();
 }
 
+/**
+ * "Check an offer you got": the real yearly rate (fees included), total cost and whether the EMI fits.
+ * Values may be typed the way people say them ("2 lakh", "2 saal"); the server reads them.
+ * @param {string} key
+ * @param {{loanAmount: string, tenureMonths: string, emi: string, processingFee?: string, language?: string}} o
+ */
+export async function checkOffer(key, { loanAmount, tenureMonths, emi, processingFee = "", language = "en" }) {
+  const body = { loan_amount: loanAmount, tenure_months: tenureMonths, emi, language };
+  if (processingFee) body.processing_fee = processingFee;
+  const res = await postJson(key, "/v1/offer-check", body);
+  if (!res.ok) throw new ApiError(await errorText(res), res.status);
+  return res.json();
+}
+
 // ---------- advisor cases ----------
 
 /**

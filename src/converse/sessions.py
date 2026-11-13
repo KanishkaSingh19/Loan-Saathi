@@ -186,7 +186,7 @@ def public(s):
             "buttons": buttons(s), "skipped": sorted(s["skipped"]), "not_needed": list(s.get("not_needed", [])),
             "done": s["state"] in FINISHED, "result": s["result"], "prescreen_id": s["prescreen_id"],
             "simulation": s.get("simulation"), "advisor_case": s.get("advisor_case"),
-            "new_call": bool(s.get("new_call")),
+            "new_call": bool(s.get("new_call")), "offer_result": s.get("offer_result"),
             "consent": s.get("consent", True),
             "stage": stage(s),
             "trail": [f"{t['from']} -> {t['to']}" for t in s["trail"][-20:]],

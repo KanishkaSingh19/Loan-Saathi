@@ -29,7 +29,7 @@ c = TestClient(server.app)
 H = {"X-Webhook-Key": "safety-test-key"}
 
 # Everything an applicant can see or hear: the server's wording, the dashboard, and the phone agent's prompt.
-USER_FACING = ([ROOT / "src" / f for f in ("assessment.py", "simulate.py", "advisor.py", "server.py")]
+USER_FACING = ([ROOT / "src" / f for f in ("assessment.py", "simulate.py", "advisor.py", "server.py", "offer.py")]
                + sorted((ROOT / "src" / "converse").glob("*.py"))                  # the web call, every module
                + [p for p in (ROOT / "dashboard" / "src").rglob("*") if p.suffix in (".js", ".jsx")
                   and ".test." not in p.name]
@@ -55,7 +55,9 @@ assert not hits, hits
 print("ok 1 - no approval claims anywhere an applicant can see or hear")
 
 # 2. no lender names, no lender offers
-assert not scan(LENDERS), scan(LENDERS)
+# offer.py lists lender names in the one pattern that strips them from what a borrower typed.
+LENDER_FILTER = ("LENDER_NAMES = re.compile", 'r"Manappuram|Tata Capital')
+assert not scan(LENDERS, allow=LENDER_FILTER), scan(LENDERS, allow=LENDER_FILTER)
 print("ok 2 - no lender names")
 
 # 3. protected attributes are never model inputs or reasons

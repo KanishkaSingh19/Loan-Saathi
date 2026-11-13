@@ -551,3 +551,14 @@ h1, h2, h3, h4 { font-family: var(--font); }
 .room-langs { box-shadow: none; padding: 3px; }
 .room-langs button { padding: 6px 12px; font-size: 13px; }
 .room-langs button:disabled { opacity: .6; cursor: default; }
+
+/* ---------- check an offer you got ---------- */
+.offer-check { display: grid; gap: 10px; margin: 8px 0 4px; }
+.offer-check form { display: grid; gap: 8px; }
+.offer-field { display: grid; gap: 4px; font-size: 0.9rem; }
+.offer-field input { width: 100%; box-sizing: border-box; }
+.offer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.offer-result { border-radius: 12px; padding: 12px 14px; background: var(--accent-soft); }
+.offer-result.check_carefully, .offer-result.numbers_dont_add_up { border-left: 4px solid #b45309; }
+.offer-result h4 { margin: 0 0 6px; }
+.offer-flags { margin: 8px 0; padding-left: 18px; display: grid; gap: 4px; }

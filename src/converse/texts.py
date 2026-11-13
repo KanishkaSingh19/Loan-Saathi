@@ -301,8 +301,8 @@ YES_NO = [_b("Yes", "Haan", "Yes", "Haan"), _b("No", "Nahi", "No", "Nahi")]
 HELP = {
     "loan_amount": {"en": "For example '50 thousand', '1 lakh' or '2.5 lakh'.",
                     "hi": "Jaise '50 hazaar', '1 lakh' ya 'dhai lakh'."},
-    "tenure_months": {"en": "For example '12 months', '2 years' or '3 years'. If you're not sure, say 'you decide'.",
-                      "hi": "Jaise '12 mahine', '2 saal' ya '3 saal'. Pakka na ho toh 'aap bataiye' boliye.",
+    "tenure_months": {"en": "For example '12 months', '2 years' or '3 years', or tap one below.",
+                      "hi": "Jaise '12 mahine', '2 saal' ya '3 saal', ya neeche se chuniye.",
                       "buttons": [_b("1 year", "1 saal", "1 year", "1 saal"), _b("2 years", "2 saal", "2 years", "2 saal"),
                                   _b("3 years", "3 saal", "3 years", "3 saal"),
                                   _b("You decide", "Aap bataiye", "You decide", "Aap bataiye")]},

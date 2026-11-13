@@ -62,6 +62,9 @@ def load(path=None):
         "age_max": _number(raw, "age.max", 18, 130, integer=True),
         "higher_factor": _number(raw, "simulator.higher_factor", 1.0, 10.0),
         "retention_days": _number(raw, "retention.days", 1, 3650, integer=True),
+        "emi_rate_low": _number(raw, "emi_rate_range.low", 0.0, 0.6),
+        "emi_rate_high": _number(raw, "emi_rate_range.high", 0.0, 0.6),
+        "offer_flag_rate_above": _number(raw, "offer_check.flag_rate_above", 0.05, 1.0),
     }
     limits = {}
     for field in ("loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding"):
@@ -77,6 +80,8 @@ def load(path=None):
         raise PolicyError("config/policy.yaml: affordability.comfort_foir can't be above max_foir")
     if out["tenure_min"] >= out["tenure_max"] or not out["tenure_min"] <= out["default_tenure"] <= out["tenure_max"]:
         raise PolicyError("config/policy.yaml: tenure_months needs min < max, and the default tenure inside them")
+    if not out["emi_rate_low"] <= out["annual_rate"] <= out["emi_rate_high"] or out["emi_rate_low"] >= out["emi_rate_high"]:
+        raise PolicyError("config/policy.yaml: emi_rate_range needs low < high, with assumed_annual_rate inside it")
     if out["age_min"] >= out["age_max"]:
         raise PolicyError("config/policy.yaml: age needs min < max")
     return out

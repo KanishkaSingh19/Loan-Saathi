@@ -5,6 +5,7 @@ import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
+import OfferCheck from "./OfferCheck";
 import { StudySetup, StudySurvey } from "./Study";
 import DecisionBadge from "./DecisionBadge";
 
@@ -737,6 +738,10 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
               )}
             </section>
           )}
+          {call ? (
+            <OfferCheck apiKey={apiKey} lang={call.language} fromCall={call.offer_result}
+              onUnauthorized={onUnauthorized} />
+          ) : null}
           <p className="muted small">
             Saathi checks every number with you first. Calculations use fixed affordability rules; the risk estimate
             comes from a model, never from the chat itself.

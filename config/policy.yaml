@@ -37,6 +37,15 @@ amounts:
   other_loans_emi: {min: 0, read_back_above: null, refuse_above: 10000000}
   other_loans_outstanding: {min: 0, read_back_above: null, refuse_above: 1000000000}
 
+emi_rate_range:
+  # EMIs are shown across this yearly interest range (a lender's real rate isn't known before an offer).
+  low: 0.14
+  high: 0.24
+
+offer_check:
+  # "Check an offer you got": an offer whose real yearly rate (fees included) is above this is flagged.
+  flag_rate_above: 0.30
+
 simulator:
   # The what-if simulator's "higher burden" example: this many times the request.
   higher_factor: 1.5

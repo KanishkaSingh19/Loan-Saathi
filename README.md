@@ -106,6 +106,12 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **Check an offer you got**: say "mujhe ek offer mila hai 2 lakh, 24 mahine, EMI 11,000" on the call, type it
+  in the call room's panel, or `POST /v1/offer-check`. Saathi works out the real yearly rate the EMI implies
+  (processing fee included), the total cost, and whether the EMI fits the caller's income under the 50% rule;
+  it flags a rate above `offer_check.flag_rate_above` in `config/policy.yaml` (30%) and a "flat" rate that hides
+  a higher real one. Labelled an estimate, never names a lender, stores nothing (`src/offer.py`,
+  `tests/test_offer.py`). The profile's answers are never touched: an offer is the lender's, not the caller's.
 - **Why it is built this way**: `docs/decisions.md` records each design decision, what was turned down,
   and where it is enforced.
 - **The rules live in one file**: `config/policy.yaml` holds every lending rule on top of the model (FOIR

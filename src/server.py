@@ -3,6 +3,7 @@
     POST /v1/prescreen   On-Call action: caller's answers in, decision + reply hint out
     POST /v1/post-call   Post-call trigger: stores whatever Gnani sends about the call
     POST /v1/converse    Browser web call: one transcribed turn in, reply out (Gemini + our model)
+    POST /v1/offer-check Check an offer the borrower got: real yearly rate, total cost, fits their income?
     GET  /v1/applications   Recent pre-screens (for the dashboard)
     GET  /dashboard/     Live React dashboard (built from dashboard/; asks for the webhook key)
     GET  /health
@@ -48,6 +49,7 @@ import converse  # noqa: E402
 import evaluation  # noqa: E402
 import llm as llm_mod  # noqa: E402
 import normalize as norm  # noqa: E402
+import offer as offer_mod  # noqa: E402
 from policy import POLICY  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
@@ -130,6 +132,20 @@ class SimulateRequest(BaseModel):
     loan_amount: float | None = None
     tenure_months: float | None = None
     scenarios: bool = False
+
+
+class OfferCheckRequest(BaseModel):
+    """An offer the borrower got. Either `text` ("2 lakh, 24 mahine, EMI 11,000, fee 2000") or the fields;
+    fields win. Values may be spoken forms ("2 lakh", "2 saal")."""
+    text: str = Field(default="", max_length=1000)
+    loan_amount: str | float | None = None
+    tenure_months: str | float | None = None
+    emi: str | float | None = None
+    processing_fee: str | float | None = None
+    quoted_rate: float | None = Field(default=None, ge=0, le=100, description="percent a year, if the offer says")
+    monthly_income: str | float | None = None
+    existing_emi: str | float | None = None
+    language: str = Field(default="en", max_length=5)
 
 
 class AdvisorRequest(BaseModel):
@@ -783,6 +799,33 @@ def simulate_for(applicant, loan=None, tenure=None, context=None, with_scenarios
         out["simulation"] = sim
         out["compare"] = simulate.compare(original, sim)
     return out
+
+
+@app.post("/v1/offer-check")
+def offer_check_route(body: OfferCheckRequest, request: Request, x_webhook_key: str = Header(default="")):
+    """Check an offer the borrower got: effective yearly rate (fees included), total cost, and whether the EMI
+    fits their income. An estimate; never names a lender; nothing is stored. A caller's own income and EMIs
+    from their call are used when the request doesn't give them."""
+    role, owner = _need_call(request, x_webhook_key, "turn")
+    parsed = offer_mod.parse(body.text) if body.text else {}
+
+    def pick(field, how):
+        v = getattr(body, field, None)
+        if v not in (None, ""):
+            return how(v)
+        return parsed.get(field)
+    answers = (owner or {}).get("answers", {})
+    income = norm.number(body.monthly_income) if body.monthly_income not in (None, "") else answers.get("monthly_income")
+    existing = norm.number(body.existing_emi) if body.existing_emi not in (None, "") else         answers.get("other_loans_emi") or 0
+    quoted = body.quoted_rate / 100 if body.quoted_rate is not None else parsed.get("quoted_rate")
+    try:
+        result = offer_mod.check(pick("loan_amount", norm.number), pick("tenure_months", norm.months),
+                                 pick("emi", norm.number), pick("processing_fee", norm.number), quoted,
+                                 monthly_income=income, existing_emi=existing)
+    except offer_mod.OfferError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    lang = "hi" if body.language == "hi" else "en"
+    return {**result, "reply": result["summary"][lang]}
 
 
 @app.post("/v1/simulate")

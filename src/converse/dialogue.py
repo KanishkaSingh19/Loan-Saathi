@@ -6,6 +6,7 @@ import time
 import uuid
 
 import normalize as norm
+import offer as offer_mod
 import simulate as sim_mod
 from scoring import inr
 
@@ -40,6 +41,9 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
             return SAY["handoff_done"][s["lang"]].format(case=s["advisor_case"]) + _after_options(s)
         if s["state"] == HANDOFF:
             transition(s, COMPLETED, "call over")
+        aside = _offer_turn(s, text, action)
+        if aside is not None:
+            return aside
         if action == "new_call" or (not action and text and NEW_CALL.search(text)):
             s["history"].append(("Caller", text or "[new_call]"))
             s["new_call"] = True  # the call screen starts a fresh call (new session, nothing carried over)
@@ -57,6 +61,9 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
             s["history"].append(("Saathi", reply))
             return reply
         return SAY["finished"][s["lang"]] + _after_options(s)
+    aside = _offer_turn(s, text, action)
+    if aside is not None:
+        return aside
     s["history"].append(("Caller", text or f"[{action}]"))
     wanted = language_request(text, action)
     if wanted:  # "talk in English please": switch, say so, and ask the same thing again
@@ -697,6 +704,94 @@ def language_request(text, action=""):
         if pat.search(text):
             return lang
     return None
+
+
+# ---------- "Check an offer you got": an aside, never a state change or a profile answer ----------
+
+OFFER_START = re.compile(
+    r"offer\s*(?:mila|mili|aaya|aya|diya|di\b|hai\s+mere|hai\s+mujhe)|(?:got|received|have|get)\s+(?:an?|one|this|my)?"
+    r"\s*(?:loan\s+)?offer|check\s+(?:an?|my|this|the)\s+offer|offer\s+check|ऑफ़र\s*मिला|ऑफर\s*मिला", re.I)
+OFFER_STOP = re.compile(r"\b(rehne do|chhodo|chhod do|cancel|nahi chahiye|never ?mind|stop|wapas|back)\b|रहने दो", re.I)
+OFFER_SAY = {
+    "ask": {"hi": "Zaroor, main offer jaanch deta hoon. Offer ki rakam, kitne mahine, aur mahine ki EMI bataiye. "
+                  "Processing fee ho toh woh bhi.",
+            "en": "Sure, I'll check the offer. Tell me the loan amount, how many months, and the monthly EMI, "
+                  "plus any processing fee."},
+    "missing": {"hi": "Offer jaanchne ke liye {what} bhi bataiye.", "en": "To check it I also need the {what}."},
+    "what": {"hi": {"loan amount": "loan ki rakam", "tenure": "kitne mahine", "EMI": "mahine ki EMI"},
+             "en": {"loan amount": "loan amount", "tenure": "tenure (months or years)", "EMI": "monthly EMI"}},
+    "stopped": {"hi": "Theek hai, offer chhod dete hain.", "en": "Okay, let's leave the offer."},
+    "back": {"hi": " Ab hum wahin se aage badhte hain.", "en": " Now, back to where we were."},
+}
+
+
+def _offer_turn(s, text, action):
+    """Handles "mujhe ek offer mila hai ...": collects amount, tenure and EMI (fee optional), then gives the
+    estimate and returns to whatever Saathi was asking. Returns the reply, or None when this turn isn't about
+    an offer. Nothing here touches s["answers"] or the state: an offer is the lender's, not the caller's
+    profile."""
+    collecting = s.get("asking") == "offer"
+    starting = action == "offer_check" or (not action and text and OFFER_START.search(text))
+    if not (collecting or starting):
+        return None
+    if collecting and not starting and (action in ("handoff",) or action.startswith("lang:") or
+                                        (not action and (HUMAN.search(text or "") or language_request(text, "")))):
+        s["asking"] = s.pop("offer_return_asking", None) or s.get("asking")  # the rest of turn() handles it
+        s["offer_draft"] = {}
+        return None
+    lang = s["lang"]
+    s["history"].append(("Caller", text or f"[{action}]"))
+    if collecting and not starting and (OFFER_STOP.search(text or "") or action in ("no", "back")):
+        reply = OFFER_SAY["stopped"][lang] + _offer_return(s)
+        s["history"].append(("Saathi", reply))
+        return reply
+    if starting:
+        s["offer_draft"] = {}
+        if not collecting:
+            s["offer_return_asking"] = s.get("asking")
+    draft = s.setdefault("offer_draft", {})
+    for k, v in offer_mod.parse(text).items():
+        if v is not None:
+            draft[k] = v
+    answers = s.get("answers", {})
+    try:
+        result = offer_mod.check(draft.get("loan_amount"), draft.get("tenure_months"), draft.get("emi"),
+                                 draft.get("processing_fee"), draft.get("quoted_rate"),
+                                 monthly_income=answers.get("monthly_income"),
+                                 existing_emi=answers.get("other_loans_emi") or 0)
+    except offer_mod.OfferError as e:
+        missing = [k for k, v in (("loan amount", draft.get("loan_amount")), ("tenure", draft.get("tenure_months")),
+                                  ("EMI", draft.get("emi"))) if not v]
+        s["asking"] = "offer"
+        if missing and len(missing) == 3:
+            reply = OFFER_SAY["ask"][lang]
+        elif missing:
+            reply = OFFER_SAY["missing"][lang].format(what=", ".join(OFFER_SAY["what"][lang][m] for m in missing))
+        else:
+            reply = str(e) + " " + OFFER_SAY["ask"][lang]
+        s["history"].append(("Saathi", reply))
+        return reply
+    s["offer_result"] = result
+    s.setdefault("offer_checks", []).append({"ts": round(time.time(), 3), "verdict": result["verdict"],
+                                             "flags": [f["code"] for f in result["flags"]]})
+    s["offer_draft"] = {}
+    reply = result["summary"][lang] + _offer_return(s)
+    s["history"].append(("Saathi", reply))
+    return reply
+
+
+def _offer_return(s):
+    """Back to what Saathi was asking before the offer came up."""
+    lang = s["lang"]
+    s["asking"] = s.pop("offer_return_asking", None) or ("done" if s["state"] in FINISHED else next_field(s))
+    if s["state"] in FINISHED:
+        return ""
+    again = _repeat_question(s)
+    if again:
+        return OFFER_SAY["back"][lang] + again
+    if s["state"] == VERIFYING:
+        return ""
+    return SAY["more"][lang] if s["state"] in (RESULT, WHAT_IF, NEXT_STEPS) else ""
 
 
 def _repeat_question(s):

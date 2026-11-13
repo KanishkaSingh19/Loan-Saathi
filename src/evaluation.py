@@ -222,6 +222,7 @@ CATALOG = [
                                      ("tests/test_llm.py", None)]),
         ("Identifiers masked before the language model", [("tests/test_pii.py", None)]),
         ("Shorter call with unchanged decisions", [("tests/test_short_call.py", None)]),
+        ("Check an offer you got", [("tests/test_offer.py", None)]),
         ("Misunderstood answers", [("test_advisor.py", "recovery offers the advisor"),
                                    ("test_states.py", "live-run regressions")]),
         ("WhatsApp: text, buttons and voice notes", [("test_whatsapp.py", "a full pre-screen over WhatsApp"),
