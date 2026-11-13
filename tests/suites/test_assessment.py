@@ -1,7 +1,7 @@
 """Tests the applicant-facing assessment: provenance, wording, explanations, completeness and the
 safety check (src/assessment.py, wired in server.decide and the web call).
 
-    python -I -X utf8 -W ignore src/test_assessment.py
+    python -I -X utf8 -W ignore tests/suites/test_assessment.py
 """
 import json
 import os
@@ -10,7 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "assessment-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""

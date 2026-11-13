@@ -1,10 +1,11 @@
-"""Send messy, voice-style requests to the webhook in-process. Run: python -I -X utf8 src/test_webhook.py"""
+"""Send messy, voice-style requests to the webhook in-process. Run: python -I -X utf8 tests/suites/test_webhook.py"""
 import os
 import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "webhook-test-key"  # the server refuses to run without one
 # Never write test callers into the live dashboard's database.
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")

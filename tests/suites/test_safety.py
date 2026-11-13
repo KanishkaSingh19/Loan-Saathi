@@ -1,6 +1,6 @@
 """Safety boundaries of the whole product, checked end to end.
 
-    python -I -X utf8 -W ignore src/test_safety.py
+    python -I -X utf8 -W ignore tests/suites/test_safety.py
 
 1. never claims approval   2. no fabricated lender offers   3. no protected attributes
 4. the LLM never decides   5. numbers are validated        6. confirmation is required
@@ -12,7 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "safety-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""
@@ -23,12 +24,13 @@ import features  # noqa: E402
 import server  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 c = TestClient(server.app)
 H = {"X-Webhook-Key": "safety-test-key"}
 
 # Everything an applicant can see or hear: the server's wording, the dashboard, and the phone agent's prompt.
-USER_FACING = ([ROOT / "src" / f for f in ("converse.py", "assessment.py", "simulate.py", "advisor.py", "server.py")]
+USER_FACING = ([ROOT / "src" / f for f in ("assessment.py", "simulate.py", "advisor.py", "server.py")]
+               + sorted((ROOT / "src" / "converse").glob("*.py"))                  # the web call, every module
                + [p for p in (ROOT / "dashboard" / "src").rglob("*") if p.suffix in (".js", ".jsx")
                   and ".test." not in p.name]
                + [ROOT / "agent" / "system_prompt.md"])
@@ -43,7 +45,7 @@ def scan(pattern, allow=()):
     for path in USER_FACING:
         for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if pattern.search(line) and not any(a in line for a in allow):
-                hits.append(f"{path.name}:{n}: {line.strip()[:100]}")
+                hits.append(f"{path.relative_to(ROOT)}:{n}: {line.strip()[:100]}")
     return hits
 
 

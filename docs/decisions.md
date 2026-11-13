@@ -18,7 +18,7 @@ order, every validation, the risk score, the affordability rule and the decision
 `server.decide()` is the model plus fixed rules.
 **Turned down.** Letting the LLM run the dialogue ("agentic" flow): untestable, and a wrong turn could
 change a lending outcome.
-**Enforced.** `converse.py` state machine (`TRANSITIONS`, `transition()` raises on anything else);
+**Enforced.** The state machine in `src/converse/states.py` (`TRANSITIONS`; `transition()` raises on anything else);
 `test_safety.py` ("LLM can't decide"); the LLM's result reply is dropped if it contains an amount that is
 not in the decision (`_amounts_ok`).
 

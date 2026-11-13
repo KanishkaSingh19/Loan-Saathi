@@ -23,29 +23,29 @@ python -m pytest                             # everything: spoken-number table (
 python -m ruff check src tests               # lint (CI runs both, plus the dashboard checks: .github/workflows/ci.yml)
 python -I -X utf8 src/train.py               # both models, ~4 min (needs the Kaggle CSVs, see below)
 python -I -X utf8 src/train.py --voice-only  # voice model only, ~1 min
-python -I -X utf8 src/test_webhook.py        # end-to-end webhook tests with Hinglish inputs
-python -I -X utf8 src/test_speech_api.py     # speech proxy route tests (mocked, no API calls)
-python -I -X utf8 src/test_converse.py       # web-call conversation tests (Gemini mocked)
-python -I -X utf8 src/test_states.py         # web-call state machine: confirm, correct, ambiguity, contradictions
-python -I -X utf8 src/test_assessment.py     # applicant assessment: provenance, wording, why, safety check
-python -I -X utf8 src/test_simulate.py       # what-if simulator: boundaries, scenarios, voice what-ifs, no bypass
-python -I -X utf8 src/test_advisor.py        # advisor cases, listen summary, code-mixed speech, recovery
-python -I -X utf8 src/test_operations.py     # persistent calls, advisor notifications + case workflow, study kit
-python -I -X utf8 src/test_model.py          # debt monotonicity, interim debt floor, calibration plumbing
-python -I -X utf8 src/test_confirmation.py   # profile confirmation: confirm, correct, ambiguity, contradiction, gate
-python -I -X utf8 src/test_stages.py         # the 8-stage pipeline mapping
-python -I -X utf8 src/test_history.py        # repayment-history questions: funnel, parsing, unknowns, model effect
+python -I -X utf8 tests/suites/test_webhook.py        # end-to-end webhook tests with Hinglish inputs
+python -I -X utf8 tests/suites/test_speech_api.py     # speech proxy route tests (mocked, no API calls)
+python -I -X utf8 tests/suites/test_converse.py       # web-call conversation tests (Gemini mocked)
+python -I -X utf8 tests/suites/test_states.py         # web-call state machine: confirm, correct, ambiguity, contradictions
+python -I -X utf8 tests/suites/test_assessment.py     # applicant assessment: provenance, wording, why, safety check
+python -I -X utf8 tests/suites/test_simulate.py       # what-if simulator: boundaries, scenarios, voice what-ifs, no bypass
+python -I -X utf8 tests/suites/test_advisor.py        # advisor cases, listen summary, code-mixed speech, recovery
+python -I -X utf8 tests/suites/test_operations.py     # persistent calls, advisor notifications + case workflow, study kit
+python -I -X utf8 tests/suites/test_model.py          # debt monotonicity, interim debt floor, calibration plumbing
+python -I -X utf8 tests/suites/test_confirmation.py   # profile confirmation: confirm, correct, ambiguity, contradiction, gate
+python -I -X utf8 tests/suites/test_stages.py         # the 8-stage pipeline mapping
+python -I -X utf8 tests/suites/test_history.py        # repayment-history questions: funnel, parsing, unknowns, model effect
 python -I -X utf8 src/experiment_features.py # which askable questions add accuracy (~5 min)
 python -I -X utf8 src/tune.py                # small hyperparameter search on a tuning slice (~5 min)
 python -I -X utf8 src/validate_model.py      # behavioural validation on synthetic Indian profiles (~2 min)
 python -I -X utf8 src/study_dryrun.py --base http://127.0.0.1:8000 --key <KEY> --speech  # study dry run
-python -I -X utf8 src/test_safety.py         # product safety boundaries (wording scan, LLM can't decide...)
-python -I -X utf8 src/test_handoff.py        # advisor workspace: corrections, flags, timeline, transcript
-python -I -X utf8 src/test_evaluation.py     # model unavailable, STT failures, Evaluation Lab evidence integrity
+python -I -X utf8 tests/suites/test_safety.py         # product safety boundaries (wording scan, LLM can't decide...)
+python -I -X utf8 tests/suites/test_handoff.py        # advisor workspace: corrections, flags, timeline, transcript
+python -I -X utf8 tests/suites/test_evaluation.py     # model unavailable, STT failures, Evaluation Lab evidence integrity
 python -I -X utf8 src/evaluation.py run      # run every suite and record results for the Evaluation Lab (~5 min)
 python -I -m ruff check src                  # Python lint (requirements-dev.txt)
 cd dashboard; npm test; npm run lint; npm run typecheck; npm run build   # frontend checks
-python -I -X utf8 src/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
+python -I -X utf8 tests/suites/test_postgres.py       # real Postgres check (needs DATABASE_URL; removes its own rows)
 python -I -X utf8 src/demo_applicants.py     # score three sample applicants
 python -I -X utf8 src/compare_models.py      # LightGBM vs XGBoost vs CatBoost, ~30 min
 python -I -X utf8 src/server.py              # webhook + /dashboard on 127.0.0.1:8000
@@ -76,7 +76,8 @@ After any retrain run `python -I -X utf8 -W ignore src/validate_model.py --stric
 - `src/train.py`: trains and writes `models/voice_model.txt`, `voice_model_meta.json`, `full_model.txt`, `metrics.json` and `submission.csv`.
 - `src/scoring.py`: `score()` (risk, band, what-if reasons) and `affordable_loan()` (FOIR rule).
 - `src/normalize.py`: spoken values to inputs ("dhai lakh", "6 mahine", "kirana ki dukaan").
-- `src/converse.py`: the browser web call. Gemini (`GEMINI_API_KEY`, default model
+- `src/converse/` (a package: settings, states, fields, texts, validation, parser, llm, sessions, values,
+  dialogue; `import converse` still exposes every name): the browser web call. Gemini (`GEMINI_API_KEY`, default model
   `gemini-3.5-flash-lite`, REST `generateContent` with `responseJsonSchema`) extracts answers and
   phrases replies; our code fixes the question order, validates every value with `normalize.py`, and
   decides with `server.decide()`. Every Gemini answer must carry an exact quote of the caller's words

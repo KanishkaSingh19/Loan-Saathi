@@ -1,6 +1,6 @@
 """Financial profile confirmation: nothing is assessed until the caller confirms what Saathi understood.
 
-    python -I -X utf8 -W ignore src/test_confirmation.py
+    python -I -X utf8 -W ignore tests/suites/test_confirmation.py
 
 Extraction is not confirmation, and parsed values are not confirmation: only the caller's "yes" to
 "Here's what I understood" moves the call to CONFIRMED, and only then can the assessment run.
@@ -12,7 +12,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "confirm-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""

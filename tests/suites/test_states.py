@@ -1,7 +1,7 @@
 """Tests the web call's state machine: confirmation, corrections, ambiguity, contradictions,
 invalid values and the assessment gate. No Gemini or Gnani calls (Gemini is mocked where used).
 
-    python -I -X utf8 -W ignore src/test_states.py
+    python -I -X utf8 -W ignore tests/suites/test_states.py
 """
 import asyncio
 import os
@@ -9,7 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "states-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""  # never write test calls into the real database
@@ -21,7 +22,7 @@ import normalize as norm  # noqa: E402
 import server  # noqa: E402
 cv_switch = __import__("converse")
 cv_switch.ASK_HISTORY = False  # this suite's fixed answer sequences predate the history questions;
-                               # src/test_history.py tests them
+                               # tests/suites/test_history.py tests them
 from fastapi.testclient import TestClient  # noqa: E402
 
 c = TestClient(server.app)

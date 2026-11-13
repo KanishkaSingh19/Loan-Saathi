@@ -178,7 +178,7 @@ maximum EMI I can afford?", "EMI kam rakhni hai".
 - **Recovery, never stack traces**: unclear answers get "Could you repeat your monthly income?", a
   failed transcription asks to try again, a server error keeps the call and offers **Try again**, a
   model failure pauses with a retry, and repeated trouble offers the advisor.
-- `src/test_safety.py` checks the product's boundaries end to end: no approval claims or lender names
+- `tests/suites/test_safety.py` checks the product's boundaries end to end: no approval claims or lender names
   anywhere an applicant can see or hear, no protected attributes, the LLM never decides, numbers are
   validated, confirmation is required, affordability and the debt rule hold, contradictions are asked.
 
@@ -355,7 +355,7 @@ src/bench_extraction.py extraction accuracy on tests/extraction_cases.json
 src/whatsapp.py        WhatsApp Cloud API channel (text and voice notes)
 demo.ps1 / demo.sh     one-command local start
 dashboard/             React + Vite live dashboard (src/App.jsx, src/components/, src/styles.css)
-src/test_webhook.py    end-to-end tests with Hinglish inputs
+tests/suites/test_webhook.py    end-to-end tests with Hinglish inputs
 agent/                 system prompt, action body and step-by-step Agent Builder setup
 models/                trained models, metadata, metrics.json, comparison.json/.md
 data/kaggle/           default location for the Kaggle Home Credit CSVs (not in git)
@@ -374,7 +374,7 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 Copy-Item .env.example .env
 pip install -r requirements.txt
-python -I -X utf8 src/test_webhook.py
+python -I -X utf8 tests/suites/test_webhook.py
 python -I -X utf8 src/server.py
 ```
 

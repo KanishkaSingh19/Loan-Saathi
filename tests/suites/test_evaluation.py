@@ -1,6 +1,6 @@
 """Evaluation Lab evidence, plus the two failure paths it reports that no other suite covered.
 
-    python -I -X utf8 -W ignore src/test_evaluation.py
+    python -I -X utf8 -W ignore tests/suites/test_evaluation.py
 
 1. The risk model can't load: the web call recovers without a result; the phone pre-screen fails
    closed (an error, no decision, nothing stored).
@@ -15,7 +15,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "eval-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""
@@ -30,7 +31,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 c = TestClient(server.app)
 loose = TestClient(server.app, raise_server_exceptions=False)
 H = {"X-Webhook-Key": "eval-test-key"}
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 # ---- 1. the risk model is unavailable ----
 ANSWERS = {"loan_amount": "1 lakh", "tenure_months": "2 years", "monthly_income": "40,000", "work": "kirana shop",

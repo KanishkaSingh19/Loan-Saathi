@@ -235,7 +235,7 @@ CATALOG = [
 
 
 def _suite_text(name):
-    p = ROOT / (name if name.startswith("tests/") else f"src/{name}")
+    p = ROOT / (name if name.startswith("tests/") else f"tests/suites/{name}")  # the end-to-end suites
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
@@ -295,12 +295,12 @@ def failure_cases():
                  "which would present borrowing more as safer.",
          "fix": "The simulator never shows a bigger loan as lower risk: it says 'not recalculated' and keeps the "
                 "original estimate.",
-         "measured_after": "Covered by src/test_simulate.py.", "still": ""},
+         "measured_after": "Covered by tests/suites/test_simulate.py.", "still": ""},
         {"title": "Two spoken amounts were silently reduced to the first",
          "found": "Found while building the What if? screen",
          "what": "'Agar 2 ya 3 lakh loon' simulated ₹2 lakh without asking; a bare '40' skipped to next steps.",
          "fix": "Both are now asked about; nothing is simulated until one amount is clear.",
-         "measured_after": "Covered by src/test_simulate.py.", "still": ""},
+         "measured_after": "Covered by tests/suites/test_simulate.py.", "still": ""},
         {"title": "The extraction benchmark found parser bugs on its first run",
          "found": "Extraction benchmark (tests/extraction_cases.json, parser only)",
          "what": "'six months' was stored as 72 months; 'never taken one' as 1 past loan; 'do loan liye hain pehle' "
@@ -460,7 +460,7 @@ def _git_commit():
 
 def run(out=RUN_FILE):
     suites, skipped = {}, []
-    for p in sorted((ROOT / "src").glob("test_*.py")):
+    for p in sorted((ROOT / "tests" / "suites").glob("test_*.py")):
         if p.name == "test_postgres.py" and not os.environ.get("DATABASE_URL", "").strip():
             skipped.append({"suite": p.name, "why": "needs a real DATABASE_URL"})
             continue

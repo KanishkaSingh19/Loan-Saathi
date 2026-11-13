@@ -1,6 +1,6 @@
 """WhatsApp channel and the daily advisor digest (Meta's Graph API and Gnani are faked; no network).
 
-    python -I -X utf8 -W ignore src/test_whatsapp.py
+    python -I -X utf8 -W ignore tests/suites/test_whatsapp.py
 """
 import hashlib
 import hmac
@@ -10,7 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ.update({"WEBHOOK_KEY": "wa-test-key", "DB_PATH": str(Path(tempfile.mkdtemp()) / "test.db"),
                    "DATABASE_URL": "", "GEMINI_API_KEY": "", "ADVISOR_WEBHOOK_URL": "",
                    "WHATSAPP_TOKEN": "fake-token", "WHATSAPP_PHONE_NUMBER_ID": "123", "WHATSAPP_VERIFY_TOKEN": "verify-me",

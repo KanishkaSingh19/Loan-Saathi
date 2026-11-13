@@ -1,9 +1,11 @@
 """Smoke tests for the Gnani speech API proxy routes; no external API calls are made."""
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 from fastapi.testclient import TestClient  # noqa: E402
 
 import server  # noqa: E402

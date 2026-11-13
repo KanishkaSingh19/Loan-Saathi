@@ -5,3 +5,7 @@ import os
 
 if not os.environ.get("LIVE_LLM_TESTS"):
     os.environ["GROQ_DISABLED"] = "1"
+
+# tests/suites/ holds the end-to-end scripts: each configures the server at import and runs as its own process
+# (tests/test_suites.py), so pytest must not import them itself.
+collect_ignore_glob = ["suites/*"]

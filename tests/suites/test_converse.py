@@ -1,6 +1,6 @@
 """Tests the browser web call (/v1/converse) without calling Gemini or Gnani.
 
-    python -I -X utf8 -W ignore src/test_converse.py
+    python -I -X utf8 -W ignore tests/suites/test_converse.py
 
 1. No Gemini key: scripted questions + our parser carry a whole Hinglish call to a decision.
 2. Mocked Gemini: answers it extracts are used, and its phrasing is spoken.
@@ -13,7 +13,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "converse-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""  # never write test calls into the real database
@@ -24,7 +25,7 @@ import converse  # noqa: E402
 import server  # noqa: E402
 cv_switch = __import__("converse")
 cv_switch.ASK_HISTORY = False  # this suite's fixed answer sequences predate the history questions;
-                               # src/test_history.py tests them
+                               # tests/suites/test_history.py tests them
 from fastapi.testclient import TestClient  # noqa: E402
 
 c = TestClient(server.app)
@@ -44,7 +45,7 @@ def start(lang="hi"):
 
 
 # --- auth ---
-# A borrower may start a call without the key (it returns the call's token; src/test_access.py has the rules),
+# A borrower may start a call without the key (it returns the call's token; tests/suites/test_access.py has the rules),
 # but can't continue someone's call without that call's token.
 public = c.post("/v1/converse", json={})
 assert public.status_code == 200 and public.json()["call_token"]

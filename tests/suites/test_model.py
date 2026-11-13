@@ -1,15 +1,17 @@
 """Model plumbing: calibration, the debt monotonicity guarantee, and the interim debt floor.
 
-    python -I -X utf8 -W ignore src/test_model.py
+    python -I -X utf8 -W ignore tests/suites/test_model.py
 
 (The full behavioural check is src/validate_model.py, which takes a couple of minutes.)
 """
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 import scoring  # noqa: E402
 
 model, meta = scoring._load()

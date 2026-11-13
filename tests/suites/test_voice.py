@@ -1,6 +1,6 @@
 """Live voice: streaming STT relay, streaming TTS, spoken numbers, latency records, parser regressions.
 
-    python -I -X utf8 -W ignore src/test_voice.py
+    python -I -X utf8 -W ignore tests/suites/test_voice.py
 
 Gnani is faked here (no network): the real protocols were checked by hand against the live service
 (src/bench_latency.py measures them end to end).
@@ -13,7 +13,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "voice-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""

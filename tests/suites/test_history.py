@@ -1,13 +1,14 @@
 """The repayment-history questions: funnel, parsing, missing answers, model effect, explanations.
 
-    python -I -X utf8 -W ignore src/test_history.py
+    python -I -X utf8 -W ignore tests/suites/test_history.py
 """
 import os
 import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "history-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""

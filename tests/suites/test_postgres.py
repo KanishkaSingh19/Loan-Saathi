@@ -1,6 +1,6 @@
 """Checks the server against the real Postgres in DATABASE_URL (e.g. the free Neon database).
 
-    python -I -X utf8 -W ignore src/test_postgres.py
+    python -I -X utf8 -W ignore tests/suites/test_postgres.py
 
 Writes one pre-screen and one call, reads them back, re-imports the server (a fresh process
 state, like a restart of the Space), reads them again, then deletes exactly those two rows.
@@ -12,7 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "pg-test-key-1357"  # overrides .env for this process only
 
 import server  # noqa: E402  (loads .env, including DATABASE_URL)

@@ -1,6 +1,6 @@
 """Boundary tests for the what-if simulator (src/simulate.py, POST /v1/simulate, voice what-ifs).
 
-    python -I -X utf8 -W ignore src/test_simulate.py
+    python -I -X utf8 -W ignore tests/suites/test_simulate.py
 """
 import json
 import os
@@ -8,7 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+os.environ.setdefault("GROQ_DISABLED", "1")  # no live Groq calls from a suite (LIVE_LLM_TESTS=1 run aside)
 os.environ["WEBHOOK_KEY"] = "sim-test-key"
 os.environ["DB_PATH"] = str(Path(tempfile.mkdtemp()) / "test.db")
 os.environ["DATABASE_URL"] = ""
@@ -20,7 +21,7 @@ import scoring  # noqa: E402
 import server  # noqa: E402
 cv_switch = __import__("converse")
 cv_switch.ASK_HISTORY = False  # this suite's fixed answer sequences predate the history questions;
-                               # src/test_history.py tests them
+                               # tests/suites/test_history.py tests them
 import simulate  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
