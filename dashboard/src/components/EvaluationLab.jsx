@@ -170,15 +170,22 @@ function Measurements({ m, nm }) {
         </tbody>
       </table>
       <p className="muted small">
-        {b ? <>Benchmark: {b.turns} caller turns, {when(b.ts)}. {b.method} Gemini wrote {b.gemini_turns} of the
-          replies. Source: <code>{b.source}</code>. </> : <>Benchmark: {nm} </>}
+        {b ? <>Benchmark: {b.turns} caller turns, {when(b.ts)}. {b.method} Replies by provider:{" "}
+          {b.llm_turns ? Object.entries(b.llm_turns).map(([p, n]) => `${p} ${n}`).join(", ")
+            : `gemini ${b.gemini_turns}`}. Source: <code>{b.source}</code>. </> : <>Benchmark: {nm} </>}
+        {m.latency?.stall ? <>If the language model hangs, a turn waits{" "}
+          {Object.entries(m.latency.stall).map(([label, r]) =>
+            `${Math.round(Math.max(...r.turn_ms) / 100) / 10} s (${label})`).join(" vs ")}{" "}
+          before the parser answers. Source: <code>{m.latency.stall_source}</code>. </> : null}
         {live ? `Real browser calls: ${live.turns} live turns recorded by the call screen.`
           : "Real browser calls: no live voice turns recorded yet."}
       </p>
 
       <h4>Extraction accuracy</h4>
       <dl className="ev-metrics">
-        {[["parser", "Saathi's own parser (no language model)"], ["gemini", "With Gemini"]].map(([k, label]) => (
+        {[["parser", "Saathi's own parser, dev set (the cases it was fixed against)"],
+          ["parser_heldout", "Saathi's own parser, held-out set (written after it was frozen, never used to tune it)"],
+          ["gemini", "With Gemini"]].map(([k, label]) => (
           <div className="ev-metric" key={k}>
             <dt>{label}</dt>
             <dd>

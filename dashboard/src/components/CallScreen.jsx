@@ -5,8 +5,9 @@ import { startRecording } from "../recorder";
 import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
+import OfferCheck from "./OfferCheck";
+import { resultHero } from "../resultView";
 import { StudySetup, StudySurvey } from "./Study";
-import DecisionBadge from "./DecisionBadge";
 
 // Browser web call. Live: mic -> Gnani streaming STT (/ws/stt, its VAD ends each turn) -> Gemini + our
 // model (/v1/converse) -> Gnani streaming TTS (/v1/tts/stream, plays from the first chunk); the caller can
@@ -111,6 +112,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const [live, setLive] = useState(false);       // hands-free: streaming mic open for the whole call
   const [hearing, setHearing] = useState(false); // the caller is speaking right now (Gnani heard speech)
   const mic = useRef(null);
+  const micLang = useRef("");                    // the language live listening was opened with
   const playback = useRef(null);                 // the reply playing now (stoppable for barge-in)
   const speakingText = useRef("");
   const bargedIn = useRef(false);
@@ -221,6 +223,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setBusy(null);
     await say(reply);
     setBusy(null);
+    if (state.new_call) await begin({ hands: !!mic.current });  // "start a new check": a fresh call
   };
 
   const begin = async ({ typing = false, hands = false } = {}) => {
@@ -253,7 +256,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
 
   const send = async (said, action = "") => {
     const clean = said.trim();
-    if ((!clean && !action) || !call || call.done) return;
+    // After the call, the caller can still use the options Saathi offers (what-if, advisor, new check).
+    if ((!clean && !action) || !call || (call.done && !(call.buttons?.length > 0))) return;
     if (!retry) setMessages((m) => [...m, { who: "caller", text: clean }]);
     setText("");
     setError("");
@@ -318,6 +322,7 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
   const startLive = async (callLang) => {
     if (mic.current) return true;
     try {
+      micLang.current = callLang;
       mic.current = await openLiveMic({
         apiKey, lang: callLang, onEvent: (e) => onLiveEvent(e),
         onClose: () => {
@@ -345,6 +350,19 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setLive(false);
     setHearing(false);
   };
+
+  // The call's language can change mid-call ("talk in English please", or the switch in the header).
+  // Follow it, and reconnect live listening so speech-to-text hears the new language.
+  useEffect(() => {
+    if (call?.language && call.language !== langRef.current) setLang(call.language);
+  }, [call?.language]);
+  useEffect(() => {
+    if (mic.current && micLang.current !== lang) {
+      stopLive();
+      startLive(lang);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang]);
 
   const toggleMic = async () => {
     setError("");
@@ -414,11 +432,28 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setConsentAsked(false);
   };
   const active = call && !call.done;
+  const hero = resultHero(call?.result);
+  // The two result buttons go to the simulator and the advisor panel in the full assessment below.
+  const tryAnotherAmount = () => {
+    const sim = assessmentRef.current?.querySelector(".simulator");
+    sim?.scrollIntoView({ block: "start" });
+    sim?.querySelector("input.sim-number, input")?.focus();
+  };
+  const talkToAdvisor = () => {
+    const panel = assessmentRef.current?.querySelector(".advisor") || document.querySelector(".advisor");
+    if (panel) {
+      panel.scrollIntoView({ block: "center" });
+      panel.querySelector("button")?.focus();
+    } else if (call && !call.done) {
+      send("I'd like to talk to a loan advisor", "handoff");
+    }
+  };
+  const open = call && (!call.done || call.buttons?.length > 0);  // ended, but options are still on offer
   const result = call?.result;
   const answers = call?.answers || {};
   const asking = call?.asking;
   const fields = call?.fields || {};
-  const buttonsOn = active && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
+  const buttonsOn = open && call?.buttons?.length > 0 && (busy === null || busy === "speaking");
   const verifying = call?.state === "VERIFYING_INFORMATION";
   const phase = callPhase(call, busy, live, hearing);
   const cardRows = verifying ? (call.summary || []).filter((r) => r.card ?? r.critical) : [];
@@ -472,9 +507,23 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           <p className="room-title">
             {active ? <span className="live-dot" aria-hidden="true" /> : null}
             {active ? "Live call with Saathi" : call ? "Call ended" : "Talk to Saathi"}
-            <small>{lang === "en" ? "English" : "Hinglish"}{call ? (call.consent ? " · saved for 30 days" : " · not saved") : ""}</small>
+            <small>{call ? (call.consent ? "Saved for 30 days" : "Not saved") : ""}</small>
           </p>
           <div className="room-tools">
+            <div className="hero-langs room-langs" role="group" aria-label="Language">
+              {[["hi", "Hinglish"], ["en", "English"]].map(([id, label]) => (
+                <button key={id} type="button" aria-pressed={lang === id}
+                  disabled={active && busy !== null && busy !== "speaking"}
+                  onClick={() => {
+                    if (id === lang) return;
+                    setLang(id);
+                    // Mid-call: Saathi switches and asks the same question again in that language.
+                    if (active) send(id === "en" ? "English, please" : "Hinglish mein bolo", `lang:${id}`);
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <button type="button" className={`tool${voiceOn ? " on" : ""}`} aria-pressed={voiceOn}
               onClick={() => { setVoiceOn(!voiceOn); if (voiceOn) stopSpeaking(); }}>
               {voiceOn ? "Speaker on" : "Speaker off"}
@@ -579,10 +628,10 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
           <div className="quick-replies" role="group" aria-label="Quick replies">
             {call.buttons.map((b) => (
               <button
-                key={b.action}
+                key={`${b.action}:${b.label}`}
                 type="button"
                 className={`btn${["confirm", "yes"].includes(b.action) ? " primary" : ""}`}
-                onClick={() => send(b.text, b.action)}
+                onClick={() => (b.action === "new_call" ? begin({ hands: !!mic.current }) : send(b.text, b.action))}
               >
                 {b.label}
               </button>
@@ -614,11 +663,12 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
             aria-label="Your answer"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={active ? "…or type your answer" : call ? "Call ended. Tap Back to start again" : "Start a call first"}
-            disabled={!active || busy === "listening"}
+            placeholder={active ? "…or type your answer" : open ? "…or type, e.g. ‘what if 2 lakh’"
+              : call ? "Call ended. Tap Back to start again" : "Start a call first"}
+            disabled={!open || busy === "listening"}
             maxLength={1000}
           />
-          <button type="submit" className="btn" disabled={!active || !text.trim() || (busy && busy !== "speaking")}>
+          <button type="submit" className="btn" disabled={!open || !text.trim() || (busy && busy !== "speaking")}>
             Send
           </button>
         </form>
@@ -640,8 +690,26 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
               <p className="muted small">Is this information correct? Nothing is assessed until you confirm.</p>
             </section>
           )}
-          <section>
-            <h3>What you&rsquo;ve told Saathi</h3>
+          {result && hero ? (
+            <section className={`result-hero tone-${hero.tone}`} aria-live="polite">
+              <p className="result-status">{hero.title}</p>
+              {hero.sentence ? <p className="result-sentence">{hero.sentence}</p> : null}
+              {hero.emiText ? (
+                <p className="result-emi"><span>{hero.emiLabel}</span><strong>{hero.emiText}</strong></p>
+              ) : null}
+              <div className="result-actions">
+                {result.assessment?.status !== "paused" ? (
+                  <button type="button" className="btn" onClick={tryAnotherAmount}>Try another amount</button>
+                ) : null}
+                <button type="button" className="btn primary" onClick={talkToAdvisor}>Talk to an advisor</button>
+              </div>
+            </section>
+          ) : null}
+          {result ? (
+            <details className="see-details">
+              <summary>See details</summary>
+              <section>
+                <h3>What you&rsquo;ve told Saathi</h3>
             <dl className="said">
               {ORDER.map((f) => (
                 <div key={f} className={asking === f || call?.correcting === f ? "asking" : ""}>
@@ -658,6 +726,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                       <span className="accent">checking…</span>
                     ) : f === "tenure_months" && call?.skipped?.includes(f) ? (
                       <span className="muted">not given (24 months used)</span>
+                    ) : call?.not_needed?.includes(f) ? (
+                      <span className="muted">not needed for this result</span>
                     ) : call?.skipped?.includes(f) ? (
                       <span className="muted">skipped</span>
                     ) : notNeeded(f, answers) ? (
@@ -671,30 +741,10 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                 </div>
               ))}
             </dl>
-          </section>
-
-          {result && (
-            <section className="call-result">
-              <div className="detail-head">
-                <h3>Result</h3>
-                {result.assessment?.outcome ? (
-                  <span className={`badge ${result.assessment.outcome.tone}`}>{result.assessment.outcome.title}</span>
-                ) : (
-                  <DecisionBadge decision={result.decision} />
-                )}
-              </div>
+              </section>
               {result.assessment && (
                 <button className="btn" onClick={() => assessmentRef.current?.scrollIntoView({ block: "start" })}>
-                  See your assessment
-                </button>
-              )}
-              {result.assessment && (
-                <button className="btn primary" onClick={() => {
-                  const panel = assessmentRef.current?.querySelector(".advisor");
-                  panel?.scrollIntoView({ block: "center" });
-                  panel?.querySelector("button")?.focus();
-                }}>
-                  Talk to a Loan Advisor
+                  See your full assessment
                 </button>
               )}
               {call.prescreen_id && (
@@ -702,8 +752,47 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                   Open in Pre-screens (advisor view)
                 </button>
               )}
+            </details>
+          ) : (
+            <section>
+              <h3>What you&rsquo;ve told Saathi</h3>
+            <dl className="said">
+              {ORDER.map((f) => (
+                <div key={f} className={asking === f || call?.correcting === f ? "asking" : ""}>
+                  <dt>{SAID_LABELS[f] || f}</dt>
+                  <dd>
+                    {answers[f] !== undefined ? (
+                      <>
+                        {show(f, answers[f])}
+                        <span className={`field-status ${fields[f]?.status || ""}`}>
+                          {fields[f]?.status === "confirmed" ? "confirmed ✓" : "to confirm"}
+                        </span>
+                      </>
+                    ) : call?.pending?.field === f ? (
+                      <span className="accent">checking…</span>
+                    ) : f === "tenure_months" && call?.skipped?.includes(f) ? (
+                      <span className="muted">not given (24 months used)</span>
+                    ) : call?.not_needed?.includes(f) ? (
+                      <span className="muted">not needed for this result</span>
+                    ) : call?.skipped?.includes(f) ? (
+                      <span className="muted">skipped</span>
+                    ) : notNeeded(f, answers) ? (
+                      <span className="muted">not needed</span>
+                    ) : asking === f ? (
+                      <span className="accent">asking…</span>
+                    ) : (
+                      <span className="muted">–</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
             </section>
           )}
+          {call ? (
+            <OfferCheck apiKey={apiKey} lang={call.language} fromCall={call.offer_result}
+              onUnauthorized={onUnauthorized} />
+          ) : null}
           <p className="muted small">
             Saathi checks every number with you first. Calculations use fixed affordability rules; the risk estimate
             comes from a model, never from the chat itself.

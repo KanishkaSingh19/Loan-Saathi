@@ -15,18 +15,21 @@ review", never "approved".
 import math
 
 import scoring
+from policy import POLICY
 from scoring import inr
 
 SOURCES = {
     "you": "You told us",
     "rules": "Based on affordability rules",
     "model": "Estimated by model",
-    "calc": "Calculated by Loan-Saathi at an assumed 18% yearly interest",
+    "calc": f"Calculated by Loan-Saathi at an assumed {scoring.ANNUAL_RATE * 100:g}% yearly interest",
+    "calc_range": f"Calculated by Loan-Saathi across {scoring.rate_range_text()} yearly interest "
+                  f"(the rules use {scoring.ANNUAL_RATE * 100:g}%)",
     "math": "Calculated by Loan-Saathi",
     "estimate": "Estimated from your existing debt (EMI not given)",
     "default": "Not given: Loan-Saathi's default used",
 }
-COMFORT_FOIR = 0.4  # lower end of the suggested range: all EMIs within 40% of income
+COMFORT_FOIR = POLICY["comfort_foir"]  # lower end of the suggested range (config/policy.yaml)
 DECISION_LABELS = {
     "pre_approved": "Eligible for further review",
     "needs_review": "Eligible for advisor review",
@@ -108,8 +111,8 @@ def safety_pre(applicant, context=None):
     for key, label in (("existing_emi", "existing EMI"), ("active_loans_outstanding", "existing debt")):
         if a.get(key) is not None and a[key] < 0:
             bad.append(label)
-    if a.get("age") is not None and not 18 <= a["age"] <= 100:
-        bad.append("age (18 to 100)")
+    if a.get("age") is not None and not POLICY["age_min"] <= a["age"] <= POLICY["age_max"]:
+        bad.append(f"age ({POLICY['age_min']} to {POLICY['age_max']})")
     checks.append(_check("validated", "Financial values validated", "fail" if bad else "pass",
                          f"Please check: {', '.join(bad)}." if bad else "Every value is within a sensible range."))
 
@@ -154,7 +157,7 @@ STATUS_HI = {
 RISK_HI = {"low": "kam", "medium": "madhyam", "high": "zyada"}
 
 
-def spoken(status, risk_band=None, affordable=None, requested_emi=None, needed=None):
+def spoken(status, risk_band=None, affordable=None, requested_emi=None, needed=None, emi_range=None):
     """Short, plain sentences for 'Listen to this result' (read by Gnani Timbre)."""
     en = [STATUS_TEXT[status]]
     hi = [STATUS_HI[status]]
@@ -165,7 +168,12 @@ def spoken(status, risk_band=None, affordable=None, requested_emi=None, needed=N
         if affordable is not None:
             en.append(f"Your estimated affordable EMI for a new loan is {inr(affordable)} a month.")
             hi.append(f"Naye loan ke liye aapki anumanit affordable EMI {inr(affordable)} mahina hai.")
-        if requested_emi is not None:
+        if emi_range is not None:
+            lo, hi_ = (inr(x) for x in emi_range)
+            en.append(f"The loan you asked for would have an EMI of about {lo} to {hi_} a month, depending on the "
+                      "lender's interest rate.")
+            hi.append(f"Aapke maange hue loan ki EMI lagbhag {lo} se {hi_} mahina hogi, lender ke byaaj ke hisaab se.")
+        elif requested_emi is not None:
             en.append(f"The loan you asked for would have an EMI of about {inr(requested_emi)} a month.")
             hi.append(f"Aapke maange hue loan ki EMI lagbhag {inr(requested_emi)} mahina hogi.")
         if risk_band:
@@ -174,6 +182,15 @@ def spoken(status, risk_band=None, affordable=None, requested_emi=None, needed=N
     en.append("This is a pre-screening estimate, not a lender's decision.")
     hi.append("Yeh sirf pre-screening ka anumaan hai, lender ka faisla nahi.")
     return {"en": " ".join(en), "hi": " ".join(hi)}
+
+
+def _emi_figure(amount, tenure, emi):
+    """An EMI as shown: the range across the policy's interest range; `value` is the assumed-rate EMI the
+    rules use."""
+    lo, hi = scoring.emi_range(amount, tenure)
+    return {"value": int(round(emi)), "low": int(round(lo)), "high": int(round(hi)),
+            "text": scoring.emi_range_text(amount, tenure) + "/month", "source": "calc_range",
+            "source_text": SOURCES["calc_range"]}
 
 
 def failed(checks):
@@ -388,8 +405,8 @@ def build(applicant, risk, afford, decision, policy, model_up, model_down, check
                  "source_text": SOURCES["model"], "help": HELP["risk"]},
         "affordability": {**_num(max_new_emi, "rules", suffix="/month"), "help": HELP["affordability"]},
         "requested_loan": _num(requested, "you"),
-        "requested_emi": {**_num(req_emi, "calc", suffix="/month"), "help": HELP["requested_emi"]},
-        "spoken": spoken(status, risk["band"], max_new_emi, req_emi),
+        "requested_emi": {**_emi_figure(requested, tenure, req_emi), "help": HELP["requested_emi"]},
+        "spoken": spoken(status, risk["band"], max_new_emi, req_emi, emi_range=scoring.emi_range(requested, tenure)),
         "suggested_range": suggested,
         "picture": {
             "monthly_income": _num(income, "you"),

@@ -11,6 +11,7 @@ caller's question and a deterministic conversation summary. No LLM writes any pa
 import time
 import uuid
 
+import normalize as norm
 from scoring import DEFAULT_TENURE, inr
 
 PROTOTYPE_NOTE = ("Prototype: this case is saved in the Loan-Saathi dashboard for a loan advisor to pick up. "
@@ -86,6 +87,10 @@ def build(applicant, answers=None, statuses=None, result=None, simulation=None, 
             v = a.get("age")
         text = _fmt("years", v) if key in ("years_in_work", "age") and v is not None else (
             str(v) if v is not None else "Not given")
+        if key == "work" and v:  # category first, then the caller's own words as evidence
+            text = norm.work_label(v)
+            if norm.work_category(v) != "other":
+                text += f' \u2014 "{v}"'
         who.append({"label": label, "text": text})
 
     assessed = None

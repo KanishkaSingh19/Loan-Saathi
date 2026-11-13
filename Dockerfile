@@ -23,6 +23,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=app src/ src/
+COPY --chown=app config/ config/
 COPY --chown=app models/voice_model.txt models/voice_model_meta.json models/
 # Evidence for the Evaluation Lab: metrics, validation and benchmark reports, the extraction cases.
 COPY --chown=app models/metrics.json models/validation_report.json models/comparison.json models/experiment_features.json models/

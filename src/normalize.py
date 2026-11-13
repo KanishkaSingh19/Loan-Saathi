@@ -159,7 +159,11 @@ def number(v):
 
 
 def years(v):
-    """'6 mahine' -> 0.5, '2 saal' -> 2, '18 months' -> 1.5."""
+    """'6 mahine' -> 0.5, '2 saal' -> 2, '18 months' -> 1.5, 'since 2019' -> years since 2019."""
+    m = re.search(r"\b(19[5-9]\d|20\d\d)\b", str(v or ""))
+    if m and re.search(r"since|from|se\b|से", str(v), re.I):
+        import datetime
+        return float(max(0, datetime.date.today().year - int(m.group(1))))
     n = number(v)
     if n is None:
         return None
@@ -202,39 +206,89 @@ def boolean(v):
 
 
 # (keywords, income_type, occupation). First match wins, so order matters.
+# (keywords, income_type, occupation, category). First match wins, so order matters. income_type and
+# occupation are the model's own categories (models/voice_model_meta.json); `category` is what the caller
+# hears back. Rows and model values are unchanged from before categories existed; new keywords (Devanagari,
+# street vendors) only add mappings where the default ("Working", no occupation) applied.
 _WORK = [
-    (("retired", "pension", "retire"), "Pensioner", None),
-    (("student", "padhai kar", "college me", "studying"), "Student", None),
-    (("unemployed", "berozgar", "no job", "naukri nahi", "kaam nahi"), "Unemployed", None),
-    (("government", "govt", "sarkari", "railway", "police", "army", "psu"), "State servant", None),
+    (("retired", "pension", "retire", "रिटायर", "पेंशन"), "Pensioner", None, "retired"),
+    (("student", "padhai kar", "college me", "studying", "छात्र", "पढ़ाई"), "Student", None, "student"),
+    (("unemployed", "berozgar", "no job", "naukri nahi", "kaam nahi", "बेरोज़गार", "बेरोजगार", "काम नहीं"),
+     "Unemployed", None, "unemployed"),
+    (("government", "govt", "sarkari", "railway", "police", "army", "psu", "सरकारी", "रेलवे", "पुलिस"),
+     "State servant", None, "government"),
     (("kirana", "dukaan", "dukan", "shop owner", "own shop", "my shop", "business", "vyapar", "vyapaar",
-      "self employed", "self-employed", "trader", "merchant", "khud ka"), "Commercial associate", None),
-    (("driver", "auto", "taxi", "truck", "cab", "rickshaw", "delivery"), "Working", "Drivers"),
-    (("teacher", "tuition", "school", "professor"), "Working", "Core staff"),
-    (("nurse", "doctor", "hospital", "medical", "pharma", "asha", "anm"), "Working", "Medicine staff"),
-    (("security", "guard", "watchman", "chowkidar"), "Working", "Security staff"),
-    (("cook", "chef", "kitchen", "khana banana"), "Working", "Cooking staff"),
-    (("clean", "safai", "maid", "housekeeping", "sweeper"), "Working", "Cleaning staff"),
-    (("waiter", "hotel", "restaurant", "dhaba", "bar"), "Working", "Waiters/barmen staff"),
-    (("salesman", "sales", "shop assistant", "counter", "marketing"), "Working", "Sales staff"),
-    (("accountant", "accounts", "ca ", "bookkeeping"), "Working", "Accountants"),
-    (("manager", "supervisor", "team lead"), "Working", "Managers"),
-    (("software", "it ", "computer", "developer", "programmer"), "Working", "IT staff"),
-    (("engineer", "technician", "electrician", "mechanic", "plumber"), "Working", "High skill tech staff"),
-    (("property", "real estate", "broker", "dealer"), "Working", "Realty agents"),
-    (("clerk", "office", "data entry", "receptionist", "secretary"), "Working", "Secretaries"),
-    (("beauty", "salon", "parlour", "tailor", "darzi", "barber"), "Working", "Private service staff"),
-    (("helper", "peon", "chaprasi"), "Working", "Low-skill Laborers"),
-    (("farmer", "kisan", "kheti", "farm", "agri", "labour", "labor", "mazdoor", "majdoor",
-      "construction", "factory", "worker", "mill"), "Working", "Laborers"),
-    (("job", "naukri", "salary", "private", "company", "salaried"), "Working", None),
+      "self employed", "self-employed", "trader", "merchant", "khud ka", "sabzi", "sabji", "thela", "rehri",
+      "vendor", "phal bech", "किराना", "दुकान", "व्यापार", "सब्ज़ी", "सब्जी", "ठेला"),
+     "Commercial associate", None, "self_employed"),
+    (("driver", "auto", "taxi", "truck", "cab", "rickshaw", "delivery", "ड्राइवर", "ऑटो", "टैक्सी", "रिक्शा"),
+     "Working", "Drivers", "driver"),
+    (("teacher", "tuition", "school", "professor", "शिक्षक", "टीचर"), "Working", "Core staff", "salaried"),
+    (("nurse", "doctor", "hospital", "medical", "pharma", "asha", "anm"), "Working", "Medicine staff", "salaried"),
+    (("security", "guard", "watchman", "chowkidar", "चौकीदार"), "Working", "Security staff", "salaried"),
+    (("cook", "chef", "kitchen", "khana banana"), "Working", "Cooking staff", "salaried"),
+    (("clean", "safai", "maid", "housekeeping", "sweeper"), "Working", "Cleaning staff", "daily_wage"),
+    (("waiter", "hotel", "restaurant", "dhaba", "bar"), "Working", "Waiters/barmen staff", "salaried"),
+    (("salesman", "sales", "shop assistant", "counter", "marketing"), "Working", "Sales staff", "salaried"),
+    (("accountant", "accounts", "ca ", "bookkeeping"), "Working", "Accountants", "salaried"),
+    (("manager", "supervisor", "team lead"), "Working", "Managers", "salaried"),
+    (("software", "it ", "computer", "developer", "programmer"), "Working", "IT staff", "salaried"),
+    (("engineer", "technician", "electrician", "mechanic", "plumber", "मिस्त्री"), "Working", "High skill tech staff",
+     "skilled"),
+    (("property", "real estate", "broker", "dealer"), "Working", "Realty agents", "self_employed"),
+    (("clerk", "office", "data entry", "receptionist", "secretary"), "Working", "Secretaries", "salaried"),
+    (("beauty", "salon", "parlour", "tailor", "darzi", "barber", "दर्जी"), "Working", "Private service staff",
+     "skilled"),
+    (("helper", "peon", "chaprasi"), "Working", "Low-skill Laborers", "daily_wage"),
+    (("farmer", "kisan", "kheti", "farm", "agri", "किसान", "खेती"), "Working", "Laborers", "farmer"),
+    (("labour", "labor", "mazdoor", "majdoor", "construction", "factory", "worker", "mill", "मज़दूर", "मजदूर",
+      "दिहाड़ी", "dihadi"), "Working", "Laborers", "daily_wage"),
+    (("job", "naukri", "salary", "private", "company", "salaried", "नौकरी", "सैलरी"), "Working", None, "salaried"),
 ]
+# What the caller hears back for each category: (English, Hinglish).
+WORK_CATEGORIES = {
+    "self_employed": ("Shop owner / self-employed", "Apna kaam / dukaan"),
+    "salaried": ("Salaried job", "Naukri (salary)"),
+    "government": ("Government job", "Sarkari naukri"),
+    "driver": ("Driver", "Driver"),
+    "farmer": ("Farmer", "Kisan"),
+    "daily_wage": ("Daily-wage worker", "Dihadi mazdoori"),
+    "skilled": ("Skilled worker", "Hunar ka kaam"),
+    "retired": ("Retired", "Retired"),
+    "student": ("Student", "Padhai"),
+    "unemployed": ("Not working right now", "Abhi kaam nahi"),
+    "other": ("Other work", "Doosra kaam"),
+}
+
+
+def work_category(v):
+    """Free-text job description -> category key (see WORK_CATEGORIES); None for a blank answer."""
+    if _blank(v):
+        return None
+    s = f" {str(v).lower()} "
+    for keys, _, _, category in _WORK:
+        if any(k in s for k in keys):
+            return category
+    return "other"
+
+
+def work_label(v, lang="en"):
+    """The category the caller hears back: 'Shop owner / self-employed', or 'Other work (...)' with their words."""
+    key = work_category(v)
+    if key is None:
+        return ""
+    en, hi = WORK_CATEGORIES[key]
+    label = hi if lang == "hi" else en
+    if key == "other":
+        words = " ".join(str(v).split()[:6])
+        return f"{label} ({words})"
+    return label
 
 
 def work_known(v):
     """True when the text names a kind of work we recognise (not just any words)."""
     s = f" {str(v or '').lower()} "
-    return any(k in s for keys, _, _ in _WORK for k in keys)
+    return any(k in s for keys, _, _, _ in _WORK for k in keys)
 
 
 def work(v):
@@ -242,7 +296,7 @@ def work(v):
     if _blank(v):
         return None, None
     s = f" {str(v).lower()} "
-    for keys, income_type, occupation in _WORK:
+    for keys, income_type, occupation, _ in _WORK:
         if any(k in s for k in keys):
             return income_type, occupation
     return "Working", None

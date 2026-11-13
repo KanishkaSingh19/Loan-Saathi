@@ -3,6 +3,7 @@
     POST /v1/prescreen   On-Call action: caller's answers in, decision + reply hint out
     POST /v1/post-call   Post-call trigger: stores whatever Gnani sends about the call
     POST /v1/converse    Browser web call: one transcribed turn in, reply out (Gemini + our model)
+    POST /v1/offer-check Check an offer the borrower got: real yearly rate, total cost, fits their income?
     GET  /v1/applications   Recent pre-screens (for the dashboard)
     GET  /dashboard/     Live React dashboard (built from dashboard/; asks for the webhook key)
     GET  /health
@@ -46,7 +47,10 @@ import advisor  # noqa: E402
 import assessment  # noqa: E402
 import converse  # noqa: E402
 import evaluation  # noqa: E402
+import llm as llm_mod  # noqa: E402
 import normalize as norm  # noqa: E402
+import offer as offer_mod  # noqa: E402
+from policy import POLICY  # noqa: E402
 import scoring  # noqa: E402
 import simulate  # noqa: E402
 import spoken  # noqa: E402
@@ -75,6 +79,16 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 # scripted questions and our own parser.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
+# Groq (OpenAI-compatible) is tried first when its key is set; Gemini is the fallback; our parser is last.
+# GROQ_DISABLED=1 keeps a configured key unused (the test suites set it: live calls are slow, rate-limited
+# and not deterministic). An empty GROQ_API_KEY can't do that on Windows, where "" unsets the variable for
+# child processes and .env's key comes back.
+GROQ_API_KEY = "" if os.environ.get("GROQ_DISABLED", "").strip() == "1" else os.environ.get("GROQ_API_KEY", "").strip()
+# One or more Groq models, tried in order. Each has its own free-tier rate limit (8,000 tokens a minute on
+# the free plan, a few extraction turns), so a second model is extra capacity before Gemini and the parser.
+GROQ_MODELS = [m.strip() for m in (os.environ.get("GROQ_MODEL", "").strip()
+                                   or "qwen/qwen3.8-27b,openai/gpt-oss-20b").split(",") if m.strip()]
+GROQ_MODEL = GROQ_MODELS[0]
 # Comma-separated origins allowed to call the API from a browser, e.g. the Vercel dashboard.
 ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 # Where new advisor cases are announced: any URL that accepts a JSON POST, e.g. a Slack or Microsoft
@@ -118,6 +132,20 @@ class SimulateRequest(BaseModel):
     loan_amount: float | None = None
     tenure_months: float | None = None
     scenarios: bool = False
+
+
+class OfferCheckRequest(BaseModel):
+    """An offer the borrower got. Either `text` ("2 lakh, 24 mahine, EMI 11,000, fee 2000") or the fields;
+    fields win. Values may be spoken forms ("2 lakh", "2 saal")."""
+    text: str = Field(default="", max_length=1000)
+    loan_amount: str | float | None = None
+    tenure_months: str | float | None = None
+    emi: str | float | None = None
+    processing_fee: str | float | None = None
+    quoted_rate: float | None = Field(default=None, ge=0, le=100, description="percent a year, if the offer says")
+    monthly_income: str | float | None = None
+    existing_emi: str | float | None = None
+    language: str = Field(default="en", max_length=5)
 
 
 class AdvisorRequest(BaseModel):
@@ -392,7 +420,7 @@ _TIPS_HI = {
 
 # ---------- core ----------
 
-DEBT_LIMIT_MONTHS = 24  # see decide(): more owed than this many months of income -> not eligible now
+DEBT_LIMIT_MONTHS = POLICY["debt_limit_months"]  # decide(): owing more months of income -> not eligible now
 
 def build_applicant(body):
     income_type, occupation = norm.work(body.get("work"))
@@ -476,6 +504,12 @@ def _reasons(items, direction):
     return out
 
 
+def _emi_hint(amount, tenure, emi):
+    """'₹10,000 (₹9,600 to ₹10,500 depending on the lender's rate)': the agent may say either."""
+    lo, hi = scoring.emi_range(amount, tenure)
+    return f"{inr(emi)} ({inr(lo)} to {inr(hi)} depending on the lender's interest rate)"
+
+
 def decide(applicant, risk=None, context=None):
     """Model risk + the affordability rule + the debt rule -> decision. `risk` is a precomputed
     scoring.score() result (the web call runs risk and affordability as separate steps).
@@ -541,13 +575,14 @@ def decide(applicant, risk=None, context=None):
                 + "Encourage them to try again later and thank them warmly.")
     elif afford["fits_request"]:
         offer_amount, offer_emi = requested, afford["emi"]
+        emi_text = _emi_hint(requested, tenure, offer_emi)
         if band == "low":
             decision = "pre_approved"
             hint = (f"Good news: based on this pre-screening they look eligible for further review for "
-                    f"{inr(requested)} over {tenure} months, EMI about {inr(offer_emi)} per month. ")
+                    f"{inr(requested)} over {tenure} months, EMI about {emi_text} per month. ")
         else:
             decision = "needs_review"
-            hint = (f"Their request for {inr(requested)} over {tenure} months (EMI about {inr(offer_emi)}) "
+            hint = (f"Their request for {inr(requested)} over {tenure} months (EMI about {emi_text}) "
                     "looks possible, and a loan advisor would need to review it further. ")
         hint += (f"Strengths: {'; '.join(downs)}. " if downs else "")
         hint += ("Next step: keep Aadhaar, PAN and 3 months of bank statements ready for verification. "
@@ -557,7 +592,7 @@ def decide(applicant, risk=None, context=None):
         offer_amount, offer_emi = afford["loan_amount"], afford["emi"]
         hint = (f"Explain that {inr(requested)} would make their total EMIs more than half of their income, "
                 f"which is risky for them. Offer {inr(offer_amount)} over {tenure} months instead, "
-                f"EMI about {inr(offer_emi)} per month, and ask if that works. "
+                f"EMI about {_emi_hint(offer_amount, tenure, offer_emi)} per month, and ask if that works. "
                 + (f"Strengths: {'; '.join(downs)}. " if downs else "")
                 + "Say clearly this is a pre-screening, not a final approval.")
 
@@ -569,6 +604,10 @@ def decide(applicant, risk=None, context=None):
         "offer_amount_text": inr(offer_amount) if offer_amount else "",
         "offer_emi": int(offer_emi),
         "offer_emi_text": inr(offer_emi) if offer_emi else "",
+        # The EMI across the policy's interest range (a lender's real rate isn't known yet); flat for Agent Builder.
+        "offer_emi_low": int(round(scoring.emi_range(offer_amount, tenure)[0])) if offer_emi else 0,
+        "offer_emi_high": int(round(scoring.emi_range(offer_amount, tenure)[1])) if offer_emi else 0,
+        "offer_emi_range_text": scoring.emi_range_text(offer_amount, tenure) if offer_emi else "",
         "tenure_months": int(tenure),
         "reasons_against": "; ".join(ups),
         "reasons_for": "; ".join(downs),
@@ -771,6 +810,33 @@ def simulate_for(applicant, loan=None, tenure=None, context=None, with_scenarios
         out["simulation"] = sim
         out["compare"] = simulate.compare(original, sim)
     return out
+
+
+@app.post("/v1/offer-check")
+def offer_check_route(body: OfferCheckRequest, request: Request, x_webhook_key: str = Header(default="")):
+    """Check an offer the borrower got: effective yearly rate (fees included), total cost, and whether the EMI
+    fits their income. An estimate; never names a lender; nothing is stored. A caller's own income and EMIs
+    from their call are used when the request doesn't give them."""
+    role, owner = _need_call(request, x_webhook_key, "turn")
+    parsed = offer_mod.parse(body.text) if body.text else {}
+
+    def pick(field, how):
+        v = getattr(body, field, None)
+        if v not in (None, ""):
+            return how(v)
+        return parsed.get(field)
+    answers = (owner or {}).get("answers", {})
+    income = norm.number(body.monthly_income) if body.monthly_income not in (None, "") else answers.get("monthly_income")
+    existing = norm.number(body.existing_emi) if body.existing_emi not in (None, "") else         answers.get("other_loans_emi") or 0
+    quoted = body.quoted_rate / 100 if body.quoted_rate is not None else parsed.get("quoted_rate")
+    try:
+        result = offer_mod.check(pick("loan_amount", norm.number), pick("tenure_months", norm.months),
+                                 pick("emi", norm.number), pick("processing_fee", norm.number), quoted,
+                                 monthly_income=income, existing_emi=existing)
+    except offer_mod.OfferError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    lang = "hi" if body.language == "hi" else "en"
+    return {**result, "reply": result["summary"][lang]}
 
 
 @app.post("/v1/simulate")
@@ -1063,6 +1129,18 @@ def list_advisor_cases(limit: int = 50, x_webhook_key: str = Header(default=""))
     return {"cases": [json.loads(p) for (p,) in rows]}
 
 
+def llm_router():
+    """Groq first (if GROQ_API_KEY), then Gemini (if GEMINI_API_KEY), sharing one response cache. Built per
+    turn from the current settings, so changing a key needs no restart."""
+    providers = []
+    if GROQ_API_KEY:
+        providers += [llm_mod.GroqProvider(GROQ_API_KEY, m) for m in GROQ_MODELS]
+    if GEMINI_API_KEY:
+        providers.append(llm_mod.GeminiProvider(GEMINI_API_KEY, GEMINI_MODEL,
+                                                send=lambda *a: converse._gemini(*a)))
+    return llm_mod.Router(providers, deadline_s=converse.LLM_DEADLINE_S, cache=converse._LLM_CACHE)
+
+
 async def run_turn(s, text, action, defer, channel="web-call"):
     """One caller turn through the web-call state machine (any channel). `defer(fn, *args)` runs the
     storage writes later (a FastAPI background task, or directly from a background job)."""
@@ -1080,6 +1158,7 @@ async def run_turn(s, text, action, defer, channel="web-call"):
     try:
         return await converse.turn(s, text, decide, build_applicant, save, GEMINI_API_KEY, GEMINI_MODEL,
                                    action=action, assess=scoring.score, safety=assessment.safety_pre,
+                                   llm=llm_router(),
                                    simulator=lambda a, loan=None, tenure=None, scen=False:
                                    simulate_for(a, loan, tenure, WEB_CONTEXT, scen),
                                    advisor=lambda sess, question: save_case(case_from_session(sess, question)))

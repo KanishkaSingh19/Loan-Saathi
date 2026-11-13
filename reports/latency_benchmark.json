@@ -1,27 +1,27 @@
 {
- "ts": 1794252204.8041325,
+ "ts": 1794501106.4733636,
  "python": "3.12.10",
  "turns": 13,
  "method": "Scripted Hinglish caller voiced by Gnani TTS, streamed in real time to /ws/stt; client on the same machine as the server; Gnani over the public internet. Measures the server pipeline, not a phone line or a real caller.",
  "summary": {
   "speech_end_to_transcript_ms": {
-   "median": 726,
-   "p90": 960,
+   "median": 722,
+   "p90": 880,
    "n": 13
   },
   "transcript_to_reply_ms": {
-   "median": 1642,
-   "p90": 2008,
+   "median": 814,
+   "p90": 2035,
    "n": 13
   },
   "reply_to_first_audio_ms": {
-   "median": 600,
-   "p90": 661,
+   "median": 549,
+   "p90": 664,
    "n": 13
   },
   "speech_end_to_first_audio_ms": {
-   "median": 3090,
-   "p90": 3414,
+   "median": 2169,
+   "p90": 3362,
    "n": 13
   }
  },
@@ -29,119 +29,119 @@
   {
    "said": "Mujhe teen lakh rupaye ka loan chahiye.",
    "heard": "मुझे ₹3,00,000 का लोन चाहिए।",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 960,
-   "transcript_to_reply_ms": 1542,
-   "reply_to_first_audio_ms": 607,
-   "speech_end_to_first_audio_ms": 3109
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 880,
+   "transcript_to_reply_ms": 777,
+   "reply_to_first_audio_ms": 743,
+   "speech_end_to_first_audio_ms": 2400
   },
   {
    "said": "Do saal mein chukaunga.",
    "heard": "2 साल में चुकाऊंगा",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 831,
-   "transcript_to_reply_ms": 1668,
-   "reply_to_first_audio_ms": 579,
-   "speech_end_to_first_audio_ms": 3078
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 759,
+   "transcript_to_reply_ms": 745,
+   "reply_to_first_audio_ms": 549,
+   "speech_end_to_first_audio_ms": 2053
   },
   {
    "said": "Meri salary chaalis hazaar hai.",
    "heard": "मेरी सैलरी 40,000 है।",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 688,
-   "transcript_to_reply_ms": 1288,
-   "reply_to_first_audio_ms": 475,
-   "speech_end_to_first_audio_ms": 2451
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 673,
+   "transcript_to_reply_ms": 733,
+   "reply_to_first_audio_ms": 649,
+   "speech_end_to_first_audio_ms": 2055
   },
   {
    "said": "Meri kirana ki dukaan hai.",
    "heard": "मेरी किराना की दुकान है।",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 713,
-   "transcript_to_reply_ms": 1577,
-   "reply_to_first_audio_ms": 623,
-   "speech_end_to_first_audio_ms": 2913
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 722,
+   "transcript_to_reply_ms": 786,
+   "reply_to_first_audio_ms": 525,
+   "speech_end_to_first_audio_ms": 2033
   },
   {
    "said": "Das saal se.",
    "heard": "10 साल से",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 662,
-   "transcript_to_reply_ms": 1817,
-   "reply_to_first_audio_ms": 661,
-   "speech_end_to_first_audio_ms": 3141
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 784,
+   "transcript_to_reply_ms": 751,
+   "reply_to_first_audio_ms": 629,
+   "speech_end_to_first_audio_ms": 2163
   },
   {
    "said": "Ek loan chal raha hai.",
    "heard": "एक लोन चल रहा है।",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 869,
-   "transcript_to_reply_ms": 1642,
-   "reply_to_first_audio_ms": 534,
-   "speech_end_to_first_audio_ms": 3045
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 782,
+   "transcript_to_reply_ms": 2035,
+   "reply_to_first_audio_ms": 544,
+   "speech_end_to_first_audio_ms": 3362
   },
   {
    "said": "Aath hazaar mahina EMI hai.",
    "heard": "8,000 महीना ई एम आई है",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 977,
-   "transcript_to_reply_ms": 1568,
-   "reply_to_first_audio_ms": 640,
-   "speech_end_to_first_audio_ms": 3185
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 506,
+   "transcript_to_reply_ms": 772,
+   "reply_to_first_audio_ms": 664,
+   "speech_end_to_first_audio_ms": 1943
   },
   {
    "said": "Dedh lakh baaki hai.",
    "heard": "डेढ़ लाख बाकी है।",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 726,
-   "transcript_to_reply_ms": 2196,
-   "reply_to_first_audio_ms": 627,
-   "speech_end_to_first_audio_ms": 3549
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 939,
+   "transcript_to_reply_ms": 2269,
+   "reply_to_first_audio_ms": 656,
+   "speech_end_to_first_audio_ms": 3864
   },
   {
    "said": "Do loan liye hain pehle.",
    "heard": "2 लोन लिए हैं पहले",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 854,
-   "transcript_to_reply_ms": 1542,
-   "reply_to_first_audio_ms": 600,
-   "speech_end_to_first_audio_ms": 2996
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 569,
+   "transcript_to_reply_ms": 1430,
+   "reply_to_first_audio_ms": 540,
+   "speech_end_to_first_audio_ms": 2539
   },
   {
    "said": "Nahi.",
    "heard": "नहीं",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 709,
-   "transcript_to_reply_ms": 1898,
-   "reply_to_first_audio_ms": 578,
-   "speech_end_to_first_audio_ms": 3185
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 492,
+   "transcript_to_reply_ms": 835,
+   "reply_to_first_audio_ms": 483,
+   "speech_end_to_first_audio_ms": 1811
   },
   {
    "said": "Nahi.",
    "heard": "नहीं",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 697,
-   "transcript_to_reply_ms": 1522,
-   "reply_to_first_audio_ms": 573,
-   "speech_end_to_first_audio_ms": 2792
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 720,
+   "transcript_to_reply_ms": 1252,
+   "reply_to_first_audio_ms": 456,
+   "speech_end_to_first_audio_ms": 2428
   },
   {
    "said": "Apna ghar hai.",
    "heard": "अपना घर है।",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 907,
-   "transcript_to_reply_ms": 2008,
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 718,
+   "transcript_to_reply_ms": 1162,
    "reply_to_first_audio_ms": 499,
-   "speech_end_to_first_audio_ms": 3414
+   "speech_end_to_first_audio_ms": 2378
   },
   {
    "said": "Paintees saal.",
-   "heard": "35 साल।",
-   "llm": "gemini",
-   "speech_end_to_transcript_ms": 602,
-   "transcript_to_reply_ms": 1725,
-   "reply_to_first_audio_ms": 763,
-   "speech_end_to_first_audio_ms": 3090
+   "heard": "35 साल",
+   "llm": "groq",
+   "speech_end_to_transcript_ms": 728,
+   "transcript_to_reply_ms": 814,
+   "reply_to_first_audio_ms": 627,
+   "speech_end_to_first_audio_ms": 2169
   }
  ]
 }

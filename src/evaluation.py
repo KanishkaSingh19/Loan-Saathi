@@ -129,9 +129,17 @@ SAFEGUARDS = [
     {"name": "Debt-over-limit rule", "where": ("server", "DEBT_LIMIT_MONTHS"),
      "what": "Owing more than 24 months of income on other loans means 'not right now', whatever the model "
              "says."},
-    {"name": "Language-model fallback", "where": ("converse", "GEMINI_TIMEOUT"),
-     "what": "If Gemini is slow (hard deadline) or unavailable, Saathi's own parser and scripted questions carry "
-             "the call."},
+    {"name": "Language-model fallback", "where": ("converse", "LLM_DEADLINE_S"),
+     "what": "Groq first, then Gemini, under one hard deadline per use; if neither answers in time, Saathi's own "
+             "parser and scripted questions carry the call. A turn waits on the LLM at most once."},
+    {"name": "Shorter call, same decision", "where": ("converse", "_model_question"),
+     "what": "Questions only the risk model reads are skipped once no answer to them could move the risk band "
+             "(every possible answer is scored). Skipped questions are listed as not needed; a changed rule "
+             "answer brings them back."},
+    {"name": "Identifiers masked before any LLM", "where": ("pii", "mask"),
+     "what": "Phone, Aadhaar, PAN, IFSC, account and card numbers, email, date of birth, PIN code and a name the "
+             "caller gives are masked before any text reaches Groq or Gemini; amounts and counts pass unchanged. "
+             "A quote containing a masked span is never stored."},
     {"name": "Assessment failure recovery", "where": ("converse", "_enter_recovery"),
      "what": "If the assessment fails (for example the risk model can't load), the call goes to error recovery; "
              "no result is made up."},
@@ -206,10 +214,16 @@ CATALOG = [
         ("Live streaming speech-to-text", [("test_voice.py", "live STT relay")]),
         ("Streaming replies (speech starts on the first chunk)", [("test_voice.py", "streaming TTS")]),
         ("Numbers spoken naturally", [("test_voice.py", "numbers are spoken the way people say them")]),
+        ("Switching language mid-call", [("test_voice.py", "'talk in English' (either script)")]),
         ("Latency recorded from real calls", [("test_voice.py", "measured browser turns are stored")]),
         ("Speech-to-text failure", [("test_evaluation.py", "speech-to-text failures"),
                                     ("test_advisor.py", "clear recovery: repeat prompts, server glitches")]),
-        ("Language-model fallback", [("test_safety.py", "a slow Gemini is cut off at the deadline")]),
+        ("Language-model fallback", [("test_safety.py", "a slow Gemini is cut off at the deadline"),
+                                     ("tests/test_llm.py", None)]),
+        ("Identifiers masked before the language model", [("tests/test_pii.py", None)]),
+        ("Shorter call with unchanged decisions", [("tests/test_short_call.py", None)]),
+        ("Check an offer you got", [("tests/test_offer.py", None)]),
+        ("EMI shown as a range of interest rates", [("tests/test_emi_range.py", None)]),
         ("Misunderstood answers", [("test_advisor.py", "recovery offers the advisor"),
                                    ("test_states.py", "live-run regressions")]),
         ("WhatsApp: text, buttons and voice notes", [("test_whatsapp.py", "a full pre-screen over WhatsApp"),
@@ -223,7 +237,7 @@ CATALOG = [
 
 
 def _suite_text(name):
-    p = ROOT / (name if name.startswith("tests/") else f"src/{name}")
+    p = ROOT / (name if name.startswith("tests/") else f"tests/suites/{name}")  # the end-to-end suites
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
@@ -283,12 +297,12 @@ def failure_cases():
                  "which would present borrowing more as safer.",
          "fix": "The simulator never shows a bigger loan as lower risk: it says 'not recalculated' and keeps the "
                 "original estimate.",
-         "measured_after": "Covered by src/test_simulate.py.", "still": ""},
+         "measured_after": "Covered by tests/suites/test_simulate.py.", "still": ""},
         {"title": "Two spoken amounts were silently reduced to the first",
          "found": "Found while building the What if? screen",
          "what": "'Agar 2 ya 3 lakh loon' simulated ₹2 lakh without asking; a bare '40' skipped to next steps.",
          "fix": "Both are now asked about; nothing is simulated until one amount is clear.",
-         "measured_after": "Covered by src/test_simulate.py.", "still": ""},
+         "measured_after": "Covered by tests/suites/test_simulate.py.", "still": ""},
         {"title": "The extraction benchmark found parser bugs on its first run",
          "found": "Extraction benchmark (tests/extraction_cases.json, parser only)",
          "what": "'six months' was stored as 72 months; 'never taken one' as 1 past loan; 'do loan liye hain pehle' "
@@ -367,6 +381,15 @@ def _stats(values):
     return {"median": round(median), "p90": v[min(len(v) - 1, int(round(0.9 * (len(v) - 1))))], "n": len(v)}
 
 
+def test_env():
+    """The suites' environment: no live Groq calls (they are slow, rate-limited and not deterministic). Set
+    LIVE_LLM_TESTS=1 to let suites use the real GROQ_API_KEY from .env."""
+    env = dict(os.environ)
+    if not env.get("LIVE_LLM_TESTS"):
+        env["GROQ_DISABLED"] = "1"
+    return env
+
+
 def measurements(live=None):
     """Latency (scripted benchmark and real browser turns) and extraction accuracy (parser and Gemini)."""
     stages = [("speech_end_to_first_audio_ms", "Caller stops → first audio of the reply"),
@@ -378,12 +401,19 @@ def measurements(live=None):
     if bench:
         latency["benchmark"] = {"ts": bench["ts"], "turns": bench["turns"], "method": bench["method"],
                                 "summary": bench["summary"], "source": "reports/latency_benchmark.json",
-                                "gemini_turns": sum(1 for r in bench["rows"] if r.get("llm") == "gemini")}
+                                "gemini_turns": sum(1 for r in bench["rows"] if r.get("llm") == "gemini"),
+                                "llm_turns": {p: sum(1 for r in bench["rows"] if r.get("llm") == p)
+                                              for p in sorted({r.get("llm") or "fallback" for r in bench["rows"]})}}
+    stall = _report("stall_benchmark.json")
+    if stall:  # the language model hanging (mocked): how long a turn waits before the parser answers
+        latency["stall"] = {label: {"turn_ms": r["turn_ms"], "ts": r["ts"]} for label, r in stall.items()}
+        latency["stall_source"] = "reports/stall_benchmark.json (src/bench_stall.py)"
     live = [r for r in (live or []) if r.get("mode") == "live"]
     latency["browser"] = ({k: _stats(r.get(k) for r in live) for k, _ in stages} | {"turns": len(live)}
                           if live else None)
     extraction = {}
-    for mode, name in (("parser", "extraction_benchmark.json"), ("gemini", "extraction_benchmark_gemini.json")):
+    for mode, name in (("parser", "extraction_benchmark.json"), ("parser_heldout", "extraction_benchmark_heldout.json"),
+                       ("gemini", "extraction_benchmark_gemini.json")):
         r = _report(name)
         if r:
             extraction[mode] = {"ts": r["ts"], "cases": r["cases"], "correct": r["correct"], "by_kind": r["by_kind"],
@@ -432,23 +462,28 @@ def _git_commit():
 
 def run(out=RUN_FILE):
     suites, skipped = {}, []
-    for p in sorted((ROOT / "src").glob("test_*.py")):
+    for p in sorted((ROOT / "tests" / "suites").glob("test_*.py")):
         if p.name == "test_postgres.py" and not os.environ.get("DATABASE_URL", "").strip():
             skipped.append({"suite": p.name, "why": "needs a real DATABASE_URL"})
             continue
         t0 = time.time()
         r = subprocess.run([sys.executable, "-I", "-X", "utf8", "-W", "ignore", str(p)], capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=900, cwd=ROOT)
+                           text=True, encoding="utf-8", errors="replace", timeout=900, cwd=ROOT, env=test_env())
         lines = [ln.strip() for ln in r.stdout.splitlines() if OK_LINE.match(ln.strip())]
         suites[p.name] = {"passed": r.returncode == 0, "ok_lines": lines, "seconds": round(time.time() - t0, 1)}
         print(f"{'PASS' if r.returncode == 0 else 'FAIL'} {p.name} ({len(lines)} checks)", flush=True)
-    t0 = time.time()
-    r = subprocess.run([sys.executable, "-m", "pytest", "-q", "tests/test_normalize.py"], capture_output=True,
-                       text=True, encoding="utf-8", errors="replace", timeout=600, cwd=ROOT)
-    m = re.search(r"(\d+) passed", r.stdout)
-    suites["tests/test_normalize.py"] = {"passed": r.returncode == 0, "ok_lines": [],
-                                         "tests": int(m.group(1)) if m else 0, "seconds": round(time.time() - t0, 1)}
-    print(f"{'PASS' if r.returncode == 0 else 'FAIL'} tests/test_normalize.py", flush=True)
+    # The pytest files in tests/ (test_suites.py only re-runs the src/ suites above, so it is skipped here).
+    for p in sorted((ROOT / "tests").glob("test_*.py")):
+        if p.name == "test_suites.py":
+            continue
+        name = f"tests/{p.name}"
+        t0 = time.time()
+        r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:warnings", name], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=600, cwd=ROOT, env=test_env())
+        m = re.search(r"(\d+) passed", r.stdout)
+        suites[name] = {"passed": r.returncode == 0, "ok_lines": [], "tests": int(m.group(1)) if m else 0,
+                        "seconds": round(time.time() - t0, 1)}
+        print(f"{'PASS' if r.returncode == 0 else 'FAIL'} {name}", flush=True)
     record = {"ts": time.time(), "commit": _git_commit(), "python": platform.python_version(),
               "suites": suites, "skipped": skipped}
     out.parent.mkdir(parents=True, exist_ok=True)

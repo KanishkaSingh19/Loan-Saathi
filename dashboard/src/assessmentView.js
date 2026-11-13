@@ -9,6 +9,7 @@ export const SOURCE_TAGS = {
   rules: "Affordability rule",
   model: "Risk model factor",
   calc: "Calculated by Loan-Saathi",
+  calc_range: "Range across lenders' rates",
   math: "Calculated by Loan-Saathi",
   estimate: "Estimated",
   default: "Default",

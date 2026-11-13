@@ -23,9 +23,18 @@ with their sources; anything not measured says *Not currently measured*.
   and retrained the model monotone in debt: **0 of 1,680** now (`models/validation_report.json`).
 - **Live voice, measured.** Gnani streaming STT hears the caller and ends the turn on its own; Gnani streaming
   TTS starts speaking on the first chunk; the caller can interrupt. Caller stops → first audio of the reply:
-  **median 3.09 s, 90th percentile 3.41 s** over 13 scripted Hinglish turns (`reports/latency_benchmark.json`;
-  a synthetic caller voice on one machine, so a real phone line will be slower). Gemini is the slowest stage.
-- **Extraction accuracy, with the misses shown.** 64 hand-written answers ("dedh lakh", "ढाई लाख",
+  **median 2.17 s, 90th percentile 3.36 s** over 13 scripted Hinglish turns, all 13 replies by Groq
+  (`reports/latency_benchmark.json`, 12 Nov 2026; a synthetic caller voice on one machine, so a real phone
+  line will be slower). The same script with Gemini on 10 Nov: median 3.09 s, 90th percentile 3.41 s; the
+  transcript → reply stage went from a 1.64 s to a 0.81 s median. If the language model hangs, a turn now
+  waits 3.0 s for the parser instead of 8.0 s (`src/bench_stall.py`, mocked stall, `reports/stall_benchmark.json`).
+- **Extraction accuracy on unseen answers: 51 of 54.** A held-out set (`tests/extraction_heldout.json`) was
+  written and committed after the parser was frozen, before any run, and is never used to tune it. First and
+  only run, parser alone: 51/54 (`reports/extraction_benchmark_heldout.json`). Misses: Devanagari number
+  words for years ("पंद्रह साल से") and hundreds ("बारह सौ"), plus "fifty thousand rupees", which Saathi reads
+  back to confirm (it does that on purpose for "-ty thousand", which is often misheard); that expectation was
+  written stricter than the dev set's rule and is left as committed.
+- **Extraction accuracy, with the misses shown (dev set).** 64 hand-written answers ("dedh lakh", "ढाई लाख",
   "meri salary 35 hazaar hai", "2-3 lakh") with the correct outcome for each. The first run scored 59/64 and
   found four parser bugs ("six months" stored as 72 months, among others); after fixing them, 64/64 on the
   same cases, so that is not an independent figure (`reports/extraction_benchmark*.json`).
@@ -91,8 +100,45 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   figure that differs from the caller's words are read back. A new value that contradicts an earlier
   one ("actually I earn ₹60,000") is asked about, never silently overwritten. Negative or zero income,
   a tenure over 10 years and an EMI above the income are refused with a reason.
-- **It never dies on the LLM**: without a Gemini key, or if Gemini is slow or down, the call carries
-  on with scripted Hinglish/English questions and our own Hindi number parser.
+- **It never dies on the LLM**: `src/llm/` tries **Groq** first (when `GROQ_API_KEY` is set), then
+  **Gemini**, under one hard deadline per use (`LLM_DEADLINE_S`, default 3 s), with one retry on invalid
+  JSON and a small response cache. If no provider answers in time, the call carries on with scripted
+  Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
+  read-back answer needed it, the result is phrased from the script. Each call records which provider
+  answered each turn (`llm_trail`).
+- **A simple result screen**: a big status, one sentence, the EMI the caller can afford, and two buttons (Try
+  another amount, Talk to an advisor). Everything else (what they told Saathi, the full assessment, the advisor
+  view) is one tap away under "See details". Checked at phone width (375 px, no sideways scroll); the wording
+  comes from the server's assessment (`dashboard/src/resultView.js`, tested).
+- **EMIs as a range, not one made-up rate**: a lender's real rate isn't known before an offer, so every EMI the
+  caller sees or hears (result, assessment, simulator, spoken summary) is a range across
+  `emi_rate_range` in `config/policy.yaml` (14–24% a year), e.g. "₹4,801 to ₹5,287 a month" for ₹1 lakh over 24 months. The rules (50% limit,
+  the offer amount) still use the single assumed 18%, so no decision changes (`tests/test_emi_range.py`). The
+  decision also returns `offer_emi_low`, `offer_emi_high` and `offer_emi_range_text` for the phone agent.
+- **Check an offer you got**: say "mujhe ek offer mila hai 2 lakh, 24 mahine, EMI 11,000" on the call, type it
+  in the call room's panel, or `POST /v1/offer-check`. Saathi works out the real yearly rate the EMI implies
+  (processing fee included), the total cost, and whether the EMI fits the caller's income under the 50% rule;
+  it flags a rate above `offer_check.flag_rate_above` in `config/policy.yaml` (30%) and a "flat" rate that hides
+  a higher real one. Labelled an estimate, never names a lender, stores nothing (`src/offer.py`,
+  `tests/test_offer.py`). The profile's answers are never touched: an offer is the lender's, not the caller's.
+- **Why it is built this way**: `docs/decisions.md` records each design decision, what was turned down,
+  and where it is enforced.
+- **The rules live in one file**: `config/policy.yaml` holds every lending rule on top of the model (FOIR
+  limit 50%, comfortable 40%, debt limit 24 months of income, assumed 18% interest, accepted tenure and age
+  ranges, amount limits, retention). `src/policy.py` checks it at start-up and refuses to start on a missing
+  or out-of-range value; changing a rule there changes the decision (`tests/test_policy.py`). The risk-band
+  thresholds stay with the trained model (`models/voice_model_meta.json`), so they always match it.
+- **A shorter call, same decisions**: the questions the decision rules read come first (loan, tenure,
+  income, other loans); a question only the risk model reads (work, years, history, housing, age) is asked
+  only while some answer to it could still move the risk band, checked by scoring every possible answer in
+  one batch (about 0.1 s). `src/bench_call_length.py`: caller turns to the result, mean 13.71 → 12.35 over 200
+  seeded random applicants and 12.17 → 10.83 over the 12 study personas, with the same decision, band and
+  offer for all 215 applicants (`reports/call_length.json`). It also caught a parser bug in the full call:
+  the housing answer "sarkari quarter" was overwriting the work, now fixed.
+- **No identifiers reach the LLM**: `src/pii.py` masks phone numbers, Aadhaar, PAN, IFSC, account and card
+  numbers, email, date of birth, a PIN code and a name the caller gives ("mera naam …") before any text goes
+  to Groq or Gemini, and before our parser reads it (a phone number is not an amount). Amounts, counts and
+  years pass unchanged; the trail records how many of each kind were masked, never the values.
 - Typing works too, for testing without speech keys. Every finished call appears in the live feed.
 
 Agent Builder (the phone agent) can't use Gemini (it offers Gnani's Pampa, OpenAI and Claude), so
@@ -147,7 +193,7 @@ maximum EMI I can afford?", "EMI kam rakhni hai".
 - **Recovery, never stack traces**: unclear answers get "Could you repeat your monthly income?", a
   failed transcription asks to try again, a server error keeps the call and offers **Try again**, a
   model failure pauses with a retry, and repeated trouble offers the advisor.
-- `src/test_safety.py` checks the product's boundaries end to end: no approval claims or lender names
+- `tests/suites/test_safety.py` checks the product's boundaries end to end: no approval claims or lender names
   anywhere an applicant can see or hear, no protected attributes, the LLM never decides, numbers are
   validated, confirmation is required, affordability and the debt rule hold, contradictions are asked.
 
@@ -324,7 +370,7 @@ src/bench_extraction.py extraction accuracy on tests/extraction_cases.json
 src/whatsapp.py        WhatsApp Cloud API channel (text and voice notes)
 demo.ps1 / demo.sh     one-command local start
 dashboard/             React + Vite live dashboard (src/App.jsx, src/components/, src/styles.css)
-src/test_webhook.py    end-to-end tests with Hinglish inputs
+tests/suites/test_webhook.py    end-to-end tests with Hinglish inputs
 agent/                 system prompt, action body and step-by-step Agent Builder setup
 models/                trained models, metadata, metrics.json, comparison.json/.md
 data/kaggle/           default location for the Kaggle Home Credit CSVs (not in git)
@@ -343,7 +389,7 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 Copy-Item .env.example .env
 pip install -r requirements.txt
-python -I -X utf8 src/test_webhook.py
+python -I -X utf8 tests/suites/test_webhook.py
 python -I -X utf8 src/server.py
 ```
 
