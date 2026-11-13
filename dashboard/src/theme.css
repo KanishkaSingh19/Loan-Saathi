@@ -556,9 +556,34 @@ h1, h2, h3, h4 { font-family: var(--font); }
 .offer-check { display: grid; gap: 10px; margin: 8px 0 4px; }
 .offer-check form { display: grid; gap: 8px; }
 .offer-field { display: grid; gap: 4px; font-size: 0.9rem; }
-.offer-field input { width: 100%; box-sizing: border-box; }
+.offer-field input { width: 100%; box-sizing: border-box; padding: 10px 12px; min-height: 44px; font: inherit;
+  color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.offer-field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .offer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .offer-result { border-radius: 12px; padding: 12px 14px; background: var(--accent-soft); }
 .offer-result.check_carefully, .offer-result.numbers_dont_add_up { border-left: 4px solid #b45309; }
 .offer-result h4 { margin: 0 0 6px; }
 .offer-flags { margin: 8px 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* ---------- the simple result view ---------- */
+.result-hero { display: grid; gap: 10px; padding: 18px; border-radius: var(--radius); background: var(--accent-soft);
+  border-left: 6px solid var(--accent); }
+.result-hero.tone-good { border-left-color: var(--good); }
+.result-hero.tone-warn { border-left-color: var(--warn); }
+.result-hero.tone-bad { border-left-color: var(--bad); }
+.result-status { margin: 0; font-size: clamp(1.4rem, 5vw, 1.9rem); font-weight: 800; line-height: 1.2; color: var(--text); }
+.result-sentence { margin: 0; font-size: 1.02rem; color: var(--text); }
+.result-emi { margin: 0; display: grid; gap: 2px; }
+.result-emi span { font-size: 0.85rem; color: var(--muted); }
+.result-emi strong { font-size: 1.35rem; color: var(--ink); }
+.result-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.result-actions .btn { flex: 1 1 180px; min-height: 44px; }
+.see-details { margin-top: 12px; }
+.see-details > summary { cursor: pointer; font-weight: 600; color: var(--ink); padding: 8px 0; min-height: 44px;
+  display: flex; align-items: center; }
+.see-details[open] > summary { margin-bottom: 8px; }
+.see-details .btn { margin: 8px 8px 0 0; }
+@media (max-width: 520px) {
+  .result-hero { padding: 14px; }
+  .result-actions .btn { flex-basis: 100%; }
+}

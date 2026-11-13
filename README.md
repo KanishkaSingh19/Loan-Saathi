@@ -106,6 +106,10 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **A simple result screen**: a big status, one sentence, the EMI the caller can afford, and two buttons (Try
+  another amount, Talk to an advisor). Everything else (what they told Saathi, the full assessment, the advisor
+  view) is one tap away under "See details". Checked at phone width (375 px, no sideways scroll); the wording
+  comes from the server's assessment (`dashboard/src/resultView.js`, tested).
 - **EMIs as a range, not one made-up rate**: a lender's real rate isn't known before an offer, so every EMI the
   caller sees or hears (result, assessment, simulator, spoken summary) is a range across
   `emi_rate_range` in `config/policy.yaml` (14–24% a year), e.g. "₹4,801 to ₹5,287 a month" for ₹1 lakh over 24 months. The rules (50% limit,

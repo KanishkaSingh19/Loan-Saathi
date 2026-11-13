@@ -6,8 +6,8 @@ import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
 import OfferCheck from "./OfferCheck";
+import { resultHero } from "../resultView";
 import { StudySetup, StudySurvey } from "./Study";
-import DecisionBadge from "./DecisionBadge";
 
 // Browser web call. Live: mic -> Gnani streaming STT (/ws/stt, its VAD ends each turn) -> Gemini + our
 // model (/v1/converse) -> Gnani streaming TTS (/v1/tts/stream, plays from the first chunk); the caller can
@@ -432,6 +432,22 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
     setConsentAsked(false);
   };
   const active = call && !call.done;
+  const hero = resultHero(call?.result);
+  // The two result buttons go to the simulator and the advisor panel in the full assessment below.
+  const tryAnotherAmount = () => {
+    const sim = assessmentRef.current?.querySelector(".simulator");
+    sim?.scrollIntoView({ block: "start" });
+    sim?.querySelector("input.sim-number, input")?.focus();
+  };
+  const talkToAdvisor = () => {
+    const panel = assessmentRef.current?.querySelector(".advisor") || document.querySelector(".advisor");
+    if (panel) {
+      panel.scrollIntoView({ block: "center" });
+      panel.querySelector("button")?.focus();
+    } else if (call && !call.done) {
+      send("I'd like to talk to a loan advisor", "handoff");
+    }
+  };
   const open = call && (!call.done || call.buttons?.length > 0);  // ended, but options are still on offer
   const result = call?.result;
   const answers = call?.answers || {};
@@ -674,8 +690,26 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
               <p className="muted small">Is this information correct? Nothing is assessed until you confirm.</p>
             </section>
           )}
-          <section>
-            <h3>What you&rsquo;ve told Saathi</h3>
+          {result && hero ? (
+            <section className={`result-hero tone-${hero.tone}`} aria-live="polite">
+              <p className="result-status">{hero.title}</p>
+              {hero.sentence ? <p className="result-sentence">{hero.sentence}</p> : null}
+              {hero.emiText ? (
+                <p className="result-emi"><span>{hero.emiLabel}</span><strong>{hero.emiText}</strong></p>
+              ) : null}
+              <div className="result-actions">
+                {result.assessment?.status !== "paused" ? (
+                  <button type="button" className="btn" onClick={tryAnotherAmount}>Try another amount</button>
+                ) : null}
+                <button type="button" className="btn primary" onClick={talkToAdvisor}>Talk to an advisor</button>
+              </div>
+            </section>
+          ) : null}
+          {result ? (
+            <details className="see-details">
+              <summary>See details</summary>
+              <section>
+                <h3>What you&rsquo;ve told Saathi</h3>
             <dl className="said">
               {ORDER.map((f) => (
                 <div key={f} className={asking === f || call?.correcting === f ? "asking" : ""}>
@@ -692,6 +726,8 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                       <span className="accent">checking…</span>
                     ) : f === "tenure_months" && call?.skipped?.includes(f) ? (
                       <span className="muted">not given (24 months used)</span>
+                    ) : call?.not_needed?.includes(f) ? (
+                      <span className="muted">not needed for this result</span>
                     ) : call?.skipped?.includes(f) ? (
                       <span className="muted">skipped</span>
                     ) : notNeeded(f, answers) ? (
@@ -705,30 +741,10 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                 </div>
               ))}
             </dl>
-          </section>
-
-          {result && (
-            <section className="call-result">
-              <div className="detail-head">
-                <h3>Result</h3>
-                {result.assessment?.outcome ? (
-                  <span className={`badge ${result.assessment.outcome.tone}`}>{result.assessment.outcome.title}</span>
-                ) : (
-                  <DecisionBadge decision={result.decision} />
-                )}
-              </div>
+              </section>
               {result.assessment && (
                 <button className="btn" onClick={() => assessmentRef.current?.scrollIntoView({ block: "start" })}>
-                  See your assessment
-                </button>
-              )}
-              {result.assessment && (
-                <button className="btn primary" onClick={() => {
-                  const panel = assessmentRef.current?.querySelector(".advisor");
-                  panel?.scrollIntoView({ block: "center" });
-                  panel?.querySelector("button")?.focus();
-                }}>
-                  Talk to a Loan Advisor
+                  See your full assessment
                 </button>
               )}
               {call.prescreen_id && (
@@ -736,6 +752,41 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                   Open in Pre-screens (advisor view)
                 </button>
               )}
+            </details>
+          ) : (
+            <section>
+              <h3>What you&rsquo;ve told Saathi</h3>
+            <dl className="said">
+              {ORDER.map((f) => (
+                <div key={f} className={asking === f || call?.correcting === f ? "asking" : ""}>
+                  <dt>{SAID_LABELS[f] || f}</dt>
+                  <dd>
+                    {answers[f] !== undefined ? (
+                      <>
+                        {show(f, answers[f])}
+                        <span className={`field-status ${fields[f]?.status || ""}`}>
+                          {fields[f]?.status === "confirmed" ? "confirmed ✓" : "to confirm"}
+                        </span>
+                      </>
+                    ) : call?.pending?.field === f ? (
+                      <span className="accent">checking…</span>
+                    ) : f === "tenure_months" && call?.skipped?.includes(f) ? (
+                      <span className="muted">not given (24 months used)</span>
+                    ) : call?.not_needed?.includes(f) ? (
+                      <span className="muted">not needed for this result</span>
+                    ) : call?.skipped?.includes(f) ? (
+                      <span className="muted">skipped</span>
+                    ) : notNeeded(f, answers) ? (
+                      <span className="muted">not needed</span>
+                    ) : asking === f ? (
+                      <span className="accent">asking…</span>
+                    ) : (
+                      <span className="muted">–</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
             </section>
           )}
           {call ? (

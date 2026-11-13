@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc -p jsconfig.json",
-    "test": "node --test src/api.test.js src/offerView.test.js src/assessmentView.test.js src/simulatorView.test.js src/stages.test.js src/echo.test.js src/reveal.test.js"
+    "test": "node --test src/api.test.js src/offerView.test.js src/resultView.test.js src/assessmentView.test.js src/simulatorView.test.js src/stages.test.js src/echo.test.js src/reveal.test.js"
   },
   "dependencies": {
     "react": "18.3.1",
