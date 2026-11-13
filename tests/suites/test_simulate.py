@@ -253,7 +253,7 @@ original_result = json.dumps(cv.SESSIONS[sid]["result"], sort_keys=True, default
 t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "Agar main 2 lakh loon toh?"}).json()
 sm = t["simulation"]["simulation"]
 assert t["state"] == cv.WHAT_IF and sm["loan_amount"]["value"] == 200000
-assert sm["emi"]["text"].replace("/month", "") in t["reply"], "the spoken EMI is the simulator's"
+assert scoring.inr(sm["emi"]["low"]) in t["reply"] and scoring.inr(sm["emi"]["high"]) in t["reply"], "the spoken EMI is the simulator's"
 before_sim = t["simulation"]
 t = c.post("/v1/converse", headers=H, json={"session_id": sid, "text": "agar 2 ya 3 lakh loon"}).json()
 assert "₹2,00,000" in t["reply"] and "₹3,00,000" in t["reply"] and "Kaunsi" in t["reply"], t["reply"]

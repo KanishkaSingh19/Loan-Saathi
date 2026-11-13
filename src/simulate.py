@@ -22,7 +22,9 @@ MIN_TENURE, MAX_TENURE = POLICY["tenure_min"], POLICY["tenure_max"]
 COMFORT_FOIR = POLICY["comfort_foir"]    # the "safer option": all EMIs within this share of income
 HIGHER_FACTOR = POLICY["higher_factor"]  # the "higher burden" example: this many times the request
 SOURCE = {"simulation": "Your simulation",
-          "calc": "Calculated by Loan-Saathi at an assumed 18% yearly interest",
+          "calc": f"Calculated by Loan-Saathi at an assumed {scoring.ANNUAL_RATE * 100:g}% yearly interest",
+          "calc_range": f"Calculated by Loan-Saathi across {scoring.rate_range_text()} yearly interest "
+                        f"(the rules use {scoring.ANNUAL_RATE * 100:g}%)",
           "rules": "Based on affordability rules",
           "model": "Estimated by model"}
 BAND_ORDER = {"low": 0, "medium": 1, "high": 2}
@@ -38,6 +40,15 @@ def _num(value, source, kind="money", suffix=""):
         return {"value": value, "text": f"{value} months", "source": source, "source_text": SOURCE[source]}
     value = int(round(value))
     return {"value": value, "text": inr(value) + suffix, "source": source, "source_text": SOURCE[source]}
+
+
+def _emi(loan, tenure, emi):
+    """The EMI figure: `value` is the EMI at the assumed rate (what the rules use); `low`/`high` and the text
+    show the range across the policy's interest range."""
+    lo, hi = scoring.emi_range(loan, tenure)
+    return {"value": int(round(emi)), "low": int(round(lo)), "high": int(round(hi)),
+            "text": scoring.emi_range_text(loan, tenure) + "/month", "source": "calc_range",
+            "source_text": SOURCE["calc_range"]}
 
 
 def check_inputs(loan, tenure):
@@ -73,7 +84,7 @@ def run(applicant, loan, tenure, decide, context=None, kind="custom"):
         "label": LABEL,
         "loan_amount": _num(loan, "simulation"),
         "tenure": _num(tenure, "simulation", kind="months"),
-        "emi": _num(emi, "calc", suffix="/month"),
+        "emi": _emi(loan, tenure, emi),
         "total_repayment": _num(emi * tenure, "calc"),
         "total_interest": _num(emi * tenure - loan, "calc"),
         "status": a.get("status", "paused"),
@@ -178,7 +189,10 @@ def spoken(sim, lang="en"):
         need = " ".join(sim.get("needed") or [])
         return (f"Is simulation ke liye pehle yeh chahiye: {need}" if lang == "hi"
                 else f"Before I can simulate that: {need}")
-    loan, n, emi = sim["loan_amount"]["text"], sim["tenure"]["value"], sim["emi"]["text"].replace("/month", "")
+    loan, n = sim["loan_amount"]["text"], sim["tenure"]["value"]
+    e = sim["emi"]
+    emi = (f"{inr(e['low'])} se {inr(e['high'])}" if lang == "hi" else f"{inr(e['low'])} to {inr(e['high'])}") \
+        if "low" in e else e["text"].replace("/month", "")
     total = sim["total_repayment"]["text"]
     cap = sim["affordability"]["text"].replace("/month", "")
     if lang == "hi":

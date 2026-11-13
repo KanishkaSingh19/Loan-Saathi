@@ -106,6 +106,11 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **EMIs as a range, not one made-up rate**: a lender's real rate isn't known before an offer, so every EMI the
+  caller sees or hears (result, assessment, simulator, spoken summary) is a range across
+  `emi_rate_range` in `config/policy.yaml` (14–24% a year), e.g. "₹4,801 to ₹5,287 a month" for ₹1 lakh over 24 months. The rules (50% limit,
+  the offer amount) still use the single assumed 18%, so no decision changes (`tests/test_emi_range.py`). The
+  decision also returns `offer_emi_low`, `offer_emi_high` and `offer_emi_range_text` for the phone agent.
 - **Check an offer you got**: say "mujhe ek offer mila hai 2 lakh, 24 mahine, EMI 11,000" on the call, type it
   in the call room's panel, or `POST /v1/offer-check`. Saathi works out the real yearly rate the EMI implies
   (processing fee included), the total cost, and whether the EMI fits the caller's income under the 50% rule;

@@ -340,6 +340,28 @@ def score(applicant, n_reasons=3, min_impact=0.003):
 MAX_FOIR = POLICY["max_foir"]  # all EMIs together at most this share of monthly income (config/policy.yaml)
 
 
+EMI_RATE_LOW, EMI_RATE_HIGH = POLICY["emi_rate_low"], POLICY["emi_rate_high"]  # config/policy.yaml
+
+
+def emi_range(amount, months):
+    """(low, high) EMI across the policy's interest range (14-24% a year): a lender's real rate isn't known
+    before an offer, so the caller sees a range. Rules (FOIR, the offer amount) keep using ANNUAL_RATE."""
+    months = months or DEFAULT_TENURE
+    return estimate_emi(amount, months, EMI_RATE_LOW), estimate_emi(amount, months, EMI_RATE_HIGH)
+
+
+def emi_range_text(amount, months, lang="en", spoken=False):
+    """'₹4,800–₹5,300' on screen; '₹4,800 to ₹5,300' / '₹4,800 se ₹5,300' when spoken."""
+    lo, hi = emi_range(amount, months)
+    if not spoken:
+        return f"{inr(lo)}–{inr(hi)}"
+    return f"{inr(lo)} se {inr(hi)}" if lang == "hi" else f"{inr(lo)} to {inr(hi)}"
+
+
+def rate_range_text():
+    return f"{EMI_RATE_LOW * 100:g}–{EMI_RATE_HIGH * 100:g}%"
+
+
 def loan_for_emi(emi, months, annual_rate=ANNUAL_RATE):
     """Largest loan a monthly EMI can repay over `months` (inverse of estimate_emi)."""
     if not emi or emi <= 0:

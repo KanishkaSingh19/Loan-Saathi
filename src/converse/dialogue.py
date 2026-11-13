@@ -822,7 +822,13 @@ def _language(text, gemini_says, current):
 
 def _fallback_result(r, lang):
     d = r["decision"]
-    amt, emi, n = r.get("offer_amount_text", ""), r.get("offer_emi_text", ""), r.get("tenure_months", "")
+    amt, n = r.get("offer_amount_text", ""), r.get("tenure_months", "")
+    # The EMI across the policy's interest range when we have it ("₹9,600 se ₹10,500"), else the single estimate.
+    if r.get("offer_emi_low") and r.get("offer_emi_high"):
+        joiner = " se " if lang == "hi" else " to "
+        emi = inr(r["offer_emi_low"]) + joiner + inr(r["offer_emi_high"])
+    else:
+        emi = r.get("offer_emi_text", "")
     tips = r.get("tips_hi" if lang == "hi" else "tips", "") or r.get("tips", "")
     if lang == "hi":
         if d == "pre_approved":

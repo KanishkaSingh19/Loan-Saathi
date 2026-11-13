@@ -504,6 +504,12 @@ def _reasons(items, direction):
     return out
 
 
+def _emi_hint(amount, tenure, emi):
+    """'₹10,000 (₹9,600 to ₹10,500 depending on the lender's rate)': the agent may say either."""
+    lo, hi = scoring.emi_range(amount, tenure)
+    return f"{inr(emi)} ({inr(lo)} to {inr(hi)} depending on the lender's interest rate)"
+
+
 def decide(applicant, risk=None, context=None):
     """Model risk + the affordability rule + the debt rule -> decision. `risk` is a precomputed
     scoring.score() result (the web call runs risk and affordability as separate steps).
@@ -569,13 +575,14 @@ def decide(applicant, risk=None, context=None):
                 + "Encourage them to try again later and thank them warmly.")
     elif afford["fits_request"]:
         offer_amount, offer_emi = requested, afford["emi"]
+        emi_text = _emi_hint(requested, tenure, offer_emi)
         if band == "low":
             decision = "pre_approved"
             hint = (f"Good news: based on this pre-screening they look eligible for further review for "
-                    f"{inr(requested)} over {tenure} months, EMI about {inr(offer_emi)} per month. ")
+                    f"{inr(requested)} over {tenure} months, EMI about {emi_text} per month. ")
         else:
             decision = "needs_review"
-            hint = (f"Their request for {inr(requested)} over {tenure} months (EMI about {inr(offer_emi)}) "
+            hint = (f"Their request for {inr(requested)} over {tenure} months (EMI about {emi_text}) "
                     "looks possible, and a loan advisor would need to review it further. ")
         hint += (f"Strengths: {'; '.join(downs)}. " if downs else "")
         hint += ("Next step: keep Aadhaar, PAN and 3 months of bank statements ready for verification. "
@@ -585,7 +592,7 @@ def decide(applicant, risk=None, context=None):
         offer_amount, offer_emi = afford["loan_amount"], afford["emi"]
         hint = (f"Explain that {inr(requested)} would make their total EMIs more than half of their income, "
                 f"which is risky for them. Offer {inr(offer_amount)} over {tenure} months instead, "
-                f"EMI about {inr(offer_emi)} per month, and ask if that works. "
+                f"EMI about {_emi_hint(offer_amount, tenure, offer_emi)} per month, and ask if that works. "
                 + (f"Strengths: {'; '.join(downs)}. " if downs else "")
                 + "Say clearly this is a pre-screening, not a final approval.")
 
@@ -597,6 +604,10 @@ def decide(applicant, risk=None, context=None):
         "offer_amount_text": inr(offer_amount) if offer_amount else "",
         "offer_emi": int(offer_emi),
         "offer_emi_text": inr(offer_emi) if offer_emi else "",
+        # The EMI across the policy's interest range (a lender's real rate isn't known yet); flat for Agent Builder.
+        "offer_emi_low": int(round(scoring.emi_range(offer_amount, tenure)[0])) if offer_emi else 0,
+        "offer_emi_high": int(round(scoring.emi_range(offer_amount, tenure)[1])) if offer_emi else 0,
+        "offer_emi_range_text": scoring.emi_range_text(offer_amount, tenure) if offer_emi else "",
         "tenure_months": int(tenure),
         "reasons_against": "; ".join(ups),
         "reasons_for": "; ".join(downs),
