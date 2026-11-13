@@ -1,5 +1,5 @@
 {
- "ts": 1794509851.3991265,
+ "ts": 1794590839.2338307,
  "method": "    python -I -X utf8 src/bench_call_length.py            # demo applicants + personas + a seeded random sweep",
  "summary": {
   "demo": {
