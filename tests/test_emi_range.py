@@ -101,3 +101,14 @@ def test_the_spoken_result_says_the_range():
     en, hi = cv._fallback_result(result, "en"), cv._fallback_result(result, "hi")
     lo, hi_ = scoring.inr(result["offer_emi_low"]), scoring.inr(result["offer_emi_high"])
     assert f"{lo} to {hi_}" in en and f"{lo} se {hi_}" in hi
+
+
+def test_an_llm_phrased_result_must_say_the_range_or_the_script_is_used():
+    import converse as cv
+    result, _ = server.decide(server.build_applicant(BODY))
+    amt, lo, hi = result["offer_amount_text"], scoring.inr(result["offer_emi_low"]), scoring.inr(result["offer_emi_high"])
+    one_figure = f"Your {amt} loan over 24 months looks possible, with an EMI of about {result['offer_emi_text']}."
+    ranged = f"Your {amt} loan over 24 months looks possible, with an EMI of about {lo} to {hi}."
+    assert not cv._amounts_ok(one_figure, result)          # refused: the scripted reply (with the range) is used
+    assert cv._amounts_ok(ranged, result)
+    assert "never as one figure" in cv.RESULT_PROMPT

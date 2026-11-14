@@ -276,6 +276,8 @@ LANGUAGE: {language_rule}
 NUMBERS: write every amount, EMI and tenure in DIGITS exactly as in the guidance (for example
 "₹50,000" or "50,000 rupaye", "24 mahine"). Never write numbers as words ("fifty thousand",
 "pachas hazaar"). Do not add amounts, rates, promises or reasons that are not in the guidance.
+EMI: when the guidance gives an EMI range ("X to Y depending on the lender's interest rate"), say the EMI as
+that range, from X to Y, never as one figure: the lender's rate is not known yet.
 Never mention scores, percentages, models or AI. No emojis, no lists."""
 
 LANGUAGE_RULES = {

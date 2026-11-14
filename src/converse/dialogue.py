@@ -701,6 +701,10 @@ def _amounts_ok(reply, result):
     said = _digits(reply)
     if result.get("offer_amount") and int(result["offer_amount"]) not in said:
         return False
+    # An EMI is said as its range (the lender's rate isn't known yet), never as one figure.
+    lo, hi = result.get("offer_emi_low"), result.get("offer_emi_high")
+    if lo and hi and not {int(lo), int(hi)} <= said:
+        return False
     return said <= allowed
 
 
