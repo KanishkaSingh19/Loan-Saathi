@@ -48,6 +48,7 @@ import assessment  # noqa: E402
 import converse  # noqa: E402
 import evaluation  # noqa: E402
 import llm as llm_mod  # noqa: E402
+import documents  # noqa: E402
 import normalize as norm  # noqa: E402
 import offer as offer_mod  # noqa: E402
 from policy import POLICY  # noqa: E402
@@ -430,6 +431,9 @@ def build_applicant(body):
         owns_house = owns
     years = norm.years(body.get("years_in_work"))
     a = {
+        # For the document checklist only: never a model input (scoring reads neither key) or a rule input.
+        "loan_purpose": norm.loan_purpose(body.get("loan_purpose")),
+        "work_category": norm.work_category(body.get("work")),
         "monthly_income": norm.number(body.get("monthly_income")),
         "loan_amount": norm.number(body.get("loan_amount")),
         "tenure_months": norm.months(body.get("tenure_months")),
@@ -585,7 +589,7 @@ def decide(applicant, risk=None, context=None):
             hint = (f"Their request for {inr(requested)} over {tenure} months (EMI about {emi_text}) "
                     "looks possible, and a loan advisor would need to review it further. ")
         hint += (f"Strengths: {'; '.join(downs)}. " if downs else "")
-        hint += ("Next step: keep Aadhaar, PAN and 3 months of bank statements ready for verification. "
+        hint += (f"Next step: {documents.spoken(applicant.get('loan_purpose'), applicant.get('work_category'))} "
                  "Say clearly this is a pre-screening, not a final approval.")
     else:
         decision = "counter_offer"
@@ -616,6 +620,14 @@ def decide(applicant, risk=None, context=None):
         "missing_fields": "",
         "policy_rule": policy,
         "reply_hint": hint,
+        # The documents to keep ready, for this caller (loan purpose and work); a flat text for Agent Builder.
+        "documents": {lang: documents.checklist(applicant.get("loan_purpose"), applicant.get("work_category"), lang)
+                      for lang in ("en", "hi")},
+        "documents_note": {"en": documents.NOTE, "hi": documents.NOTE_HI},
+        "documents_spoken": {lang: documents.spoken(applicant.get("loan_purpose"), applicant.get("work_category"),
+                                                    lang) for lang in ("en", "hi")},
+        "documents_text": "; ".join(d["text"] for d in documents.checklist(applicant.get("loan_purpose"),
+                                                                           applicant.get("work_category"))),
     }
     try:
         result["assessment"] = assessment.build(applicant, r, afford, decision, policy, up_items, down_items,

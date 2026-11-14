@@ -226,7 +226,7 @@ async def _collecting(s, env, text, action):
     s["claims"] = {k: valid(k, raw) for k, raw, _ in candidates if k in MONEY}
     problem = None
     for k, raw, words in candidates:
-        if k != asked and k in ("work", "housing") and k in s["answers"]:
+        if k != asked and k in ("work", "housing", "loan_purpose") and k in s["answers"]:
             continue  # a side mention never replaces a free-text answer already given (corrections do)
         p = offer(s, k, raw, words, "collect")
         if p and k == asked:
@@ -282,7 +282,7 @@ def _advance(s, env, prefix="", problem=None, g=None):
         s["asking"] = nxt
         fails = s["tries"].get(nxt, 0) if nxt == s.get("asked_before") and not s.get("clarify") else 0
         if cross and cross[0] == nxt:
-            return prefix + cross[1] + BY_KEY[nxt][lang]
+            return prefix + cross[1] + _question(s, nxt)
         if s.get("clarify") == nxt:
             return prefix + CLARIFY[nxt][lang]
         if fails >= RECOVER_AFTER and nxt not in s.setdefault("skip_offered", []) and not specific:
@@ -291,19 +291,19 @@ def _advance(s, env, prefix="", problem=None, g=None):
             return prefix + SAY["sorry"][lang] + SAY["offer_skip"][lang]
         if fails == 1 and nxt in HELP and nxt not in MONEY and not specific:
             s["help_for"] = nxt
-            return prefix + SAY["sorry"][lang] + BY_KEY[nxt][lang] + " " + HELP[nxt][lang]
+            return prefix + SAY["sorry"][lang] + _question(s, nxt) + " " + HELP[nxt][lang]
         if specific and nxt in HELP and HELP[nxt].get("buttons"):
             s["help_for"] = nxt
         if problem and problem[0] == nxt:
             if problem[1] == "unclear" and nxt in MONEY:
                 return prefix + SAY["sorry"][lang] + _repeat_money(nxt, lang)
-            return prefix + _problem_text(s, nxt, problem[1]) + BY_KEY[nxt][lang]
+            return prefix + _problem_text(s, nxt, problem[1]) + _question(s, nxt)
         if g and g["used"] != "fallback" and g["asking"] == nxt and g["reply"] and not prefix \
                 and _question_ok(g["reply"], s):
             return g["reply"]
         if nxt == s.get("asked_before") and not prefix and nxt in MONEY:
             return SAY["sorry"][lang] + _repeat_money(nxt, lang)
-        return prefix + BY_KEY[nxt][lang]
+        return prefix + _question(s, nxt)
 
     if s["state"] in (COLLECTING, CORRECTION):
         transition(s, VERIFYING, "profile complete")
@@ -605,19 +605,47 @@ async def _after_next_steps(s, env, text, action):
     return SAY["finished"][s["lang"]] + _after_options(s)
 
 
+# What's usual for the kind of loan, said with the repayment-period question (a hint, never a rule).
+TENURE_HINT = {
+    "vehicle": {"en": " Vehicle loans usually run 1 to 5 years.", "hi": " Gaadi ka loan aam taur par 1 se 5 saal ka hota hai."},
+    "education": {"en": " Education loans often run 5 to 7 years.",
+                  "hi": " Padhai ka loan aksar 5 se 7 saal ka hota hai."},
+    "business": {"en": " Business loans usually run 1 to 3 years.",
+                 "hi": " Business loan aam taur par 1 se 3 saal ka hota hai."},
+    "home": {"en": " Home repair loans usually run 3 to 10 years (a loan to buy a home runs longer than Saathi checks).",
+             "hi": " Ghar ki marammat ka loan aam taur par 3 se 10 saal ka hota hai (ghar kharidne ka loan isse lamba "
+                   "hota hai, jo Saathi nahi jaanchta)."},
+    "personal": {"en": " Personal loans usually run 1 to 5 years.",
+                 "hi": " Personal loan aam taur par 1 se 5 saal ka hota hai."},
+}
+
+
+def _question(s, k):
+    """The question for field k, with the tenure hint for this kind of loan."""
+    lang = s["lang"]
+    q = BY_KEY[k][lang]
+    if k == "tenure_months":
+        q += TENURE_HINT.get(norm.loan_purpose(s["answers"].get("loan_purpose")) or "", {}).get(lang, "")
+    return q
+
+
 def _next_steps(r, lang):
     """Deterministic next steps for each decision."""
     d = r["decision"]
     tips = r.get("tips_hi" if lang == "hi" else "tips", "") or r.get("tips", "")
     if lang == "hi":
         if d in ("pre_approved", "needs_review", "counter_offer"):
-            return ("Aage ke steps: Aadhaar card, PAN card aur pichhle 3 mahine ka bank statement taiyaar rakhiye. "
+            docs = (r.get("documents_spoken") or {}).get("hi") or \
+                "Aadhaar card, PAN card aur pichhle 3 mahine ka bank statement taiyaar rakhiye."
+            return ("Aage ke steps: " + docs + " "
                     "Lender documents ki jaanch ke baad hi koi faisla karega. Agar aap chahein, toh 'loan advisor "
                     "se baat' boliye, main aapka summary advisor ke liye save kar dunga.")
         return ((f"Isme madad karega: {tips}. " if tips else "")
                 + "3 se 6 mahine baad, jab EMI ya baaki loan kam ho jaaye, dobara check kijiye.")
     if d in ("pre_approved", "needs_review", "counter_offer"):
-        return ("Next steps: keep your Aadhaar card, PAN card and the last 3 months of bank statements ready. "
+        docs = (r.get("documents_spoken") or {}).get("en") or \
+            "Keep your Aadhaar card, PAN card and the last 3 months of bank statements ready."
+        return ("Next steps: " + docs + " "
                 "A lender decides only after checking those documents. If you like, say 'talk to a loan advisor' "
                 "and I'll save your summary for one.")
     return ((f"What would help: {tips}. " if tips else "")

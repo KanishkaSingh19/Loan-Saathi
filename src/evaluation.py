@@ -224,6 +224,7 @@ CATALOG = [
         ("Shorter call with unchanged decisions", [("tests/test_short_call.py", None)]),
         ("Check an offer you got", [("tests/test_offer.py", None)]),
         ("EMI shown as a range of interest rates", [("tests/test_emi_range.py", None)]),
+        ("Loan purpose and a document checklist that fits", [("tests/test_loan_purpose.py", None)]),
         ("Misunderstood answers", [("test_advisor.py", "recovery offers the advisor"),
                                    ("test_states.py", "live-run regressions")]),
         ("WhatsApp: text, buttons and voice notes", [("test_whatsapp.py", "a full pre-screen over WhatsApp"),
@@ -387,6 +388,7 @@ def test_env():
     env = dict(os.environ)
     if not env.get("LIVE_LLM_TESTS"):
         env["GROQ_DISABLED"] = "1"
+    env.setdefault("ASK_LOAN_PURPOSE", "0")  # the scripted suites predate the loan-purpose question
     return env
 
 

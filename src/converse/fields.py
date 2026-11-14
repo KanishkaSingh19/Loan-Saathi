@@ -10,6 +10,9 @@ from policy import POLICY
 
 # Question order. `need` = no decision is possible without it, so we never skip it.
 FIELDS = [
+    {"key": "loan_purpose",
+     "en": "What is the loan for? For example a vehicle, education, your business, your home, or a personal need.",
+     "hi": "Loan kis cheez ke liye chahiye? Jaise gaadi, padhai, business, ghar, ya koi personal zaroorat."},
     {"key": "loan_amount", "need": True,
      "en": "How much loan do you need?", "hi": "Aapko kitne ka loan chahiye?"},
     {"key": "tenure_months",
@@ -53,6 +56,7 @@ FIELDS = [
 ]
 KEYS = [f["key"] for f in FIELDS]
 BY_KEY = {f["key"]: f for f in FIELDS}
+FREE_TEXT = ("work", "housing", "loan_purpose")  # free-text answers: kept as said; the latest wins
 EXTRA = ()  # kept for compatibility: every captured field is now asked for
 REQUIRED = tuple(f["key"] for f in FIELDS if f.get("need"))
 MONEY = ("loan_amount", "monthly_income", "other_loans_emi", "other_loans_outstanding")
@@ -73,14 +77,14 @@ TENURE_RANGE = (POLICY["tenure_min"], POLICY["tenure_max"])
 AGE_RANGE = (POLICY["age_min"], POLICY["age_max"])
 
 LABELS = {
-    "en": {"loan_amount": "requested loan", "tenure_months": "repayment period",
+    "en": {"loan_purpose": "loan purpose", "loan_amount": "requested loan", "tenure_months": "repayment period",
            "monthly_income": "monthly income", "work": "work", "years_in_work": "years in work",
            "other_loans_count": "number of other loans", "other_loans_emi": "existing EMI",
            "other_loans_outstanding": "existing debt", "housing": "housing", "age": "age",
            "past_loans": "number of past loans", "ever_refused": "earlier refusals",
            "ever_late": "late EMIs", "late_last_year": "late EMIs in the last year",
            "late_over_month": "EMIs over a month late", "overdue_now": "overdue EMIs"},
-    "hi": {"loan_amount": "loan ki rakam", "tenure_months": "chukane ka samay",
+    "hi": {"loan_purpose": "loan ka maqsad", "loan_amount": "loan ki rakam", "tenure_months": "chukane ka samay",
            "monthly_income": "mahine ki kamaai", "work": "kaam", "years_in_work": "kaam ke saal",
            "other_loans_count": "chal rahe loans ki ginti", "other_loans_emi": "maujooda EMI",
            "other_loans_outstanding": "baaki loan", "housing": "ghar", "age": "umar",
@@ -88,7 +92,7 @@ LABELS = {
            "ever_late": "late EMI", "late_last_year": "pichhle saal late EMI",
            "late_over_month": "mahine se zyada late EMI", "overdue_now": "overdue EMI"},
 }
-TITLES = {"loan_amount": "Requested loan", "tenure_months": "Tenure", "monthly_income": "Monthly income",
+TITLES = {"loan_purpose": "Loan for", "loan_amount": "Requested loan", "tenure_months": "Tenure", "monthly_income": "Monthly income",
           "work": "Work", "years_in_work": "Years in work", "other_loans_count": "Other loans",
           "other_loans_emi": "Existing EMI", "other_loans_outstanding": "Existing debt",
           "housing": "Housing", "age": "Age", "past_loans": "Loans taken before", "ever_refused": "Ever refused",

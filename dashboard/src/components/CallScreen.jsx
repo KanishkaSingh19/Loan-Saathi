@@ -6,7 +6,7 @@ import { SAID_LABELS } from "../constants";
 import AdvisorPanel from "./AdvisorPanel";
 import Assessment from "./Assessment";
 import OfferCheck from "./OfferCheck";
-import { resultHero } from "../resultView";
+import { documentsFor, resultHero } from "../resultView";
 import { StudySetup, StudySurvey } from "./Study";
 
 // Browser web call. Live: mic -> Gnani streaming STT (/ws/stt, its VAD ends each turn) -> Gemini + our
@@ -18,7 +18,7 @@ const FILLER = { hi: "Achha, ek second.", en: "Okay, one moment." };
 const FILLER_AFTER_MS = 900;
 const fillerCache = {};
 
-const ORDER = ["loan_amount", "tenure_months", "monthly_income", "work", "years_in_work", "other_loans_count",
+const ORDER = ["loan_purpose", "loan_amount", "tenure_months", "monthly_income", "work", "years_in_work", "other_loans_count",
   "other_loans_emi", "other_loans_outstanding", "past_loans", "ever_refused", "ever_late", "late_last_year",
   "late_over_month", "overdue_now", "housing", "age"];
 const YES_NO = new Set(["ever_refused", "ever_late", "late_last_year", "late_over_month", "overdue_now"]);
@@ -704,6 +704,15 @@ export default function CallScreen({ apiKey, onUnauthorized, onOpenPrescreen, st
                 <button type="button" className="btn primary" onClick={talkToAdvisor}>Talk to an advisor</button>
               </div>
             </section>
+          ) : null}
+          {result && hero && result.assessment?.status !== "paused" && documentsFor(result, call.language).length ? (
+            <details className="see-details documents">
+              <summary>Documents to keep ready ({documentsFor(result, call.language).length})</summary>
+              <ul className="doc-list">
+                {documentsFor(result, call.language).map((d) => <li key={d.key}>{d.text}</li>)}
+              </ul>
+              <p className="muted small">{result.documents_note?.[call.language === "hi" ? "hi" : "en"]}</p>
+            </details>
           ) : null}
           {result ? (
             <details className="see-details">

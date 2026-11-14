@@ -339,3 +339,60 @@ def housing(v):
     if any(k in s for k in ("own", "apna", "khud", "mera ghar", "my house", "self", "अपना", "अपने", "खुद")):
         return "House / apartment", True
     return "House / apartment", None
+
+
+# What the loan is for (step 1 of a lender's process). Not a model input and not used by any rule: it only
+# shapes the tenure hint and the documents the caller is told to keep ready. First match wins.
+_PURPOSE = [
+    ("education", ("padhai", "padhaai", "education", "college", "school fee", "fees", "fee bharni", "course",
+                   "coaching", "study", "studies", "admission", "पढ़ाई", "कॉलेज", "फीस")),
+    ("vehicle", ("gaadi", "gadi", "bike", "scooty", "scooter", "motorcycle", "car", "auto", "rickshaw", "e-rickshaw",
+                 "truck", "tempo", "tractor", "vehicle", "two wheeler", "two-wheeler", "गाड़ी", "बाइक", "स्कूटी",
+                 "कार", "ऑटो", "ट्रैक्टर")),
+    ("business", ("business", "dukaan", "dukan", "shop", "vyapar", "vyapaar", "stock", "maal", "machine", "msme",
+                  "kaam badhana", "dhandha", "dhanda", "inventory", "दुकान", "व्यापार", "धंधा")),
+    ("home", ("ghar banana", "ghar ki marammat", "ghar ke liye", "makaan", "makan", "house", "home", "flat", "plot",
+              "marammat", "repair", "renovation", "construction", "naya ghar", "घर", "मकान", "मरम्मत")),
+    ("personal", ("personal", "shaadi", "shadi", "wedding", "marriage", "ilaaj", "ilaj", "medical", "hospital",
+                  "emergency", "treatment", "ghar ka kharch", "kharcha", "laptop", "phone", "mobile", "travel",
+                  "safar", "karz", "karza", "शादी", "इलाज", "अस्पताल")),
+]
+# Whole words for Latin script ("car" is not "career", "auto" is not "automatic"); Devanagari as written.
+_PURPOSE_RE = [(key, re.compile("|".join(rf"(?<![a-z]){re.escape(w)}(?![a-z])" if w.isascii() else re.escape(w)
+                                         for w in words))) for key, words in _PURPOSE]
+LOAN_PURPOSES = {
+    "personal": ("Personal need", "Personal zaroorat"),
+    "vehicle": ("Vehicle", "Gaadi"),
+    "education": ("Education", "Padhai"),
+    "business": ("Business / shop", "Business / dukaan"),
+    "home": ("Home (build, buy or repair)", "Ghar (banana, kharidna ya marammat)"),
+    "other": ("Other", "Doosra kaam"),
+}
+
+
+def loan_purpose(v):
+    """'bike ke liye' -> 'vehicle', 'beti ki padhai' -> 'education'; 'other' for any other description; None
+    for a blank answer."""
+    if _blank(v):
+        return None
+    s = str(v).lower()
+    for key, pattern in _PURPOSE_RE:
+        if pattern.search(s):
+            return key
+    return "other"
+
+
+def loan_purpose_known(v):
+    """True when the text names a purpose we recognise (not just any words)."""
+    return loan_purpose(v) not in (None, "other")
+
+
+def loan_purpose_label(v, lang="en"):
+    key = loan_purpose(v)
+    if key is None:
+        return ""
+    en, hi = LOAN_PURPOSES[key]
+    label = hi if lang == "hi" else en
+    if key == "other":
+        return f"{label} ({' '.join(str(v).split()[:6])})"
+    return label

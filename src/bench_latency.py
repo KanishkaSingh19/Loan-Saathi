@@ -26,7 +26,7 @@ import websockets
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "reports" / "latency_benchmark.json"
-CALLER = ["Mujhe teen lakh rupaye ka loan chahiye.", "Do saal mein chukaunga.", "Meri salary chaalis hazaar hai.",
+CALLER = ["Mujhe teen lakh rupaye ka loan chahiye, dukaan ke liye.", "Do saal mein chukaunga.", "Meri salary chaalis hazaar hai.",
           "Meri kirana ki dukaan hai.", "Das saal se.", "Ek loan chal raha hai.", "Aath hazaar mahina EMI hai.",
           "Dedh lakh baaki hai.", "Do loan liye hain pehle.", "Nahi.", "Nahi.", "Apna ghar hai.", "Paintees saal."]
 

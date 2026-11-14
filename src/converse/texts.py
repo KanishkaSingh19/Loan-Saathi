@@ -210,6 +210,8 @@ next, and the caller's latest words. Do two things:
      loan hai"); if they name several, add them up. Never put a loan's size into other_loans_emi:
      if they gave loan sizes but no monthly installment, other_loans_emi is not answered yet.
    housing: one of "own house", "rented", "with family", "government quarters".
+   loan_purpose: what the new loan is for, in a few English words ("bike", "daughter's education", "shop stock",
+     "house repair", "wedding", "medical"). "dukaan ke liye 2 lakh" answers loan_purpose and loan_amount.
    tenure_months: how long they want to repay, in months ("2 saal" -> "24").
    past_loans: how many loans they have EVER taken, closed ones included, as a number ("never" -> "0").
    ever_refused, ever_late, late_last_year, late_over_month, overdue_now: "yes" or "no" only:
@@ -308,6 +310,15 @@ HELP = {
                                   _b("You decide", "Aap bataiye", "You decide", "Aap bataiye")]},
     "monthly_income": {"en": "A rough figure is fine, for example '15 thousand' or '40 thousand'.",
                        "hi": "Andaaza bhi chalega, jaise '15 hazaar' ya '40 hazaar'."},
+    "loan_purpose": {"en": "For example: a bike or other vehicle, education fees, your shop or business, building or "
+                           "repairing a home, or a personal need like a wedding or treatment.",
+                     "hi": "Jaise: bike ya koi gaadi, padhai ki fees, dukaan ya business, ghar banana ya marammat, ya "
+                           "shaadi ya ilaaj jaisi personal zaroorat.",
+                     "buttons": [_b("Vehicle", "Gaadi", "For a vehicle", "Gaadi ke liye"),
+                                 _b("Education", "Padhai", "For education", "Padhai ke liye"),
+                                 _b("Business / shop", "Business / dukaan", "For my business", "Dukaan ke liye"),
+                                 _b("Home", "Ghar", "For my home", "Ghar ki marammat ke liye"),
+                                 _b("Personal need", "Personal", "A personal need", "Personal zaroorat")]},
     "work": {"en": "For example: your own shop or business, a salaried job, driving, farming, or daily-wage work.",
              "hi": "Jaise: apni dukaan ya business, salary wali naukri, driver, kheti, ya dihadi mazdoori.",
              "buttons": [_b("Own shop / business", "Dukaan / business", "I run my own shop", "Apni dukaan hai"),

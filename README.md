@@ -106,6 +106,13 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **What the loan is for, and the documents to keep ready**: Saathi starts where a lender starts: "Loan kis cheez
+  ke liye chahiye?" (vehicle, education, business, home, personal), read from any sentence that says it ("bike ke
+  liye 80 hazaar" fills both). It adds a tenure hint for that kind of loan and, with the result, a checklist that
+  fits the loan and how the caller earns: salary slips and Form 16 for a salaried job, ITR and business proof for a
+  shop, land records for a farmer, the dealer's quotation for a vehicle, the admission letter for education
+  (`src/documents.py`). The purpose is never a model or rule input; decisions are identical with or without it
+  (`tests/test_loan_purpose.py`), and Saathi never asks for or keeps a document.
 - **A simple result screen**: a big status, one sentence, the EMI the caller can afford, and two buttons (Try
   another amount, Talk to an advisor). Everything else (what they told Saathi, the full assessment, the advisor
   view) is one tap away under "See details". Checked at phone width (375 px, no sideways scroll); the wording
@@ -131,8 +138,8 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
 - **A shorter call, same decisions**: the questions the decision rules read come first (loan, tenure,
   income, other loans); a question only the risk model reads (work, years, history, housing, age) is asked
   only while some answer to it could still move the risk band, checked by scoring every possible answer in
-  one batch (about 0.1 s). `src/bench_call_length.py`: caller turns to the result, mean 13.71 → 12.35 over 200
-  seeded random applicants and 12.17 → 10.83 over the 12 study personas, with the same decision, band and
+  one batch (about 0.1 s). `src/bench_call_length.py`: caller turns to the result, mean 14.43 → 13.04 over 200
+  seeded random applicants and 13.17 → 11.83 over the 12 study personas (both counting the loan-purpose question), with the same decision, band and
   offer for all 215 applicants (`reports/call_length.json`). It also caught a parser bug in the full call:
   the housing answer "sarkari quarter" was overwriting the work, now fixed.
 - **No identifiers reach the LLM**: `src/pii.py` masks phone numbers, Aadhaar, PAN, IFSC, account and card

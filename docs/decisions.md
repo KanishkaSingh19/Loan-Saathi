@@ -110,8 +110,8 @@ the risk model reads (work, years, history, housing, age) is asked only while so
 move the risk band: every possible answer to the remaining questions is scored in one batch (~0.1 s), plus
 all-riskiest and all-safest together. Skipped questions are listed as `not_needed`; changing a rule answer
 brings them back; a follow-up never comes before its question; if scoring fails, everything is asked.
-**Measured.** `src/bench_call_length.py`: mean caller turns to the result 13.71 → 12.35 on 200 seeded random
-applicants (12.17 → 10.83 on the 12 study personas), with the same decision, band and offer for all 215
+**Measured.** `src/bench_call_length.py`: mean caller turns to the result 14.43 → 13.04 on 200 seeded random
+applicants (13.17 → 11.83 on the 12 study personas; both include the loan-purpose question), with the same decision, band and offer for all 215
 applicants (`reports/call_length.json`).
 **Trade-off.** The explanation can differ (an unasked question can't appear as a reason), and the risk
 percentage can move within the band. The decision does not.
@@ -136,6 +136,13 @@ the what-if simulator (`COMPLETED -> WHAT_IF`); nothing is collected or assessed
 History questions answered "pata nahi" are skipped and stay None; training blanked 10% of answers so the
 model has a learned "not answered" branch. Never turn an unknown into a "no". (Short-call skips use the same
 branch.)
+
+### 22. What the loan is for shapes guidance, never the decision
+Saathi asks first what the loan is for, as a lender would, and uses it only for a tenure hint and the document
+checklist (`src/documents.py`). It is stored as `loan_purpose`, never `loan_type`: that name is the model's own
+Home Credit contract-type input, and a caller's answer must not reach the model. Decisions, bands and offers are
+identical with or without it (`tests/test_loan_purpose.py`, 80 random applicants x 5 purposes). The checklist
+names documents; Saathi never asks for them, their numbers, or copies, and identifiers said aloud are masked.
 
 ## Evaluation
 

@@ -6,8 +6,8 @@ import re
 import normalize as norm
 from scoring import inr
 
-from .settings import ASK_HISTORY, PARENT, PROBES, RULE_FIELDS, SHORT_CALL
-from .fields import (AGE_RANGE, DONT_KNOW, FIELDS, FILLER, FIRST_TIME, HISTORY, HISTORY_FLAGS, HOUSING_WORDS, KEYS, LIMITS,
+from .settings import ASK_HISTORY, ASK_LOAN_PURPOSE, PARENT, PROBES, RULE_FIELDS, SHORT_CALL
+from .fields import (AGE_RANGE, DONT_KNOW, FIELDS, FILLER, FIRST_TIME, FREE_TEXT, HISTORY, HISTORY_FLAGS, HOUSING_WORDS, KEYS, LIMITS,
     MENTIONS, MONEY, NUMERIC, TENURE_PHRASE, TENURE_RANGE)
 
 
@@ -65,6 +65,14 @@ def valid(key, value):
         return v if income_type else None
     if key == "housing":
         return v if HOUSING_WORDS.search(v) else None  # norm.housing() defaults on any input
+    if key == "loan_purpose":
+        # Any description is an answer ("other"), but not filler, "pata nahi" or a bare yes/no.
+        words = re.sub(r"[^\w\s]", " ", str(v).lower()).split()
+        if not norm.loan_purpose_known(v) and (not words or DONT_KNOW.search(str(v))
+                                                or all(w in FILLER for w in words)
+                                                or (len(words) <= 2 and norm.boolean(v) is not None)):
+            return None
+        return v
     if key == "tenure_months":
         n = norm.months(v)
         return n if n and TENURE_RANGE[0] <= n <= TENURE_RANGE[1] else None
@@ -143,11 +151,11 @@ def check(s, key, raw, words):
     n = valid(key, raw)
     if n is None:
         return ("invalid", "unclear", None)
-    return ("ok", raw if key in ("work", "housing") else n)
+    return ("ok", raw if key in FREE_TEXT else n)
 
 
 def _same(key, a, b):
-    if key in ("work", "housing"):
+    if key in FREE_TEXT:
         return True  # free text: the latest description wins
     return abs(float(a) - float(b)) <= max(0.5, 0.01 * abs(float(a)))
 
@@ -168,6 +176,8 @@ def fmt(key, v, lang="en"):
         return ("Haan" if v else "Nahi") if lang == "hi" else ("Yes" if v else "No")
     if key == "work":
         return norm.work_label(v, lang)  # the category, read back; the caller's own words stay in s["said"]
+    if key == "loan_purpose":
+        return norm.loan_purpose_label(v, lang)
     return str(v)
 
 
@@ -198,14 +208,14 @@ def _skip(key, answers):
 
 
 def _open(s, k):
-    return not ((not ASK_HISTORY and k in HISTORY) or k in s["answers"] or k in s["skipped"]
-                or _skip(k, s["answers"]))
+    return not ((not ASK_HISTORY and k in HISTORY) or (not ASK_LOAN_PURPOSE and k == "loan_purpose")
+                or k in s["answers"] or k in s["skipped"] or _skip(k, s["answers"]))
 
 
 def next_field(s):
     if not SHORT_CALL:
         return next((f["key"] for f in FIELDS if _open(s, f["key"])), "done")
-    rule = [k for k in KEYS if k in RULE_FIELDS and _open(s, k)]
+    rule = [k for k in KEYS if (k in RULE_FIELDS or k == "loan_purpose") and _open(s, k)]  # purpose: asked first
     if rule:
         return rule[0]
     return _model_question(s)

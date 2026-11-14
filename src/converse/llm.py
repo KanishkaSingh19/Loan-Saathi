@@ -144,7 +144,7 @@ async def _extract(s, env, text, asked):
         ours = fallback_candidates(text, asked)
         for k, raw, words in ours:
             if k not in have and k not in s["answers"] and (k in MONEY or k in ("tenure_months", "years_in_work",
-                                                                                 "other_loans_count")):
+                                                                                 "other_loans_count", "loan_purpose")):
                 out.append((k, raw, words))
         # Gemini may quote one end of a range ("35 hazaar" out of "30-35 hazaar"). When our parser's span
         # for the same money field holds more amounts than the quote, check the wider span, so a range or
@@ -155,9 +155,13 @@ async def _extract(s, env, text, asked):
             return len(norm.amounts(TENURE_PHRASE.sub(" ", str(w or ""))))
         out = [(k, raw, span[k] if k in span and count(span[k]) > count(words) else words) for k, raw, words in out]
     # One spoken amount answers one question: when the same words are given to two fields (Gemini read
-    # "sixty thousand", said to the income question, as the loan), keep the field we asked about.
-    by_words = {}
+    # "sixty thousand", said to the income question, as the loan), keep the field we asked about. Only money
+    # fields compete: "bike ke liye 80 hazaar" is both the purpose and the amount.
+    by_words, kept = {}, []
     for cand in out:
-        by_words.setdefault(_plain(cand[2]), []).append(cand)
-    out = [next((c for c in group if c[0] == asked), group[0]) for group in by_words.values()]
+        if cand[0] in MONEY:
+            by_words.setdefault(_plain(cand[2]), []).append(cand)
+        else:
+            kept.append(cand)
+    out = kept + [next((c for c in group if c[0] == asked), group[0]) for group in by_words.values()]
     return out, g

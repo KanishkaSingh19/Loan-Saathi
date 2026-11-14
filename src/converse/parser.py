@@ -32,6 +32,10 @@ _SCALE = r"(?:lakhs?|lacs?|k|hazaar|hazar|thousand|crores?|लाख|हज़�
 AMOUNT_SPAN = re.compile(r"₹?\s*(?:\d[\d,]*(?:\.\d+)?(?:\s*" + _SCALE + r")?|[a-zऀ-ॿ]+\s+" + _SCALE + r")", re.I)
 
 
+PURPOSE_FOR = re.compile(r"\b(?:ke\s+liye|ke\s+liy?e|ke\s+lie|ke\s+vaaste|ke\s+waaste|for|wala\s+loan)\b|"
+                         r"के\s+लिए|के\s+वास्ते", re.I)
+
+
 def _segments(clause):
     """Split a clause with several amounts so each piece holds one amount and the words right after it
     ("मुझे 50,000 का लोन चाहिए ... महीने में 30,000 कमाता हूँ" -> loan piece, income piece). Speech-to-text
@@ -68,8 +72,9 @@ def fallback_candidates(text, asked):
         used = False
         if money and field in MONEY:
             target = field
-        elif money and field in (None, "loan_amount") and asked in MONEY:
-            target = asked if field is None else "loan_amount"
+        elif money and field in (None, "loan_amount") and (asked in MONEY or asked == "loan_purpose"):
+            # An amount said to "what is the loan for?" ("bike ke liye 80 hazaar") is the loan amount.
+            target = "loan_amount" if field or asked == "loan_purpose" else asked
         else:
             target = None
         if target:  # two clauses for one amount ("salary 20 hazaar aur dukaan se 10 hazaar") stay together
@@ -102,8 +107,16 @@ def fallback_candidates(text, asked):
         if NO_LOANS.search(c) and not norm.amounts(c):
             found.setdefault("other_loans_count", "0")  # "koi loan nahi hai", whatever was asked
             used = True
+        # What the loan is for: "dukaan ke liye", "for my daughter's education", or any purpose said to that
+        # question. Such a clause is the purpose, never the caller's work ("dukaan ke liye" is not "I run a shop").
+        purpose_here = norm.loan_purpose_known(c) and asked != "housing" and (
+            asked == "loan_purpose" or PURPOSE_FOR.search(c))
+        if purpose_here:
+            found.setdefault("loan_purpose", c)
+            used = True
         # (Never a housing answer: "sarkari quarter" is where they live, not a government job.)
-        if not used and asked != "work" and not money and norm.work_known(c) and not WANTS_LOAN.search(c)                 and not (asked == "housing" and HOUSING_WORDS.search(c)):
+        if not used and asked != "work" and not money and norm.work_known(c) and not WANTS_LOAN.search(c) \
+                and not (asked == "housing" and HOUSING_WORDS.search(c)) and not purpose_here:
             found.setdefault("work", c)  # "...and I work as a driver": work named while answering something else
             used = True
         if not used:
@@ -112,7 +125,7 @@ def fallback_candidates(text, asked):
     if asked in BY_KEY and asked not in found:
         if not found:
             found[asked] = text  # a plain answer to the question we asked ("kirana shop", "35", "nahi")
-        elif asked in ("work", "housing") and leftover:
+        elif asked in ("work", "housing", "loan_purpose") and leftover:
             rest = " ".join(leftover)
             # Asked about work, the words left after the other answers are the work ("sabzi bechta hoon, 10
             # saal se"), unless they're only a yes/no or filler.

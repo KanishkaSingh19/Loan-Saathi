@@ -28,7 +28,7 @@ PROFILE = [
     ("late_last_year", "late_last_year", "Late in the last 12 months", "yesno"),
     ("overdue_now", "overdue_now", "EMI overdue now", "yesno"),
 ]
-APPLICANT = [("work", "Work"), ("years_in_work", "Years in work"), ("housing", "Housing"), ("age", "Age")]
+APPLICANT = [("loan_purpose", "Loan for"), ("work", "Work"), ("years_in_work", "Years in work"), ("housing", "Housing"), ("age", "Age")]
 STATE_NAMES = {
     "COLLECTING_PROFILE": "answering questions", "VERIFYING_INFORMATION": "checking the summary",
     "CORRECTION_REQUIRED": "correcting an answer", "SHOWING_RESULT": "the result",
@@ -87,6 +87,8 @@ def build(applicant, answers=None, statuses=None, result=None, simulation=None, 
             v = a.get("age")
         text = _fmt("years", v) if key in ("years_in_work", "age") and v is not None else (
             str(v) if v is not None else "Not given")
+        if key == "loan_purpose" and v:
+            text = norm.loan_purpose_label(v)
         if key == "work" and v:  # category first, then the caller's own words as evidence
             text = norm.work_label(v)
             if norm.work_category(v) != "other":

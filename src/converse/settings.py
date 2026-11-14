@@ -14,6 +14,9 @@ _LLM_CACHE = llm_mod.ResponseCache()
 
 
 ASK_HISTORY = True  # the repayment-history questions; older test suites switch them off to keep their flows
+# "What is the loan for?" (step 1 of a lender's process): asked first, never read by the model or a rule; it
+# picks the tenure hint and the documents to keep ready. Scripted suites written before it switch it off.
+ASK_LOAN_PURPOSE = os.environ.get("ASK_LOAN_PURPOSE", "1").strip() != "0"
 # Short call: the questions the decision rules read come first (loan, tenure, income, other loans); the ones
 # only the risk model reads (work, years, history, housing, age) are asked only while some answer to them
 # could still move the risk band. Older scripted suites switch it off to keep the full fixed order.

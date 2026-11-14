@@ -15,6 +15,7 @@ export const FILTERS = [
 ];
 
 export const SAID_LABELS = {
+  loan_purpose: "Loan for",
   loan_amount: "Loan amount",
   tenure_months: "Repay in",
   monthly_income: "Monthly income",

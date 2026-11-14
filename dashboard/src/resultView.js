@@ -1,6 +1,17 @@
 // The simple result view: a big status, one sentence, the EMI the caller can afford. Everything comes from
 // the server's assessment (src/assessment.py), so the wording matches the full assessment below it.
 
+/**
+ * The documents to keep ready, in the call's language (server: src/documents.py).
+ * @param {any} result @param {string} [lang]
+ * @returns {{key: string, text: string}[]}
+ */
+export function documentsFor(result, lang = "en") {
+  const docs = result?.documents;
+  if (!docs) return [];
+  return docs[lang === "hi" ? "hi" : "en"] || docs.en || [];
+}
+
 /** The first sentence of a paragraph ("A. B." -> "A."). @param {string} text */
 export function firstSentence(text) {
   if (!text) return "";

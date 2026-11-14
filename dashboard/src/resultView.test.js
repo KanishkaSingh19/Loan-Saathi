@@ -1,7 +1,7 @@
 // Run with: node --test src/resultView.test.js
 import test from "node:test";
 import assert from "node:assert/strict";
-import { firstSentence, resultHero } from "./resultView.js";
+import { documentsFor, firstSentence, resultHero } from "./resultView.js";
 
 const assessment = (over = {}) => ({
   status: "within",
@@ -39,4 +39,12 @@ test("decimals and amounts don't end a sentence; nothing in, nothing out", () =>
   assert.equal(firstSentence(""), "");
   assert.equal(resultHero(null), null);
   assert.equal(resultHero({ decision: "x" }).title, "Result ready");
+});
+
+test("documents come in the call's language, with English as the fallback", () => {
+  const r = { documents: { en: [{ key: "pan", text: "PAN card" }], hi: [{ key: "pan", text: "PAN card (hi)" }] } };
+  assert.equal(documentsFor(r, "hi")[0].text, "PAN card (hi)");
+  assert.equal(documentsFor(r, "en")[0].text, "PAN card");
+  assert.equal(documentsFor({ documents: { en: [{ key: "x", text: "X" }] } }, "hi")[0].text, "X");
+  assert.deepEqual(documentsFor({}), []);
 });
