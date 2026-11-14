@@ -51,7 +51,7 @@ with their sources; anything not measured says *Not currently measured*.
 | Stage | What happens | Who decides |
 |---|---|---|
 | **Listen** | The caller speaks (or types) in Hindi, Hinglish or English; Gnani Prisma turns speech into text. | – |
-| **Extract** | Gemini pulls answers out of free speech, each with an exact quote of the caller's words; our parser does the same deterministically and fills anything Gemini misses. | Gemini proposes, our code checks |
+| **Extract** | An LLM (Groq, falling back to Gemini) pulls answers out of free speech, each with an exact quote of the caller's words; our parser does the same deterministically and fills anything the LLM misses. | The LLM proposes, our code checks |
 | **Validate** | Every value is range-checked; ambiguous numbers ("40", "40-50 hazaar") are read back, contradictions are asked about, impossible values refused. | Our code |
 | **Confirm** | "Here's what I understood": the caller confirms or corrects single fields. Nothing is assessed before this. | The caller |
 | **Assess** | Safety checks, then the LightGBM risk model, the 50% affordability rule and the 24-month debt rule. | Model + rules |
@@ -62,6 +62,112 @@ with their sources; anything not measured says *Not currently measured*.
 The call's `stage` comes from the state machine (`converse.stage()`) and is recorded with each call; the
 borrower sees a single status line instead (Listening, Understanding, Verifying, Confirm). On the phone
 (Agent Builder) the same stages run without the read-back step.
+
+## System design
+
+The full design (state machine, data, API, security, deployment, limits) is in
+[`docs/system-design.md`](docs/system-design.md); the reasons behind each choice are in
+[`docs/decisions.md`](docs/decisions.md).
+
+### Architecture
+
+```mermaid
+flowchart TB
+    subgraph Channels
+        WEB["Browser call room<br/>(React, static site on Render's CDN)"]
+        WA[WhatsApp]
+        PH[Phone agent<br/>Gnani Agent Builder]
+        STAFF[Advisor dashboard]
+    end
+
+    subgraph API["FastAPI service on Render (Docker)"]
+        SRV["server.py<br/>routes, call tokens, rate limits, storage"]
+        CONV["converse/<br/>the call's state machine"]
+        PII[pii.py<br/>masks identifiers]
+        LLMR["llm/<br/>Groq → Gemini → our parser"]
+        DEC["decide()<br/>safety → risk model → rules"]
+        EXTRA["simulate · offer · documents<br/>advisor · assessment"]
+        POL[config/policy.yaml]
+    end
+
+    subgraph External
+        GNANI[Gnani STT + TTS]
+        GROQ[Groq]
+        GEM[Gemini]
+        PG[(Neon Postgres)]
+    end
+
+    WEB --> SRV
+    WA --> SRV
+    PH --> SRV
+    STAFF --> SRV
+    SRV <--> GNANI
+    SRV --> CONV --> PII --> LLMR
+    LLMR --> GROQ
+    LLMR --> GEM
+    CONV --> DEC
+    SRV --> EXTRA --> DEC
+    POL -.-> DEC
+    SRV <--> PG
+```
+
+### One call turn
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant S as API
+    participant G as Gnani
+    participant C as converse
+    participant L as LLM router
+    B->>S: live mic audio (/ws/stt)
+    S->>G: stream audio (keys stay on the server)
+    G-->>B: transcript
+    B->>S: POST /v1/converse (+ call token)
+    S->>C: turn(text)
+    C->>C: mask identifiers
+    C->>L: extract answers (≤1 call per turn, 3 s deadline)
+    L-->>C: answers, each quoting the caller
+    C->>C: our parser fills gaps · validate · read back · state machine
+    C-->>B: reply
+    B->>S: POST /v1/tts/stream
+    S->>G: streaming TTS
+    G-->>B: audio from the first chunk
+```
+
+If no LLM answers in time, our parser carries the turn: the call never depends on an LLM. A question asked
+mid-call ("EMI kya hota hai?") is answered in the caller's language from fixed text, and the call goes on.
+
+### How a decision is made
+
+```mermaid
+flowchart LR
+    A[Confirmed answers] --> SF{Safety check}
+    SF -- fails --> NM[Ask what's needed]
+    SF -- passes --> RM[Risk model<br/>LightGBM]
+    A --> FOIR[All EMIs ≤ 50% of income]
+    A --> DEBT[Debt ≤ 24 months of income]
+    RM --> DEC{decide}
+    FOIR --> DEC
+    DEBT --> DEC
+    DEC --> R1[Eligible for further review]
+    DEC --> R2[A smaller loan that fits]
+    DEC --> R3[Not right now<br/>+ what would change it]
+```
+
+The language model never decides: `decide()` is the risk model plus fixed rules from `config/policy.yaml`, and the
+simulator, offer check and advisor case all go through it. Nothing is assessed before the caller confirms the
+read-back, and no answer is "approved".
+
+### Key properties
+
+| | |
+|---|---|
+| **Reliability** | Groq → second Groq model → Gemini → our parser under one 3 s deadline; sessions saved every turn and resumable for 2 hours; the dashboard loads from a CDN while the free API wakes |
+| **Privacy** | Phone, Aadhaar, PAN, account numbers and names masked before any LLM; storage only with consent, purged after 30 days; WhatsApp numbers hashed |
+| **Security** | Closed by default without `WEBHOOK_KEY`; per-call tokens for borrowers; rate limits per network; keys never reach the browser |
+| **Measured** | Caller stops → first reply audio, median 2.17 s (Groq); a hung LLM costs 3.0 s, not 8.0 s; extraction 64/64 dev, 51/54 held-out |
 
 ## Web call with Gemini (in the browser)
 The dashboard's **Web call** tab lets anyone try Saathi from a browser, with no phone line:

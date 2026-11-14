@@ -48,3 +48,17 @@ def test_quoted_figures_match_their_reports():
     dev = json.loads((ROOT / "reports" / "extraction_benchmark.json").read_text(encoding="utf-8"))
     held = json.loads((ROOT / "reports" / "extraction_benchmark_heldout.json").read_text(encoding="utf-8"))
     assert f"dev {dev['correct']}/{dev['cases']}, held-out {held['correct']}/{held['cases']}" in DOC
+
+
+def test_the_readme_system_design_matches_the_reports():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    section = readme[readme.index("## System design"):readme.index("## Web call")]
+    lat = json.loads((ROOT / "reports" / "latency_benchmark.json").read_text(encoding="utf-8"))
+    assert f"median {lat['summary']['speech_end_to_first_audio_ms']['median'] / 1000:.2f} s (Groq)" in section
+    stall = json.loads((ROOT / "reports" / "stall_benchmark.json").read_text(encoding="utf-8"))
+    worst = sorted(round(max(v["turn_ms"]) / 1000, 1) for v in stall.values())
+    assert f"costs {worst[0]} s, not {worst[-1]} s" in section
+    dev = json.loads((ROOT / "reports" / "extraction_benchmark.json").read_text(encoding="utf-8"))
+    held = json.loads((ROOT / "reports" / "extraction_benchmark_heldout.json").read_text(encoding="utf-8"))
+    assert f"{dev['correct']}/{dev['cases']} dev, {held['correct']}/{held['cases']} held-out" in section
+    assert "docs/system-design.md" in section and section.count("```mermaid") == 3
