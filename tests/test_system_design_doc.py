@@ -50,15 +50,33 @@ def test_quoted_figures_match_their_reports():
     assert f"dev {dev['correct']}/{dev['cases']}, held-out {held['correct']}/{held['cases']}" in DOC
 
 
-def test_the_readme_system_design_matches_the_reports():
+def test_the_readme_figures_match_the_reports_and_its_links_exist():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    section = readme[readme.index("## System design"):readme.index("## Web call")]
-    lat = json.loads((ROOT / "reports" / "latency_benchmark.json").read_text(encoding="utf-8"))
-    assert f"median {lat['summary']['speech_end_to_first_audio_ms']['median'] / 1000:.2f} s (Groq)" in section
+    lat = json.loads((ROOT / "reports" / "latency_benchmark.json").read_text(encoding="utf-8"))["summary"][
+        "speech_end_to_first_audio_ms"]
+    assert f"{lat['median'] / 1000:.2f} s median / {lat['p90'] / 1000:.2f} s P90" in readme
     stall = json.loads((ROOT / "reports" / "stall_benchmark.json").read_text(encoding="utf-8"))
     worst = sorted(round(max(v["turn_ms"]) / 1000, 1) for v in stall.values())
-    assert f"costs {worst[0]} s, not {worst[-1]} s" in section
+    assert f"{worst[0]} s, not {worst[-1]} s" in readme
     dev = json.loads((ROOT / "reports" / "extraction_benchmark.json").read_text(encoding="utf-8"))
     held = json.loads((ROOT / "reports" / "extraction_benchmark_heldout.json").read_text(encoding="utf-8"))
-    assert f"{dev['correct']}/{dev['cases']} dev, {held['correct']}/{held['cases']} held-out" in section
-    assert "docs/system-design.md" in section and section.count("```mermaid") == 3
+    assert f"**{held['correct']}/{held['cases']}**" in readme and f"| {dev['correct']}/{dev['cases']} |" in readme
+    val = json.loads((ROOT / "models" / "validation_report.json").read_text(encoding="utf-8"))
+    d = val["debt_monotonicity"]
+    assert d["model_violations"] == 0 and f"**0/{d['steps_checked']:,} failures**" in readme
+    assert f"{val['synthetic_profiles']} synthetic borrower profiles" in readme
+    metrics = json.loads((ROOT / "models" / "metrics.json").read_text(encoding="utf-8"))
+    assert f"**{metrics['voice']['auc']:.3f}**" in readme and f"{metrics['full']['auc']:.3f}" in readme
+    bands = metrics["voice"]["bands"]
+    assert (f"low band defaulted {bands['low']['default_rate'] * 100:.1f}% of the time, medium "
+            f"{bands['medium']['default_rate'] * 100:.1f}%, high") in readme
+    length = json.loads((ROOT / "reports" / "call_length.json").read_text(encoding="utf-8"))["summary"]
+    total = sum(g["applicants"] for g in length.values())
+    assert all(g["same_decision"] == g["applicants"] for g in length.values()) and f"{total}/{total}" in readme
+    assert f"{length['random']['full_turns_mean']} → {length['random']['short_turns_mean']}" in readme
+    # The positioning the README must keep, and nothing it must not claim.
+    assert "not an autonomous loan approval system" in readme
+    assert "AI interprets. Code validates. You confirm. Models estimate. Rules protect. Humans decide." in readme
+    assert "What we have NOT measured" in readme and "millions" not in readme.lower()
+    links = set(re.findall(r"\]\(((?!http)[^)#]+)\)", readme))
+    assert links and not [x for x in links if not (ROOT / x).exists()], links
