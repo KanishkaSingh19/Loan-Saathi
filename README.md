@@ -128,6 +128,8 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   it flags a rate above `offer_check.flag_rate_above` in `config/policy.yaml` (30%) and a "flat" rate that hides
   a higher real one. Labelled an estimate, never names a lender, stores nothing (`src/offer.py`,
   `tests/test_offer.py`). The profile's answers are never touched: an offer is the lender's, not the caller's.
+- **How it fits together**: `docs/system-design.md` maps the architecture, a call turn, the state machine,
+  the decision pipeline, storage, the API, security and deployment, with diagrams.
 - **Why it is built this way**: `docs/decisions.md` records each design decision, what was turned down,
   and where it is enforced.
 - **The rules live in one file**: `config/policy.yaml` holds every lending rule on top of the model (FOIR
