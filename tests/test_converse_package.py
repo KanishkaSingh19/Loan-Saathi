@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import converse as cv  # noqa: E402
 
-ORDER = ["settings", "states", "fields", "texts", "validation", "parser", "llm", "sessions", "values", "dialogue"]
+ORDER = ["settings", "states", "fields", "texts", "faq", "validation", "parser", "llm", "sessions", "values", "dialogue"]
 
 
 def test_each_module_imports_only_earlier_ones():

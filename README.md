@@ -106,6 +106,11 @@ mic → /ws/stt → Gnani streaming STT (its VAD ends the turn) → Gemini → o
   Hinglish/English questions and our own Hindi number parser. A turn waits on the LLM at most once: if the
   read-back answer needed it, the result is phrased from the script. Each call records which provider
   answered each turn (`llm_trail`).
+- **Ask a question, in either language, any time**: "What is an EMI?" in a Hinglish call is answered in English,
+  "EMI kya hota hai?" in an English call in Hinglish, and Saathi carries on from the question it was asking. Fixed,
+  tested answers (EMI, interest, how much loan, approval, documents, credit score, privacy, tenure, fees, FOIR, why
+  it asks) from the policy's own numbers (`src/converse/faq.py`); anything else gets "a loan advisor can answer
+  that". A question never counts as a failed answer (`tests/test_questions.py`).
 - **What the loan is for, and the documents to keep ready**: Saathi starts where a lender starts: "Loan kis cheez
   ke liye chahiye?" (vehicle, education, business, home, personal), read from any sentence that says it ("bike ke
   liye 80 hazaar" fills both). It adds a tenure hint for that kind of loan and, with the result, a checklist that

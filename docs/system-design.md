@@ -170,8 +170,9 @@ stateDiagram-v2
 ```
 
 `converse.TRANSITIONS` lists every allowed move; anything else raises `InvalidTransition`. Nothing is assessed
-until the caller confirms the read-back (`require_confirmed()`). "Check an offer you got" and a language switch
-are asides: they never change the state or the answers.
+until the caller confirms the read-back (`require_confirmed()`). "Check an offer you got", a language switch and
+a question ("EMI kya hota hai?", answered in the caller's language from `src/converse/faq.py`) are asides: they
+never change the state or the answers, and Saathi goes back to what it was asking.
 
 Question order (short call): what the loan is for, then the questions the rules read (amount, tenure, income,
 other loans), then the questions only the model reads (work, years, repayment history, housing, age), each asked

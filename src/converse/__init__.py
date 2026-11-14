@@ -34,6 +34,7 @@ The package (one module per concern, each importing only from the ones before it
 
     settings   switches and LLM settings          states     states, transitions, stages
     fields     questions, limits, answer patterns texts      what Saathi says, prompts, recovery help
+    faq        fixed answers to mid-call questions
     validation checks, formatting, next question  parser     our own parser (no LLM)
     llm        the provider router, extraction    sessions   sessions, summary, buttons, public view
     values     read-backs, contradictions         dialogue   the turn and its state handlers
@@ -45,9 +46,9 @@ submodule that has that name, so the code that reads it sees the change.
 import sys
 import types
 
-from . import dialogue, fields, llm, parser, sessions, settings, states, texts, validation, values
+from . import dialogue, faq, fields, llm, parser, sessions, settings, states, texts, validation, values
 
-_SUBMODULES = (settings, states, fields, texts, validation, parser, llm, sessions, values, dialogue)
+_SUBMODULES = (settings, states, fields, texts, faq, validation, parser, llm, sessions, values, dialogue)
 for _m in _SUBMODULES:
     for _name, _value in vars(_m).items():
         if not (_name.startswith("__") and _name.endswith("__")) and not isinstance(_value, types.ModuleType):

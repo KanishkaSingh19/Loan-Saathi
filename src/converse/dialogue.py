@@ -18,6 +18,7 @@ from .texts import (CLARIFY, HELP, INTENT_PROMPT, INTENT_SCHEMA, LANGUAGE_RULES,
     _repeat_money, RESULT_FOLLOWUP, RESULT_PROMPT, RESULT_SCHEMA, SAVE_OK, SAY, SKIP_WORDS)
 from .validation import fmt, mentioned_field, next_field, valid
 from .llm import _extract, _llm, _llm_available
+from .faq import RESUME, UNKNOWN_QUESTION, answer_question, is_question
 from .sessions import _spoken_summary
 from .values import _cross_checks, _no, offer, _pending_prompt, _problem_text, _resolve_pending, _unset, _yes
 
@@ -41,7 +42,7 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
             return SAY["handoff_done"][s["lang"]].format(case=s["advisor_case"]) + _after_options(s)
         if s["state"] == HANDOFF:
             transition(s, COMPLETED, "call over")
-        aside = _offer_turn(s, text, action)
+        aside = _offer_turn(s, text, action) or _question_turn(s, text, action)
         if aside is not None:
             return aside
         if action == "new_call" or (not action and text and NEW_CALL.search(text)):
@@ -62,6 +63,8 @@ async def turn(s, text, decide, build_applicant, save, api_key="", model="gemini
             return reply
         return SAY["finished"][s["lang"]] + _after_options(s)
     aside = _offer_turn(s, text, action)
+    if aside is None:
+        aside = _question_turn(s, text, action)
     if aside is not None:
         return aside
     s["history"].append(("Caller", text or f"[{action}]"))
@@ -239,6 +242,10 @@ async def _collecting(s, env, text, action):
             problem = (asked, p)
     s["llm"].append(g["used"])
 
+    if asked in BY_KEY and asked not in s["answers"] and not s["pending"] and not s["clarify"] \
+            and not s["changed"] and is_question(text) and not action:
+        s.setdefault("questions", []).append({"ts": round(time.time(), 3), "topic": None})
+        return UNKNOWN_QUESTION[s["lang"]] + RESUME[s["lang"]] + _lower_first(_question(s, asked), s["lang"])
     if asked in BY_KEY and asked not in s["answers"] and not s["pending"] and not s["clarify"]:
         s["tries"][asked] = s["tries"].get(asked, 0) + 1
         if s["tries"][asked] >= MAX_TRIES and not BY_KEY[asked].get("need"):
@@ -301,7 +308,7 @@ def _advance(s, env, prefix="", problem=None, g=None):
         if g and g["used"] != "fallback" and g["asking"] == nxt and g["reply"] and not prefix \
                 and _question_ok(g["reply"], s):
             return g["reply"]
-        if nxt == s.get("asked_before") and not prefix and nxt in MONEY:
+        if nxt == s.get("asked_before") and not prefix and nxt in MONEY and not s["changed"]:
             return SAY["sorry"][lang] + _repeat_money(nxt, lang)
         return prefix + _question(s, nxt)
 
@@ -699,9 +706,12 @@ def _amounts_ok(reply, result):
 
 HI_WORDS = re.compile(r"\b(hai|hain|hoon|hu|mujhe|mera|meri|mere|chahiye|kamaata|kamata|kamaati|kamati|nahi|nahin|"
                       r"haan|kya|aap|main|ka|ki|ke|ko|se|mein|saal|mahine|mahina|hazaar|hazar|wala|wali|kar|raha|"
-                      r"rahi|karta|karti|ghar|kiraye|dukaan|apna|apni|toh|bhi|aur|kitna|kitne|baaki|kist)\b", re.I)
+                      r"rahi|karta|karti|ghar|kiraye|dukaan|apna|apni|toh|bhi|aur|kitna|kitne|baaki|kist|kitni|kab|"
+                      r"kaise|kyun|kyon|milega|milegi|milta|hota|hoti|sakta|sakti|sakte|kaun|kahan|batao|bataiye|"
+                      r"din|paisa|chahta|chahti|lagega|hoga|matlab)\b", re.I)
 EN_WORDS = re.compile(r"\b(i|am|my|is|the|a|an|want|need|earn|have|for|and|of|to|do|it|yes|per|month|months|"
-                      r"years|what|how|much|own|live|work|loan|loans|rent|with)\b", re.I)
+                      r"years|what|how|much|own|live|work|loan|loans|rent|with|can|will|why|when|which|does|get|"
+                      r"should|long|would|could|you|your|this|that|are)\b", re.I)
 
 
 # "Can you talk in English please" / "इंग्लिश में बात करो" / "Hindi mein boliye": an explicit request to switch.
@@ -820,6 +830,67 @@ def _offer_return(s):
     if s["state"] == VERIFYING:
         return ""
     return SAY["more"][lang] if s["state"] in (RESULT, WHAT_IF, NEXT_STEPS) else ""
+
+
+# ---------- a question mid-call: answered in the caller's language, then back to the call ----------
+
+def _question_turn(s, text, action):
+    """'EMI kya hota hai?', 'How long can I repay?': answered from faq.py in the language of the question, then
+    Saathi goes back to what it was asking. None when this isn't a question Saathi has an answer for, or when
+    it's really an answer ("EMI 3000 hai?" to the EMI question) or a what-if after the result."""
+    if action or not text or s.get("asking") == "offer":
+        return None
+    # Asking for an advisor, another language, or (not) to save always wins over answering the question.
+    if HUMAN.search(text) or language_request(text, "") or NO_SAVE.search(text) or SAVE_OK.search(text):
+        return None
+    # After a result, "what's the maximum EMI I can afford?" is about their own numbers: the simulator answers.
+    if s.get("result") and s["state"] in (RESULT, WHAT_IF, NEXT_STEPS, COMPLETED) and _looks_like_what_if(text):
+        return None
+    # A valid answer to the question being asked is an answer ("do saal mein chukaunga"), unless it ends in "?".
+    asked = s.get("asking")
+    if s["state"] == COLLECTING and asked in BY_KEY and "?" not in text and valid(asked, text) is not None:
+        return None
+    lang = _language(text, None, s["lang"])
+    found = answer_question(text, lang)
+    if not found:
+        return None
+    amounts = [a for a in norm.amounts(text) if a["digits"] or a["scaled"]]
+    if amounts and s["state"] in (COLLECTING, CORRECTION, VERIFYING, RESULT, WHAT_IF, NEXT_STEPS, COMPLETED):
+        return None  # a number makes it an answer or a what-if; the normal path handles it
+    topic, said = found
+    s["lang"] = lang
+    s["history"].append(("Caller", text))
+    s.setdefault("questions", []).append({"ts": round(time.time(), 3), "topic": topic})
+    back = _resume_prompt(s)
+    reply = said + (RESUME[lang] + _lower_first(back.strip(), lang) if back.strip() else "")
+    s["history"].append(("Saathi", reply))
+    return reply
+
+
+def _resume_prompt(s):
+    """What Saathi was waiting for, to say again after answering a question."""
+    lang = s["lang"]
+    if s["state"] in FINISHED:
+        return _after_options(s).strip()
+    if s["pending"]:
+        return _pending_prompt(s)
+    if s["state"] == CORRECTION and s.get("correcting"):
+        return SAY["ask_correct"][lang].format(label=LABELS[lang][s["correcting"]])
+    if s["state"] == RECOVERY:
+        return SAY["recovery"][lang]
+    if s["state"] == COLLECTING and s.get("asking") in BY_KEY:
+        return _question(s, s["asking"])
+    again = _repeat_question(s)
+    if again.strip():
+        return again
+    return SAY["more"][lang].strip() if s["state"] in (RESULT, WHAT_IF, NEXT_STEPS) else ""
+
+
+def _lower_first(text, lang):
+    """'Now, how much ...' reads better than 'Now, How much ...' (Hinglish keeps its capitals)."""
+    if lang == "en" and text[:1].isupper() and not text[:2].isupper():
+        return text[:1].lower() + text[1:]
+    return text
 
 
 def _repeat_question(s):

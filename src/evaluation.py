@@ -225,6 +225,7 @@ CATALOG = [
         ("Check an offer you got", [("tests/test_offer.py", None)]),
         ("EMI shown as a range of interest rates", [("tests/test_emi_range.py", None)]),
         ("Loan purpose and a document checklist that fits", [("tests/test_loan_purpose.py", None)]),
+        ("Questions answered in the caller's language", [("tests/test_questions.py", None)]),
         ("Misunderstood answers", [("test_advisor.py", "recovery offers the advisor"),
                                    ("test_states.py", "live-run regressions")]),
         ("WhatsApp: text, buttons and voice notes", [("test_whatsapp.py", "a full pre-screen over WhatsApp"),

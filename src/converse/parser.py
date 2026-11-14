@@ -122,6 +122,11 @@ def fallback_candidates(text, asked):
         if not used:
             leftover.append(c)
         prev_clause = c
+    if asked in MONEY and asked not in found and "tenure_months" not in found:
+        t = TENURE_PHRASE.search(text)
+        no_money = not [a for a in norm.amounts(TENURE_PHRASE.sub(" ", text)) if a["scaled"] or a["value"] >= 1000]
+        if t and no_money and norm.number(t.group(1)) is not None:
+            found["tenure_months"] = t.group(1)  # "2 years", said to "how much?", is how long, not ₹2
     if asked in BY_KEY and asked not in found:
         if not found:
             found[asked] = text  # a plain answer to the question we asked ("kirana shop", "35", "nahi")
